@@ -1,2 +1,8 @@
 .spectra/
 openspec/.vector-search.db*
+node_modules/
+
+# joplin-brain runtime outputs (REQ-IDX-004 / Karpathy MVP)
+data/
+reports/
+wiki_root/
