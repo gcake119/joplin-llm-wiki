@@ -1,0 +1,40 @@
+# Karpathy 全套 quick-start（請將路徑改成你的本機絕對路徑）
+
+notes_root: /ABS/PATH/TO/joplin-md-root
+wiki_root: /ABS/PATH/TO/wiki-root
+wiki_schema:
+  path: /ABS/PATH/TO/wiki-schema.yaml
+  strict: true
+
+wiki:
+  glob: "**/*.md"
+
+wiki_ingest:
+  max_pages_per_run: 15
+  min_pages_per_run: 10
+  max_planner_rounds: 3
+
+write_back:
+  sources_enabled: false
+
+ollama:
+  base_url: http://127.0.0.1:11434
+  embed_model: bge-m3
+  chat_model: gemma2:2b
+
+chroma:
+  persist_path: data/chroma
+  collection_sources: joplin_sources_mvp
+  collection_wiki: joplin_wiki_mvp
+
+rag:
+  retrieve_mode: wiki_first
+
+lint:
+  out_dir: reports
+  contradiction:
+    max_pairs: 50
+    timeout_ms: 180000
+
+joplin_cli:
+  enabled: false
