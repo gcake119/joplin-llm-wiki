@@ -24,6 +24,16 @@ import YAML from "yaml";
  *     contradiction: { max_pairs: number, timeout_ms: number },
  *   },
  *   joplin_cli: { enabled: boolean, command: string, preflight_argv: string[], timeout_ms: number },
+ *   joplin_sqlite_sync: {
+ *     enabled: boolean,
+ *     database_path: string,
+ *     export_root: string,
+ *     reconcile_mode: string,
+ *     busy_timeout_ms: number,
+ *     max_export_attempts: number,
+ *     pipeline: { run_index: boolean, run_wiki_compile: boolean },
+ *     schedule: { every_seconds: number | null },
+ *   },
  * }} AppConfig
  */
 
@@ -212,6 +222,78 @@ export async function loadConfig(configPath) {
     }),
   };
 
+  const syncNest =
+    typeof doc.joplin_sqlite_sync === "object" && doc.joplin_sqlite_sync !== null
+      ? /** @type {Record<string, unknown>} */ (doc.joplin_sqlite_sync)
+      : {};
+  const syncEnabled = bool(syncNest, "enabled", false);
+  let database_path = str(syncNest, "database_path", "").trim();
+  if (database_path && !path.isAbsolute(database_path))
+    database_path = path.resolve(cfgDir, database_path);
+
+  const export_root_raw = str(syncNest, "export_root", "").trim();
+  let export_root =
+    export_root_raw === ""
+      ? notes_root
+      : path.isAbsolute(export_root_raw)
+        ? export_root_raw
+        : path.resolve(cfgDir, export_root_raw);
+
+  const reconcile_raw = str(syncNest, "reconcile_mode", "mirror");
+  if (reconcile_raw !== "mirror" && reconcile_raw !== "leave") {
+    const err = new Error("joplin_sqlite_sync.reconcile_mode must be mirror or leave");
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  /** @type {'mirror' | 'leave'} */
+  const reconcile_mode = reconcile_raw;
+
+  const busy_timeout_ms = num(syncNest, "busy_timeout_ms", 5000, {
+    min: 0,
+    max: 600_000,
+  });
+  const max_export_attempts = num(syncNest, "max_export_attempts", 5, {
+    min: 1,
+    max: 100,
+  });
+
+  const pipeNest = nest(doc, "joplin_sqlite_sync", "pipeline");
+  const pipeline = {
+    run_index: bool(pipeNest, "run_index", true),
+    run_wiki_compile: bool(pipeNest, "run_wiki_compile", true),
+  };
+
+  const schedNest = nest(doc, "joplin_sqlite_sync", "schedule");
+  const every_seconds = readOptionalPositiveIntOrNull(schedNest, "every_seconds");
+
+  if (syncEnabled) {
+    if (!database_path) {
+      const err = new Error("joplin_sqlite_sync.database_path required when enabled");
+      /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+      throw err;
+    }
+    const nr = path.normalize(notes_root);
+    const er = path.normalize(export_root);
+    if (er !== nr) {
+      const err = new Error(
+        "joplin_sqlite_sync.export_root must equal notes_root (resolved paths)",
+      );
+      /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+      throw err;
+    }
+  }
+
+  const joplin_sqlite_sync = {
+    enabled: syncEnabled,
+    database_path,
+    export_root,
+    reconcile_mode,
+    busy_timeout_ms,
+    max_export_attempts,
+    pipeline,
+    schedule: { every_seconds },
+  };
+
   return {
     notes_root,
     notes_glob,
@@ -227,6 +309,7 @@ export async function loadConfig(configPath) {
     rag,
     lint,
     joplin_cli,
+    joplin_sqlite_sync,
   };
 }
 
@@ -243,6 +326,23 @@ function nest(doc, ...keys) {
     cur = /** @type {Record<string, unknown>} */ (next);
   }
   return /** @type {Record<string, unknown>} */ (cur);
+}
+
+/**
+ * @param {Record<string, unknown>} doc
+ * @param {string} key
+ * @returns {number | null}
+ */
+function readOptionalPositiveIntOrNull(doc, key) {
+  if (!(key in doc)) return null;
+  const v = doc[key];
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "number" || !Number.isInteger(v) || v <= 0) {
+    const err = new Error(`${key} must be a positive integer or null`);
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return v;
 }
 
 /**

@@ -1,7 +1,8 @@
 # Example Karpathy-style configuration for `joplin-brain`.
-# Copy to `config.yaml` and adjust absolute paths.
+# Copy to `config.yaml` and adjust paths.
+# Local default: repository-root `notes_root/` (directory is gitignored).
 
-notes_root: /absolute/path/to/joplin/md/export
+notes_root: ./notes_root
 notes_glob: "**/*.md"
 
 wiki_root: /absolute/path/to/compiled/wiki
@@ -61,3 +62,18 @@ joplin_cli:
     - config
     - version
   timeout_ms: 30000
+
+# Optional: batch-export notes from Joplin Desktop database.sqlite into notes_root, then run pipelines.
+# When enabled, database_path is required. For MVP, export_root must match notes_root (omit export_root to use notes_root).
+joplin_sqlite_sync:
+  enabled: false
+  database_path: ""
+  export_root: ""
+  reconcile_mode: mirror
+  busy_timeout_ms: 5000
+  max_export_attempts: 5
+  pipeline:
+    run_index: true
+    run_wiki_compile: true
+  schedule:
+    every_seconds: null

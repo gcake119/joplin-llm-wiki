@@ -36,6 +36,21 @@ Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢等；**2** Ollama
 - `wiki-schema.example.yaml`
 - `fixtures/full-karpathy.config.yaml`（需改成你的絕對路徑）
 
+## Joplin Desktop SQLite 匯出＋排程（`sqlite-sync`）
+
+- **預設筆記目錄**：範例使用倉庫根目錄 `./notes_root`；此資料夾已列於 `.gitignore`，**筆記 Markdown 不會進版控**。克隆後若無此目錄，請自行 `mkdir -p notes_root` 或由匯出流程建立。
+- **原生模組**：`sqlite-sync` 依賴 `better-sqlite3`。若 `pnpm install` 後出現 bindings／「Could not locate」類錯誤，在 pnpm 11+ 通常需先執行 `pnpm approve-builds --all`（或依互動提示核准該套件），再重新安裝以完成編譯。
+- **來源**：Joplin Desktop 設定檔目錄內之 `database.sqlite`（依你的安裝位置調整絕對路徑）。
+- **行為**：`joplin_sqlite_sync.enabled: true` 時，`sqlite-sync` 以唯讀開啟 SQLite，將筆記匯出至 `notes_root`（`reconcile_mode: mirror` 時會刪除資料庫已不存在的對應 `.md`）；可選擇接續執行與 `index`／`wiki-compile` 相同的管線。
+- **風險**：勿將匯出目錄指到 Joplin Profile 內你仍手動維護的 `.md`，除非你確定 mirror 刪除策略可接受。
+
+```bash
+pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml
+pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml --dry-run
+```
+
+定時執行建議使用系統 cron 或 macOS `launchd` 呼叫上述命令；亦可於設定中設定 `joplin_sqlite_sync.schedule.every_seconds` 或使用 `--every <秒數>` 由單一行程輪詢（收到 SIGINT 時停止）。
+
 ## 測試
 
 ```bash

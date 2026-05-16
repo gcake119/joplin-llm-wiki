@@ -2,6 +2,11 @@
   "name": "joplin-brain",
   "version": "0.1.0",
   "type": "module",
+  "pnpm": {
+    "allowBuilds": {
+      "better-sqlite3": true
+    }
+  },
   "bin": {
     "joplin-brain": "bin/joplin-brain.js"
   },
@@ -13,6 +18,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "better-sqlite3": "11.8.1",
     "chromadb": "^3.4.3",
     "fast-glob": "^3.3.3",
     "yaml": "^2.7.1"

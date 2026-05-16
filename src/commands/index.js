@@ -30,6 +30,10 @@ export async function runCommand(command, ctx) {
       const { runLint } = await import("./cmd-lint.js");
       return runLint(ctx);
     }
+    case "sqlite-sync": {
+      const { runSqliteSync } = await import("./cmd-sqlite-sync.js");
+      return runSqliteSync(ctx);
+    }
     default:
       return 1;
   }

@@ -28,6 +28,7 @@ export async function main(argv) {
     "wiki-compile",
     "ask",
     "lint",
+    "sqlite-sync",
   ]);
 
   if (!known.has(command)) {
@@ -56,7 +57,9 @@ export async function main(argv) {
       code === "SCHEMA_INVALID" ||
       code === "JOPLIN_CLI_FAILED" ||
       code === "FRONTMATTER_INVALID" ||
-      code === "WIKI_COMPILE_ABORT"
+      code === "WIKI_COMPILE_ABORT" ||
+      code === "SQLITE_OPEN_FAILED" ||
+      code === "SQLITE_EXPORT_FAILED"
     ) {
       emitErr(code, String(err.message ?? err));
       return 1;
@@ -137,6 +140,7 @@ Commands:
   wiki-compile   Compile wiki pages under wiki_root
   ask            Retrieval-augmented Q&A
   lint           Karpathy lint (duplicates, orphans, contradictions, schema gaps)
+  sqlite-sync    Export Joplin SQLite to notes_root; optional index + wiki-compile
 
 Global:
   --help, -h               Show help
