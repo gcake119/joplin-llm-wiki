@@ -1,0 +1,57 @@
+# joplin-brain（Karpathy MVP）
+
+本機-first 的 **Sources → Compiled Wiki → Schema** 三層管線：向量分 `collection_sources` / `collection_wiki`，`wiki-compile` 透過本機 Ollama 規劃並撰寫 `wiki_root`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
+
+## 需求
+
+- Node **≥ 20**
+- **pnpm**
+- 本機 **[Ollama](https://ollama.com/)**（embed + chat）
+- **Chroma**：安裝套件後使用 CLI 啟動持久化伺服器（與 `chromadb` npm client 搭配）：
+
+```bash
+pnpm exec chroma run --path ./data/chroma --host 127.0.0.1 --port 8000
+```
+
+預設設定假設 Chroma 在 `127.0.0.1:8000`。可用環境變數覆寫：`CHROMA_HOST`、`CHROMA_PORT`。
+
+## 指令
+
+```bash
+pnpm install
+pnpm exec joplin-brain --help
+pnpm exec joplin-brain index --config ./my.config.yaml
+pnpm exec joplin-brain watch --config ./my.config.yaml
+pnpm exec joplin-brain wiki-compile --config ./my.config.yaml
+pnpm exec joplin-brain wiki-compile --config ./my.config.yaml --dry-run
+pnpm exec joplin-brain ask --config ./my.config.yaml "你的問題"
+pnpm exec joplin-brain lint --config ./my.config.yaml
+```
+
+Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
+
+## 設定範例
+
+- `config.yaml.example`
+- `wiki-schema.example.yaml`
+- `fixtures/full-karpathy.config.yaml`（需改成你的絕對路徑）
+
+## 測試
+
+```bash
+pnpm test
+```
+
+整合索引測試預設使用記憶體向量後端（不透過 Chroma HTTP），以降低 CI 對本機 Chroma 版本的耦合：
+
+- `JOPLIN_BRAIN_TEST_MEMORY_VECTOR=1`（測試會自動設定）
+
+真實環境請勿設定上述變數，並先啟動 `chroma run`。
+
+## 風險與注意
+
+- **預設 `write_back.sources_enabled=false`**：工具不應寫回 `notes_root`；Wiki 僅寫入 `wiki_root`。
+- **矛盾判定為「候選」**：需人工複核。
+- **Chroma CLI 與 `chromadb` client 版本**：若連線異常，請確認 `pnpm exec chroma --version` 與官方相容矩陣；本 repo 已將 CLI 心跳改用 `listCollections` 探測以避免部分版本的 `heartbeat` 動詞不一致。
+
+排程範例見 `docs/scheduling-examples.md`。
