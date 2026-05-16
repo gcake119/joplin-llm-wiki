@@ -1,0 +1,20 @@
+{
+  "name": "joplin-brain",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "joplin-brain": "bin/joplin-brain.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/register-bin.mjs",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chromadb": "^3.4.3",
+    "fast-glob": "^3.3.3",
+    "yaml": "^2.7.1"
+  }
+}
