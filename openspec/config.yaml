@@ -1,0 +1,155 @@
+schema: spec-driven
+
+# =============================================================================
+# 專案說明（注入所有 artifact：proposal / specs / design / tasks）
+# Spectra 與 Cursor Agent 在產出時會讀取此 context
+# =============================================================================
+context: |
+  # 專案：joplin-brain（Joplin + Ollama 本機自動化知識庫）
+
+  ## 一句話
+  以 Joplin Profile 內 Markdown 快取為唯讀真相來源，在本機建立向量索引、RAG 查詢與知識庫 Lint 的自動化管線；與 Jarvis（Joplin 外掛）互補，不取代 Joplin Cloud 同步與編輯器內 Related Notes。
+
+  ## 全本機運作（最高優先）
+  - **資料不出機**：筆記、向量索引、Lint 報告、執行日誌預設皆在本機檔案系統
+  - **推理不出機**：Embedding / Chat 僅呼叫本機 Ollama（127.0.0.1），MVP 不設雲端 LLM fallback
+  - **向量庫不出機**：ChromaDB 嵌入式持久化於 `data/chroma/`，不使用遠端 Chroma Server、不用 PostgreSQL / 雲端向量服務
+  - **無對外服務**：MVP 不啟動 HTTP API、不開放區網 port；僅 CLI + 本機檔案 watcher
+  - **可離線驗收**：Ollama 與 Joplin 快取可讀時，RAG / Lint / 索引可在無外網下完成（Joplin Cloud 同步為既有行為，非本專案依賴）
+  - **網路白名單（MVP）**：僅允許 `config.ollama.base_url`（預設 localhost）；禁止 specs/design 引入第三方 SaaS
+
+  ## 背景與現況
+  - 筆記：Joplin Desktop，同步至 Joplin Cloud
+  - 本機：Joplin Profile 資料夾維護純 Markdown 筆記快取（檔案系統可直讀，不呼叫 Joplin API）
+  - AI：Jarvis 外掛接 Ollama — Chat: gemma4:e4b；Embedding: bge-m3（多語 + 混合搜尋）
+  - 既有能力：Jarvis Related Notes 側邊欄（即時、編輯中）
+  - 本專案補強：全庫批次索引、CLI RAG、排程 Lint、可審計報告（參考本地 LLM 第二大腦、Karpathy Wiki、知識庫 Lint）
+
+  ## 技術選型（須在 design / tasks 中遵守，變更需明示理由）
+  | 層級 | 選型 | 理由 |
+  |------|------|------|
+  | 語言 | JavaScript（Node.js 20+，ESM） | 與 Joplin/外掛生態同語言；單一 runtime；利於日後輕量本機 UI |
+  | 套件管理 | pnpm（package.json + pnpm-lock.yaml） | 與既有專案一致；`pnpm link` 或 package.json `bin` 提供 CLI |
+  | 檔案監聽 | chokidar | Node 生態成熟；即時反映 Joplin 本機 .md 變更 |
+  | 向量庫 | ChromaDB（嵌入式本機持久化） | 零額外服務；`data/chroma/` 可備份/刪除重建；符合全本機優先 |
+  | Embedding | bge-m3 via Ollama HTTP | 與 Jarvis 一致，多語混合檢索 |
+  | Chat | gemma4:e4b via Ollama HTTP | 本機推理，與 Jarvis 對齊 |
+  | 排程 | cron / macOS launchd | 夜間全量 Lint、stale reindex（呼叫 `node` CLI） |
+  | 設定 | config.yaml（執行時）+ openspec/（規格） | 人類可讀、Spectra 可對齊 |
+
+  ## 架構邊界（硬規則）
+  - 唯讀讀取 Joplin Profile 內筆記 .md；預設 write_mode: report_only（輸出至 reports/，不靜默改筆記）
+  - 不修改 Joplin / Jarvis 原始碼；不取代 Cloud 同步
+  - 單使用者、單機；Ollama 預設 http://127.0.0.1:11434
+  - 程式碼置於 `src/`（ESM 模組）；CLI 入口 `bin/joplin-brain.js` 或 package.json `bin`（`pnpm install` 後可用）；規格 `openspec/`；向量庫 `data/chroma/`；報告 `reports/`（資料目錄 gitignore）；鎖檔 `pnpm-lock.yaml` 須提交
+  - Chroma 使用本機 PersistentClient / 等效嵌入式模式，persist_path 指向專案內 `data/chroma/`
+
+  ## 交付範圍（Karpathy LLM Wiki 全套，單一 change）
+  1. **Sources**：唯讀 `notes_root`；向量入 `chroma.collection_sources`；`index`／`watch`
+  2. **Compiled Wiki**：可設定 `wiki_root`；`wiki-compile`（含 planner、預設 max_pages_per_run=15、`--dry-run`）；前置 YAML schema；強制 frontmatter（`source_refs`、`compiled_at`、`compiler_revision`）；預設不寫回 `notes_root`
+  3. **Schema**：`wiki_schema.path` 驗證、hub 頁規則、缺口偵測
+  4. **雙 collection 索引**：wiki 樹入 `chroma.collection_wiki`，metadata `layer`
+  5. **RAG**：`rag.retrieve_mode`：`wiki_first`（預設）／`sources_only`／`merged`
+  6. **Karpathy Lint**：向量重複候選、來源連結孤立、Wiki hub 孤立、**矛盾候選**（本機 LLM 結構化輸出）、**schema_gaps**；Markdown+JSON 報告
+
+  ## 非目標（寫進 proposal Non-goals）
+  - 遠端向量庫、PostgreSQL/pgvector、託管 Chroma Cloud
+  - 雲端 LLM API、需帳號的 embedding 服務
+  - **預設**經管線自動覆寫 `notes_root` 原件（除非明示開啟 write_back 並人工批准）
+  - 圖片 OCR / PDF 全文、E2EE 不可讀筆記（跳過並記錄）
+  - Web UI、公網 API、與 Jarvis 深度整合（僅文件描述互補）
+  - Python 實作或雙語言混合棧（除非另開 change 並說明理由）
+
+  ## OpenSpec 七章（specs 須對齊）
+  1. 系統目標與範圍 | 2. 元件與介面 | 3. 資料流與狀態機
+  4. 事件與觸發 | 5. 配置與環境變數 | 6. 驗收測試 | 7. 風險與假設
+
+  ## 產出語言與格式
+  - 規格文件：臺灣繁體中文
+  - 程式碼、YAML、JSON、CLI 範例：英文識別符 + 繁中註解可選
+  - 圖表：Mermaid（flowchart / sequenceDiagram / stateDiagram-v2）
+
+  ## 元件速查（供 specs/design 引用）
+  Watcher(chokidar) → Indexer(parse/chunk/embed) → ChromaDB(local persist, dual collection)
+  WikiCompiler(wiki-compile) | SchemaValidator | RAGService(ask) | KarpathyLintEngine(lint) | ReportWriter | Scheduler(cron)
+  狀態：DISCOVERED→PARSED→CHUNKED→EMBEDDED→INDEXED；刪改 TOMBSTONE/REINDEX
+
+# =============================================================================
+# 產出規則（per-artifact rules）
+# =============================================================================
+rules:
+  proposal:
+    # --- 結構與篇幅 ---
+    - 使用臺灣繁體中文撰寫全文
+    - 必含章節：Why（問題陳述）、What Changes（範圍）、Goals（可衡量）、Non-goals、Impact、Risks（高層）、MVP 對照、Success Criteria（勾選清單）
+    - 必含「全本機運作」小節：資料路徑、Ollama、Chroma、網路邊界、離線驗收方式
+    - 每個 Goal 須有至少一條可驗證的 Success Criterion（對應後續 specs 的 Scenario ID）
+    - 篇幅：正文建議 800–1500 字（不含表格）；超過則拆到 specs
+
+    # --- 內容約束 ---
+    - 明確標示變更類型：Feature | Bug Fix | Refactor | Infrastructure
+    - 必須說明與 Joplin / Jarvis / joplin-brain 三者的關係（誰負責什麼、是否互補或取代）
+    - 技術棧須寫明：Node.js + JavaScript (ESM) + pnpm + ChromaDB 本機嵌入式；不得預設 Python 或 npm/yarn
+    - 任何會寫入 Joplin Profile 內 .md 的行為須標為「需人工批准」並預設關閉
+    - 列出假設（Assumptions）：Profile 路徑、Ollama 模型已 pull、Node 20+、筆記量級 <10k
+    - 列出 Rollback：停止 watcher、刪除/重建 data/chroma/、不影響 Joplin 資料
+
+    # --- 禁止 ---
+    - 不得在 proposal 寫具體 JS 模組實作細節（留給 design/tasks）
+    - 不得省略 Non-goals（避免範圍蔓延）
+    - 不得將遠端 DB / 雲端向量 / 雲端 LLM 列為 MVP 預設方案
+
+  specs:
+    # --- 結構（對齊 OpenSpec 七章，可依 change 裁剪）---
+    - 使用臺灣繁體中文；需求 ID 格式：REQ-xxx、場景 ID：SCN-xxx
+    - 必含（與本專案相關時）：System Goal & Scope、Components & Interfaces、Data Flow & State Machine、Events & Triggers、Config & Env Vars、Acceptance Tests、Risks & Assumptions
+    - 須有獨立 REQ 群組「全本機運作」：路徑約束、禁止外連、Chroma persist、Ollama localhost
+    - 每條 REQ 使用格式：「系統 SHALL …」；每條 REQ 至少一個 Scenario（Given / When / Then）
+    - 介面須表格化：名稱、輸入、輸出、錯誤碼、冪等性
+    - 狀態機須用 Mermaid stateDiagram-v2 或等價表格（狀態、轉換、觸發）
+    - 資料流須含至少一張 Mermaid sequenceDiagram（含 Ollama、ChromaDB 本機、Joplin MD）
+    - Config 須列出 config.yaml 欄位：key、型別、預設值、必填、說明（含 chroma.persist_path、ollama.base_url）
+    - Acceptance Tests 須可執行描述（pnpm exec joplin-brain … 或 pnpm run script + 預期輸出），對應 Karpathy 全套（sources／wiki-compile／雙 collection／ask／lint）
+    - 引用既有元件名稱：Watcher, Indexer, VectorStore, RAGService, LintEngine, ReportWriter, Scheduler
+
+    # --- 品質 ---
+    - 新需求不得與 context 中「架構邊界」「全本機運作」「非目標」衝突；衝突須開 Open Question
+    - 加密/不可讀筆記、Ollama 離線、重複嵌入（content hash）、斷網情境須有明確 Scenario
+    - 效能指標寫清數字：例「修改筆記後 60s 內可檢索」「top_k 預設 5」
+
+  design:
+    # --- 結構 ---
+    - 使用臺灣繁體中文；必含：Architecture Overview、Local-First Constraints、Component Diagram、Module Layout、API/CLI Contract、Data Model、Error Handling、Security & Privacy、Observability、Migration/Phase
+    - 至少一張 Mermaid flowchart（元件圖）對齊 proposal 範圍，標註本機邊界
+    - 目錄結構以文字樹列出（src/**/*.js、bin/joplin-brain.js、package.json、pnpm-lock.yaml、config.yaml.example、data/chroma/、reports/）
+
+    # --- 技術約束 ---
+    - "語言：Node.js 20+、JavaScript ESM（package.json 設 type=module）；套件管理 pnpm；package.json 建議設 packageManager 欄位；TypeScript 僅在 proposal 明確批准時採用"
+    - 依賴精簡（MVP 建議）：chokidar、chromadb、yaml、undici 或原生 fetch；不引入 Express/Fastify 等伺服器框架
+    - "Ollama：POST /api/embeddings（bge-m3）、POST /api/chat 或 /api/generate（gemma4/e4b）；須寫 timeout、retry、batch_size；base_url 預設 127.0.0.1"
+    - ChromaDB：本機 PersistentClient；collection_sources／collection_wiki 命名；metadata（note_id, relative_path, title, mtime, content_hash, chunk_index, layer）；禁止遠端 host 為 MVP 預設
+    - Chunk 策略：預設 size/overlap 可配置；變更 chunk 須觸發 REINDEX 說明
+    - 冪等：以 content_hash 跳過未變 chunk；刪除筆記走 tombstone
+    - "預設 write_mode 為 report_only；若設 write_back 須描述批准流程"
+
+    # --- 與 specs 對齊 ---
+    - 每個 REQ-xxx 在 design 中有對應小節或表格列（Traceability）
+    - CLI 簽名須完整：joplin-brain index|watch|wiki-compile|ask|lint 與參數、exit code（Node shebang 或 pnpm bin / pnpm exec）
+
+  tasks:
+    # --- 格式 ---
+    - "使用臺灣繁體中文；任務為可勾選清單（Markdown - [ ] 格式）"
+    - 每項任務：預估 ≤ 4 小時；含明確檔案路徑（src/…js、bin/…）
+    - 任務順序：package.json + pnpm-lock.yaml 骨架 → 核心管線 → CLI → 測試 → 文件 → 排程範本
+    - 每項任務末尾標註驗收：對應 SCN-xxx 或 pnpm test / pnpm exec joplin-brain …
+
+    # --- MVP 對齊 ---
+    - 任務順序建議：專案骨架 → Chroma 雙 collection → sources 索引 → schema／wiki 契約 → wiki-compile → wiki 索引 → RAG → Karpathy lint → 整合測試
+    - 含 package.json、pnpm-lock.yaml、config.yaml.example、.gitignore（data/, reports/）、README（pnpm install、Joplin 路徑、Ollama pull）
+    - 含 launchd/cron 範例（呼叫 node + 專案絕對路徑，optional）
+    - 不得包含：改 Joplin 外掛、Docker 必須、遠端 Chroma/Postgres、多使用者 — 除非 proposal 明確納入
+
+    # --- 實作紀律 ---
+    - 單一 change 的 tasks 總數建議 12–25 項；過多則拆 change
+    - 測試任務：Node 內建 node:test 或 vitest；至少 parser/chunker/hash 單元測試 + mock Ollama 整合測試
+    - 完成定義：通過 specs Acceptance Tests + pnpm test；可選 eslint（若引入須在 tasks 列出）；依賴變更須更新 lockfile
