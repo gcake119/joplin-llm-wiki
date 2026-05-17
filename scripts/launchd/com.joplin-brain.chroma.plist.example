@@ -8,7 +8,7 @@
   <string>__REPO_ROOT__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-brain-chroma-server</string>
+    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-llm-wiki-chroma-server</string>
     <string>__REPO_ROOT__/scripts/launchd/run-chroma.sh</string>
   </array>
   <key>EnvironmentVariables</key>
@@ -19,8 +19,8 @@
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/joplin-brain/chroma.log</string>
+  <string>__HOME__/Library/Logs/joplin-llm-wiki/chroma.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/joplin-brain/chroma.err.log</string>
+  <string>__HOME__/Library/Logs/joplin-llm-wiki/chroma.err.log</string>
 </dict>
 </plist>

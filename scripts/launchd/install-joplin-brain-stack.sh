@@ -3,10 +3,11 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-${1:-}}"
-CONFIG_ABS="${JOPLIN_BRAIN_CONFIG:-${2:-}}"
+CONFIG_ABS="${JOPLIN_LLMWIKI_CONFIG:-${JOPLIN_BRAIN_CONFIG:-${2:-}}}"
 
 if [[ -z "${REPO_ROOT}" || -z "${CONFIG_ABS}" ]]; then
-  echo "Usage: REPO_ROOT=<abs-repo> JOPLIN_BRAIN_CONFIG=<abs-config.yaml> $0" >&2
+  echo "Usage: REPO_ROOT=<abs-repo> JOPLIN_LLMWIKI_CONFIG=<abs-config.yaml> $0" >&2
+  echo "   or: REPO_ROOT=<abs-repo> JOPLIN_BRAIN_CONFIG=<abs-config.yaml> $0" >&2
   echo "   or: $0 <abs-repo> <abs-config.yaml>" >&2
   exit 1
 fi
@@ -19,8 +20,9 @@ fi
 CONFIG_ABS="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$(basename "$CONFIG_ABS")"
 
 SCRIPT_DIR="${REPO_ROOT}/scripts/launchd"
+chmod +x "${SCRIPT_DIR}"/*.sh "${SCRIPT_DIR}/shims"/joplin-llm-wiki-*
 DEST="${HOME}/Library/LaunchAgents"
-LOGDIR="${HOME}/Library/Logs/joplin-brain"
+LOGDIR="${HOME}/Library/Logs/joplin-llm-wiki"
 mkdir -p "$DEST" "$LOGDIR"
 
 for name in com.joplin-brain.ollama com.joplin-brain.chroma com.joplin-brain.sqlite-sync; do

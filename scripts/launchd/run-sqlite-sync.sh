@@ -15,9 +15,9 @@ if [[ -f .env.launchd ]]; then
   set +a
 fi
 
-JOPLIN_BRAIN_CONFIG="${JOPLIN_BRAIN_CONFIG:-${1:-}}"
-if [[ -z "${JOPLIN_BRAIN_CONFIG}" ]]; then
-  echo "run-sqlite-sync.sh: set JOPLIN_BRAIN_CONFIG or pass config path as argv1" >&2
+CFG="${JOPLIN_BRAIN_CONFIG:-${JOPLIN_LLMWIKI_CONFIG:-${1:-}}}"
+if [[ -z "${CFG}" ]]; then
+  echo "run-sqlite-sync.sh: set JOPLIN_BRAIN_CONFIG or JOPLIN_LLMWIKI_CONFIG or pass config path as argv1" >&2
   exit 1
 fi
 
@@ -49,5 +49,5 @@ while true; do
   sleep "$WAIT_INTERVAL"
 done
 
-# argv0 利於 Activity Monitor／ps 辨識（與 shims/joplin-brain-sqlite-sync 語意一致）
-exec -a "joplin-brain-sqlite-sync" pnpm exec joplin-brain sqlite-sync --config "$JOPLIN_BRAIN_CONFIG"
+# argv0 利於 Activity Monitor／ps 辨識（與 shims/joplin-llm-wiki-sqlite-sync 語意一致）
+exec -a "joplin-llm-wiki-sqlite-sync" pnpm exec joplin-llm-wiki sqlite-sync --config "$CFG"

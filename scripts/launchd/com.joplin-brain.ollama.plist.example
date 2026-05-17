@@ -8,7 +8,7 @@
   <string>__REPO_ROOT__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-brain-ollama-serve</string>
+    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-llm-wiki-ollama-serve</string>
     <string>__REPO_ROOT__/scripts/launchd/run-ollama.sh</string>
   </array>
   <key>EnvironmentVariables</key>
@@ -19,8 +19,8 @@
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/joplin-brain/ollama.log</string>
+  <string>__HOME__/Library/Logs/joplin-llm-wiki/ollama.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/joplin-brain/ollama.err.log</string>
+  <string>__HOME__/Library/Logs/joplin-llm-wiki/ollama.err.log</string>
 </dict>
 </plist>
