@@ -27,14 +27,14 @@ After each completed successful health rebuild (`check-health` returning `ok: tr
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -53,7 +53,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -105,14 +105,14 @@ The system SHALL enforce **single-flight** per `kind` for `start-local-dependenc
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -131,7 +131,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -161,14 +161,14 @@ The system SHALL NOT bind any HTTP listener to `0.0.0.0` as part of the MVP Heal
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -187,7 +187,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -217,14 +217,14 @@ The system SHALL call `loadConfig` from `src/config/load-config.js` with the ope
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -243,7 +243,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -271,21 +271,21 @@ The system SHALL implement `save-config` such that it SHALL NOT replace the targ
 #### Scenario: SCN-HGUI-07 Valid save loads in CLI
 
 - **WHEN** the operator saves a valid configuration through the GUI
-- **THEN** `pnpm exec joplin-brain index --config <same-path> --help` returns exit code 0 (help path) or loads config without `CONFIG_INVALID` for the next real command invocation described in acceptance tests
+- **THEN** `pnpm exec joplin-llm-wiki index --config <same-path> --help` returns exit code 0 (help path) or loads config without `CONFIG_INVALID` for the next real command invocation described in acceptance tests
 
 
 <!-- @trace
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -304,7 +304,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -348,14 +348,14 @@ After completion, the system SHALL display the process exit code and a bounded t
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -374,7 +374,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -409,14 +409,14 @@ The system SHALL perform an HTTP GET to `{base_url}/api/tags` using a fetch impl
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -435,7 +435,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -465,14 +465,14 @@ The system SHALL construct `ChromaStore` from `src/vector/chroma-store.js` using
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -491,7 +491,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -521,14 +521,14 @@ The system SHALL provide a refresh control that triggers a full health snapshot 
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -547,7 +547,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -577,14 +577,14 @@ The system SHALL check that the parent directory of `cfg.chroma.persist_path` ex
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -603,7 +603,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md
@@ -632,14 +632,14 @@ The system SHALL display the configured `notes_root` absolute path string after 
 source: ollama-chroma-health-gui
 updated: 2026-05-17
 code:
-  - bin/joplin-brain-health-gui.js
+  - bin/joplin-llm-wiki-health-gui.js
   - test/health-gui/fixtures.js
-  - scripts/launchd/shims/joplin-brain-chroma-server
+  - scripts/launchd/shims/joplin-llm-wiki-chroma-server
   - src/health-gui/renderer/index.html
   - docs/macos-launchd-stack.md
   - src/health-gui/probes/fs-hints.js
   - scripts/launchd/run-chroma.sh
-  - scripts/launchd/shims/joplin-brain-sqlite-sync
+  - scripts/launchd/shims/joplin-llm-wiki-sqlite-sync
   - scripts/launchd/run-sqlite-sync.sh
   - src/health-gui/deps/dependency-starter.js
   - src/health-gui/renderer/app.js
@@ -658,7 +658,7 @@ code:
   - src/health-gui/preload.cjs
   - scripts/launchd/run-ollama.sh
   - src/health-gui/lib/single-flight.js
-  - scripts/launchd/shims/joplin-brain-ollama-serve
+  - scripts/launchd/shims/joplin-llm-wiki-ollama-serve
   - package.json
   - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
   - scripts/launchd/README.md

@@ -8,12 +8,12 @@ TBD - created by archiving change 'one-click-launchd-stack'. Update Purpose afte
 
 ### Requirement: REQ-MLS-LOCAL-ONLY Launchd stack preserves local-first boundaries
 
-The system SHALL document and enforce that LaunchAgent definitions shipped for this capability only invoke locally installed programs (`node`, `pnpm`, `joplin`, `chroma` CLI as referenced in repository documentation) and the project CLI (`joplin-brain`). The system SHALL NOT configure LaunchAgents to start outbound HTTP listeners for joplin-brain, SHALL NOT add cloud vector database endpoints, and SHALL NOT bundle third-party SaaS credentials inside plist templates.
+The system SHALL document and enforce that LaunchAgent definitions shipped for this capability only invoke locally installed programs (`node`, `pnpm`, `joplin`, `chroma` CLI as referenced in repository documentation) and the project CLI (`joplin-llm-wiki`). The system SHALL NOT configure LaunchAgents to start outbound HTTP listeners for joplin-llm-wiki, SHALL NOT add cloud vector database endpoints, and SHALL NOT bundle third-party SaaS credentials inside plist templates.
 
 #### Scenario: Operator inspects plist template
 
 - **WHEN** an operator opens the shipped LaunchAgent plist example under `scripts/launchd/`
-- **THEN** the documented keys SHALL reference only local paths and standard launchd keys (for example `Label`, `WorkingDirectory`, `ProgramArguments`, `EnvironmentVariables`, `RunAtLoad`, `KeepAlive`, `StandardOutPath`, `StandardErrorPath`) and SHALL NOT declare `Sockets`, `inetd`-style listeners, or remote URLs as part of joplin-brain orchestration.
+- **THEN** the documented keys SHALL reference only local paths and standard launchd keys (for example `Label`, `WorkingDirectory`, `ProgramArguments`, `EnvironmentVariables`, `RunAtLoad`, `KeepAlive`, `StandardOutPath`, `StandardErrorPath`) and SHALL NOT declare `Sockets`, `inetd`-style listeners, or remote URLs as part of joplin-llm-wiki orchestration.
 
 
 <!-- @trace
@@ -36,7 +36,7 @@ code:
 ---
 ### Requirement: REQ-MLS-LAUNCHD-ARTIFACTS Shipped plist and wrapper contracts
 
-The system SHALL ship LaunchAgent property list templates and paired wrapper scripts under `scripts/launchd/` for **Ollama** (`ollama serve` as the default foreground command, operator-customizable via plist `ProgramArguments`), **Chroma** (`pnpm exec chroma run` with `WorkingDirectory` at the repository root and arguments consistent with `README.md` for loopback host, port, and persist path), and **`joplin-brain sqlite-sync`** with repository `WorkingDirectory`, non-empty per-job `Label`, and `ProgramArguments` that resolve `pnpm`, `ollama`, and the project CLI via absolute or PATH-safe means. Each plist template SHALL declare `StandardOutPath` and `StandardErrorPath` under the operator home directory or another documented location outside the git index. The `sqlite-sync` wrapper SHALL change to the repository root, optionally load a documented local non-committed env file, perform dependency readiness checks required by **REQ-MLS-FULL-STACK**, and execute `pnpm exec joplin-brain sqlite-sync` with a config path provided by the installer or operator.
+The system SHALL ship LaunchAgent property list templates and paired wrapper scripts under `scripts/launchd/` for **Ollama** (`ollama serve` as the default foreground command, operator-customizable via plist `ProgramArguments`), **Chroma** (`pnpm exec chroma run` with `WorkingDirectory` at the repository root and arguments consistent with `README.md` for loopback host, port, and persist path), and **`joplin-llm-wiki sqlite-sync`** with repository `WorkingDirectory`, non-empty per-job `Label`, and `ProgramArguments` that resolve `pnpm`, `ollama`, and the project CLI via absolute or PATH-safe means. Each plist template SHALL declare `StandardOutPath` and `StandardErrorPath` under the operator home directory or another documented location outside the git index. The `sqlite-sync` wrapper SHALL change to the repository root, optionally load a documented local non-committed env file, perform dependency readiness checks required by **REQ-MLS-FULL-STACK**, and execute `pnpm exec joplin-llm-wiki sqlite-sync` with a config path provided by the installer or operator.
 
 #### Scenario: Template supports periodic sqlite-sync
 
@@ -64,12 +64,12 @@ code:
 ---
 ### Requirement: REQ-MLS-FULL-STACK Full-stack launchd registers Ollama Chroma and bounded sqlite-sync readiness
 
-The default one-click install documented for this capability SHALL register three LaunchAgents: Ollama server, Chroma server, and `joplin-brain sqlite-sync`, each with shipped plist examples. The `run-sqlite-sync.sh` wrapper SHALL probe readiness of the Ollama HTTP service and the Chroma HTTP endpoint using default base URLs `http://127.0.0.1:11434` and `http://127.0.0.1:8000` unless overridden by environment variables documented in `docs/macos-launchd-stack.md`. The wrapper SHALL retry until success or until a documented wall-clock timeout is exceeded; on timeout the wrapper SHALL print one actionable line to standard error and exit non-zero.
+The default one-click install documented for this capability SHALL register three LaunchAgents: Ollama server, Chroma server, and `joplin-llm-wiki sqlite-sync`, each with shipped plist examples. The `run-sqlite-sync.sh` wrapper SHALL probe readiness of the Ollama HTTP service and the Chroma HTTP endpoint using default base URLs `http://127.0.0.1:11434` and `http://127.0.0.1:8000` unless overridden by environment variables documented in `docs/macos-launchd-stack.md`. The wrapper SHALL retry until success or until a documented wall-clock timeout is exceeded; on timeout the wrapper SHALL print one actionable line to standard error and exit non-zero.
 
 #### Scenario: Sqlite-sync starts after Ollama and Chroma accept connections
 
 - **WHEN** Ollama and Chroma LaunchAgents are loaded and listening on the configured loopback ports and the operator loads the `sqlite-sync` LaunchAgent
-- **THEN** the `run-sqlite-sync.sh` wrapper SHALL pass its readiness phase without exiting and SHALL execute `pnpm exec joplin-brain sqlite-sync` with the configured config path.
+- **THEN** the `run-sqlite-sync.sh` wrapper SHALL pass its readiness phase without exiting and SHALL execute `pnpm exec joplin-llm-wiki sqlite-sync` with the configured config path.
 
 #### Scenario: Sqlite-sync surfaces timeout when Chroma never becomes reachable
 
@@ -162,7 +162,7 @@ The system SHALL add or extend documentation file `docs/macos-launchd-stack.md` 
 
 #### Scenario: Default Joplin Desktop database path is documented for operators
 
-- **WHEN** an operator reads `docs/macos-launchd-stack.md` to configure `joplin-brain` against Joplin Desktop
+- **WHEN** an operator reads `docs/macos-launchd-stack.md` to configure `joplin-llm-wiki` against Joplin Desktop
 - **THEN** the guide SHALL name **`~/.config/joplin-desktop/database.sqlite`** as the conventional default location for `database.sqlite` under the default profile layout and SHALL instruct the operator to copy that path as an absolute `joplin_sqlite_sync.database_path` value unless their installation uses a different profile directory.
 
 <!-- @trace

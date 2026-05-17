@@ -2,9 +2,9 @@
 
 ## Purpose
 
-本規格記錄 **joplin-brain** 在未來可能採取的兩條 **交付／裝載（distribution）** 方向：**Joplin Desktop 外掛** 與 **可經 Homebrew 安裝的獨立應用程式（含 CLI formula 或 GUI cask）**。目的為：
+本規格記錄 **joplin-llm-wiki**（npm 套件／本 repo）在未來可能採取的兩條 **交付／裝載（distribution）** 方向：**Joplin Desktop 外掛** 與 **可經 Homebrew 安裝的獨立應用程式（含 CLI formula 或 GUI cask）**。目的為：
 
-- 在 **現行交付物**（pnpm 工作區、`bin/joplin-brain` CLI、可選 Electron Health GUI、launchd 堆疊）**跑順並穩定維運**之前，**不預先綁死**實作選型；
+- 在 **現行交付物**（pnpm 工作區、`bin/joplin-llm-wiki` CLI、可選 Electron Health GUI、launchd 堆疊）**跑順並穩定維運**之前，**不預先綁死**實作選型；
 - 為日後開 change（proposal／design／tasks）時提供 **一致的架構約束與決策檢查清單**；
 - 與 `openspec/config.yaml` 之「全本機運作」「架構邊界」對齊：**任何交付形態均不得預設將筆記或向量資料送離本機**，除非另開 change 並明示理由。
 
@@ -26,7 +26,7 @@
 
 - **Core**：與裝載方式無關的管線與領域邏輯（設定載入與驗證、索引、wiki-compile、RAG、lint、探測語意等）。理想上可於 Node 行程內被呼叫，而不假設「倉庫根目錄」「pnpm 是否可用」。
 - **Host**：裝載適配層——CLI 入口、Electron 視窗、Joplin plugin 載體、launchd／brew wrapper、設定檔與資料目錄解析、`spawn` 政策等。
-- **現行 Host**：`bin/joplin-brain.js`、`bin/joplin-brain-health-gui.js`（spawn 專案內 Electron）、`scripts/launchd/*`、`README` 記載之操作方式。
+- **現行 Host**：`bin/joplin-llm-wiki.js`、`bin/joplin-llm-wiki-health-gui.js`（spawn 專案內 Electron）、`scripts/launchd/*`、`README` 記載之操作方式。
 
 ---
 
@@ -40,7 +40,7 @@
 
 - **GIVEN** 尚未有書面決策（proposal 或 ADR）宣告「baseline 穩定」
 - **WHEN** 新增依賴或重構裝載邊界
-- **THEN** 變更 **SHALL** 保留現行 `pnpm install` + `pnpm exec joplin-brain …` 或等效文件化路徑可用，且不將 plugin／brew 設為唯一安裝方式
+- **THEN** 變更 **SHALL** 保留現行 `pnpm install` + `pnpm exec joplin-llm-wiki …` 或等效文件化路徑可用，且不將 plugin／brew 設為唯一安裝方式
 
 ---
 
@@ -82,7 +82,7 @@
 
 | 形態 | 說明 | 架構要點 |
 |------|------|----------|
-| **B1：CLI formula** | `brew install` 後於 PATH 取得 `joplin-brain` 類指令 | **不得**假設使用者具 pnpm 或 git checkout；發布物須為 **可安裝樹**（例如 npm pack／release tarball）；`bin` 與資源路徑 **SHALL** 以 **install prefix** 解析，而非「倉庫根下有 `src/`」 |
+| **B1：CLI formula** | `brew install` 後於 PATH 取得 `joplin-llm-wiki` 類指令 | **不得**假設使用者具 pnpm 或 git checkout；發布物須為 **可安裝樹**（例如 npm pack／release tarball）；`bin` 與資源路徑 **SHALL** 以 **install prefix** 解析，而非「倉庫根下有 `src/`」 |
 | **B2：GUI cask（.app）** | Electron 打包之 `.app`，devDependency 與 runtime 邊界須重划 | **electron** 須為正式打包鏈之一環；**better-sqlite3** 等原生模組須對 **目標 Node／Electron ABI** 重建或提供對應 artifact；Health GUI **SHALL** 使用 **bundle 資源路徑**（例如 `process.resourcesPath`），而非開發時 `repoRoot` |
 | **B3：launchd／堆疊腳本** | plist／shim 指向 Cellar／opt 路徑 | 模板 **SHALL** 可替換為 `$(brew --prefix)` 或安裝時產生；**SHALL NOT** 硬編碼單一使用者 clone 路徑 |
 
