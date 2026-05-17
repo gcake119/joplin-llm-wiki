@@ -78,7 +78,7 @@ REPO_ROOT="$(pwd)" JOPLIN_BRAIN_CONFIG="/絕對路徑/你的.config.yaml" \
 或使用位置參數：
 
 ```bash
-./scripts/launchd/install-joplin-brain-stack.sh "/絕對路徑/notes-knowledge" "/絕對路徑/你的.config.yaml"
+./scripts/launchd/install-joplin-brain-stack.sh "/絕對路徑/joplin-llm-wiki" "/絕對路徑/你的.config.yaml"
 ```
 
 安裝腳本會：
