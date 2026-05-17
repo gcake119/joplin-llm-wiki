@@ -1,9 +1,9 @@
 ---
-description: joplin-brain 設定與測試中的 joplin_wiki_writeback／load-config 慣例
+description: joplin-llm-wiki 設定與測試中的 joplin_wiki_writeback／load-config 慣例
 alwaysApply: true
 ---
 
-# joplin-brain 設定與測試
+# joplin-llm-wiki 設定與測試
 
 - **`joplin_wiki_writeback.enabled` 預設為 true**（YAML 省略該鍵時等同開啟）。當寫回視為開啟時，`load-config` 要求 **`joplin_cli.enabled: true`** 且 **`joplin_cli.command`** 非空，否則拋 **`CONFIG_INVALID`**。
 - 在 **單元／整合測試**裡若只驗證 `wiki-compile`、`index`、`sqlite-sync` 等、**不需要**真的呼叫 Joplin CLI，請在迷你設定中加入：

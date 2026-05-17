@@ -1,14 +1,14 @@
 ---
 name: joplin-brain-dev
 description: >-
-  joplin-brain 本 repo 的開發慣例：wiki-compile、Joplin CLI 寫回、load-config、測試迷你 YAML。
+  joplin-llm-wiki（npm 套件）本 repo 開發慣例：wiki-compile、Joplin CLI 寫回、load-config、測試迷你 YAML。
 license: MIT
 metadata:
   author: project
   version: "1.0.0"
 ---
 
-# joplin-brain 開發慣例
+# joplin-llm-wiki 開發慣例
 
 在修改 `wiki-compile`、設定載入、或 **`test/**/*.test.js`** 內嵌 `config.yaml` 時遵守下列規則。
 
