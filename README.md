@@ -2,6 +2,8 @@
 
 本機-first 的 **Sources → Compiled Wiki → Schema** 三層管線：向量分 `collection_sources` / `collection_wiki`，`wiki-compile` 透過本機 Ollama 規劃並撰寫 `wiki_root`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
 
+未來若評估改為 **Joplin 外掛** 或經 **Homebrew** 發布獨立應用，架構約束與決策檢核見 [`openspec/specs/future-distribution-modes/spec.md`](openspec/specs/future-distribution-modes/spec.md)。
+
 ## 需求
 
 - Node **≥ 20**
