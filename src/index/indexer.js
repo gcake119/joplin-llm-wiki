@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import { chunkText } from "./chunker.js";
+import { stripUnpairedSurrogates } from "./sanitize-text.js";
 import {
   loadState,
   saveState,
@@ -148,7 +149,8 @@ async function indexTree(args) {
     indexed_files++;
     const st = fs.statSync(abs);
     const mtime_ms = Math.trunc(st.mtimeMs);
-    const title = inferTitle(text, rel);
+    const title = stripUnpairedSurrogates(inferTitle(text, rel));
+    const noteIdMeta = stripUnpairedSurrogates(rel);
     const chunks = chunkText(
       text,
       cfg.chunk.size_chars,
@@ -170,7 +172,7 @@ async function indexTree(args) {
     const nextChunkHashes = {};
 
     for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+      const chunk = stripUnpairedSurrogates(chunks[i]);
       const content_hash = sha256(chunk);
       nextChunkHashes[String(i)] = content_hash;
       const id = `${layer}:${rel}:${i}`;
@@ -181,8 +183,8 @@ async function indexTree(args) {
       }
 
       const meta = {
-        note_id: rel,
-        relative_path: rel,
+        note_id: noteIdMeta,
+        relative_path: noteIdMeta,
         title,
         mtime_ms,
         content_hash,

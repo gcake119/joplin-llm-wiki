@@ -1,10 +1,47 @@
-import fs from "node:fs";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { createVectorStore } from "../vector/store-factory.js";
 import { OllamaClient } from "../ollama/client.js";
 import { indexAll } from "../index/indexer.js";
 import { runJoplinCliPreflight } from "../joplin/cli-runner.js";
+
+/**
+ * 若 collection 內已有向量，維度須與目前 `ollama.embed_model` 一致；否則首次 upsert 才由 Chroma 回錯。
+ *
+ * @param {{
+ *   peek: (layer: 'source'|'wiki', limit: number) => Promise<{
+ *     embeddings?: (number[] | null)[] | null,
+ *   }>,
+ * }} chroma
+ * @param {import('../ollama/client.js').OllamaClient} ollama
+ */
+async function assertChromaMatchesOllamaEmbedding(chroma, ollama) {
+  const probe = await ollama.embedBatch(["."]);
+  const dim = probe[0]?.length ?? 0;
+  if (!dim) {
+    const err = new Error(
+      "Ollama returned an empty embedding for dimension probe.",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "OLLAMA_UNAVAILABLE";
+    throw err;
+  }
+  for (const layer of /** @type {const} */ (["source", "wiki"])) {
+    let snap;
+    try {
+      snap = await chroma.peek(layer, 1);
+    } catch {
+      continue;
+    }
+    const first = snap?.embeddings?.[0];
+    if (Array.isArray(first) && first.length > 0 && first.length !== dim) {
+      const err = new Error(
+        `Chroma ${layer} collection stores dimension ${first.length} but current ollama.embed_model produced ${dim}. Clear chroma.persist_path or use new collection_sources/collection_wiki names, then re-index.`,
+      );
+      /** @type {Error & { code?: string }} */ (err).code = "CHROMA_ERROR";
+      throw err;
+    }
+  }
+}
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
@@ -36,6 +73,8 @@ export async function createIndexRuntime(cfg) {
     timeoutMs: cfg.ollama.timeout_ms,
     embedBatchSize: cfg.ollama.embed_batch_size,
   });
+
+  await assertChromaMatchesOllamaEmbedding(chroma, ollama);
 
   return { chroma, ollama };
 }

@@ -2,6 +2,38 @@ import { ChromaClient } from "chromadb";
 import path from "node:path";
 
 /**
+ * @param {'upsert'|'delete'} op
+ * @param {unknown} err
+ */
+function wrapChromaWriteError(op, err) {
+  const msg = String(/** @type {{ message?: string }} */ (err)?.message ?? err);
+  const hints = [];
+  if (/dimension|mismatch|embedding|vector|Expected dim|incompatible/i.test(msg)) {
+    hints.push(
+      "若曾更換 ollama.embed_model，或 Chroma collection 由舊版／其他嵌入維度建立，請：清空 chroma.persist_path、刪除既有 collection，或改用新的 collection_sources／collection_wiki 名稱後再執行 index。",
+    );
+  }
+  if (/metadata|Metadatas|422|Unprocessable/i.test(msg)) {
+    hints.push(
+      "若錯誤與 metadata 或 API 格式有關，請確認 Chroma server 與 chromadb 套件版本相容。",
+    );
+  }
+  if (/lone leading surrogate|lone surrogate|parse the request body as JSON/i.test(msg)) {
+    hints.push(
+      "若訊息與 surrogate／JSON parse 有關，請升級套件後重跑 index（索引會剔除切塊後不合法的 UTF-16 組合以利 Chroma）。",
+    );
+  }
+  const suffix = hints.length ? `\n${hints.join("\n")}` : "";
+  const out = new Error(
+    `Chroma ${op} failed (${msg}).${suffix}`,
+  );
+  /** @type {Error & { code?: string; cause?: unknown }} */ (out).code =
+    "CHROMA_ERROR";
+  /** @type {Error & { code?: string; cause?: unknown }} */ (out).cause = err;
+  return out;
+}
+
+/**
  * @typedef {{
  *   relative_path: string,
  *   title: string,
@@ -70,7 +102,11 @@ export class ChromaStore {
    */
   async upsert(layer, { ids, embeddings, documents, metadatas }) {
     const c = this.col(layer);
-    await c.upsert({ ids, embeddings, documents, metadatas });
+    try {
+      await c.upsert({ ids, embeddings, documents, metadatas });
+    } catch (e) {
+      throw wrapChromaWriteError("upsert", e);
+    }
   }
 
   /**
@@ -80,7 +116,11 @@ export class ChromaStore {
   async deleteIds(layer, ids) {
     if (ids.length === 0) return;
     const c = this.col(layer);
-    await c.delete({ ids });
+    try {
+      await c.delete({ ids });
+    } catch (e) {
+      throw wrapChromaWriteError("delete", e);
+    }
   }
 
   /**
