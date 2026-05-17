@@ -9,7 +9,16 @@ import YAML from "yaml";
  *   wiki_root: string,
  *   wiki: { glob: string },
  *   wiki_schema: { path: string, strict: boolean },
- *   wiki_ingest: { max_pages_per_run: number, min_pages_per_run: number, max_planner_rounds: number },
+ *   wiki_ingest: {
+ *     max_pages_per_run: number,
+ *     min_pages_per_run: number,
+ *     max_planner_rounds: number,
+ *     corpus_mode_enabled: boolean,
+ *     corpus_digest_max_files: number,
+ *     corpus_digest_offset: number,
+ *     corpus_writer_excerpt_mode: string,
+ *     corpus_chroma_top_k: number,
+ *   },
  *   write_back: { sources_enabled: boolean },
  *   ollama: { base_url: string, embed_model: string, chat_model: string, timeout_ms: number, embed_batch_size: number },
  *   chroma: { persist_path: string, collection_sources: string, collection_wiki: string },
@@ -108,18 +117,47 @@ export async function loadConfig(configPath) {
     ),
   };
 
+  const ingestNest = nest(doc, "wiki_ingest");
+  const corpus_writer_excerpt_mode_raw = str(
+    ingestNest,
+    "corpus_writer_excerpt_mode",
+    "filesystem_slice",
+  );
+  if (
+    corpus_writer_excerpt_mode_raw !== "filesystem_slice" &&
+    corpus_writer_excerpt_mode_raw !== "filesystem_plus_chroma"
+  ) {
+    const err = new Error(
+      `wiki_ingest.corpus_writer_excerpt_mode must be "filesystem_slice" or "filesystem_plus_chroma"`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+
   const wiki_ingest = {
-    max_pages_per_run: num(
-      nest(doc, "wiki_ingest"),
-      "max_pages_per_run",
-      15,
-      { min: 1, max: 500 },
-    ),
-    min_pages_per_run: num(nest(doc, "wiki_ingest"), "min_pages_per_run", 10, {
+    max_pages_per_run: num(ingestNest, "max_pages_per_run", 15, {
+      min: 1,
+      max: 500,
+    }),
+    min_pages_per_run: num(ingestNest, "min_pages_per_run", 10, {
       min: 0,
       max: 500,
     }),
-    max_planner_rounds: num(nest(doc, "wiki_ingest"), "max_planner_rounds", 3, {
+    max_planner_rounds: num(ingestNest, "max_planner_rounds", 3, {
+      min: 1,
+      max: 50,
+    }),
+    corpus_mode_enabled: readCorpusModeEnabled(ingestNest),
+    corpus_digest_max_files: wikiIngestInt(ingestNest, "corpus_digest_max_files", 500, {
+      min: 40,
+      max: 1000,
+    }),
+    corpus_digest_offset: wikiIngestInt(ingestNest, "corpus_digest_offset", 0, {
+      min: 0,
+      max: 10_000_000,
+    }),
+    corpus_writer_excerpt_mode: corpus_writer_excerpt_mode_raw,
+    corpus_chroma_top_k: wikiIngestInt(ingestNest, "corpus_chroma_top_k", 8, {
       min: 1,
       max: 50,
     }),
@@ -425,6 +463,46 @@ function bool(doc, key, def) {
   const v = doc[key];
   if (typeof v !== "boolean") return def;
   return v;
+}
+
+/**
+ * @param {Record<string, unknown>} ingestNest wiki_ingest mapping
+ */
+function readCorpusModeEnabled(ingestNest) {
+  if (!Object.prototype.hasOwnProperty.call(ingestNest, "corpus_mode_enabled"))
+    return true;
+  const v = ingestNest.corpus_mode_enabled;
+  if (typeof v !== "boolean") {
+    const err = new Error("wiki_ingest.corpus_mode_enabled must be a boolean");
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return v;
+}
+
+/**
+ * @param {Record<string, unknown>} doc
+ * @param {string} key
+ * @param {number} def
+ * @param {{ min: number, max: number }} bounds
+ */
+function wikiIngestInt(doc, key, def, bounds) {
+  if (!Object.prototype.hasOwnProperty.call(doc, key)) return def;
+  const v = doc[key];
+  if (typeof v !== "number" || !Number.isFinite(v) || Math.trunc(v) !== v) {
+    const err = new Error(`wiki_ingest.${key} must be an integer`);
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const iv = /** @type {number} */ (v);
+  if (iv < bounds.min || iv > bounds.max) {
+    const err = new Error(
+      `wiki_ingest.${key} must be between ${bounds.min} and ${bounds.max} inclusive`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return iv;
 }
 
 /**

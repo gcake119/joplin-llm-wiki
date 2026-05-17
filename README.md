@@ -91,6 +91,16 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 - `wiki-schema.example.yaml`
 - `fixtures/full-karpathy.config.yaml`（需改成你的絕對路徑）
 
+### wiki-compile：`wiki_ingest.corpus_*`（主題式全庫上下文）
+
+預設行為對齊 **notebook-wide thematic PKM**：**省略** `wiki_ingest.corpus_mode_enabled` 時視為 **`true`**，`wiki-compile` 會以 **`discoverMarkdown` 字典序**配合 **`corpus_digest_offset`**（環狀位移）將最多 **`corpus_digest_max_files`**（預設 500，合法 40–1000）筆來源路徑＋mtime 送入 planner；撰寫階段對同一視窗組裝 excerpts（仍可受內文明文長度上限切斷）。請留意 **tokens／本機流量**將高於過往兼容路徑。
+
+- **`corpus_digest_offset`**：整數輪替起點；多輪手動換 offset 可把 digest 視窗環狀移位以覆蓋不同排序區段。
+- **`corpus_writer_excerpt_mode`**：`filesystem_slice`（僅檔案系統）或 `filesystem_plus_chroma`（在成功命中時附加本機 **`collection_sources`** 鄰近 chunk；失效或無命中時自動降級，stderr 會出現單行 JSON：`{"warning":"CORPUS_CHROMA_DEGRADED",...}`）。
+- **Rollback（打破預設加寬視窗時）**：在 YAML **顯式**寫 **`wiki_ingest.corpus_mode_enabled: false`**，還原過往 forty-file digest／五檔 excerpt 自動化相容路徑；詳見 **`CHANGELOG.md`**。
+
+非 dry-run 成功與 **`--dry-run`** 在完成規劃路徑時，stdout 末行摘要 JSON（除 `NO_SOURCE_MARKDOWN` 等早退情境外）會帶 **`corpus_mode`** 與（僅 corpus 為真時）**`corpus_digest_paths_in_prompt_count`**。
+
 ## Joplin Desktop SQLite 匯出＋排程（`sqlite-sync`）
 
 - **預設筆記目錄**：範例使用倉庫根目錄 `./notes_root`；此資料夾已列於 `.gitignore`，**筆記 Markdown 不會進版控**。Clone 後若無此目錄，請自行 `mkdir -p notes_root` 或由匯出流程建立。

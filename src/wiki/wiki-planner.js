@@ -1,6 +1,13 @@
+/**
+ * Sources digest for planner prompts. When `wiki_ingest.corpus_mode_enabled`
+ * defaults true (or key omitted), digest uses rotated lex order window (REQ-WCC-002).
+ * Explicit `corpus_mode_enabled: false` keeps legacy forty-file digest (design Decision:
+ * `wiki_ingest.corpus_mode_enabled` 預設 true).
+ */
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import path from "node:path";
 import fs from "node:fs";
+import { rotatedSlice } from "./corpus-slice.js";
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
@@ -8,16 +15,33 @@ import fs from "node:fs";
 export async function summarizeSourcesForPlanner(cfg) {
   const root = path.resolve(cfg.notes_root);
   const files = await discoverMarkdown(root, cfg.notes_glob);
+  const ingest = cfg.wiki_ingest;
+
+  /** @type {string[]} */
+  let digestAbs;
+  if (!ingest.corpus_mode_enabled) {
+    digestAbs = files.slice(0, Math.min(files.length, 40));
+  } else {
+    const maxTake = Math.min(files.length, ingest.corpus_digest_max_files);
+    digestAbs = rotatedSlice(files, ingest.corpus_digest_offset, maxTake);
+  }
+
   const lines = [];
-  for (const abs of files.slice(0, 40)) {
+  for (const abs of digestAbs) {
     const rel = relativeUnder(root, abs);
     const st = fs.statSync(abs);
     lines.push(`${rel} mtime_ms=${Math.trunc(st.mtimeMs)}`);
   }
-  if (files.length > 40) lines.push(`… ${files.length - 40} more files`);
+  if (!ingest.corpus_mode_enabled) {
+    if (files.length > 40) lines.push(`… ${files.length - 40} more files`);
+  } else if (digestAbs.length < files.length) {
+    lines.push(`… ${files.length - digestAbs.length} more files`);
+  }
+
   return {
     summary: lines.join("\n"),
     sourceFileCount: files.length,
+    digest_paths_in_prompt_count: digestAbs.length,
   };
 }
 
@@ -26,7 +50,7 @@ export async function summarizeSourcesForPlanner(cfg) {
  *   cfg: import('../config/load-config.js').AppConfig,
  *   schema: import('../schema/schema-validator.js').WikiSchema,
  *   ollama: import('../ollama/client.js').OllamaClient,
- *   notesSummary: { summary: string, sourceFileCount: number },
+ *   notesSummary: { summary: string, sourceFileCount: number, digest_paths_in_prompt_count: number },
  * }} args
  * @returns {Promise<{ paths: string[], raw: string }>}
  */

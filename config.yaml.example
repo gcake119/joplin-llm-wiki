@@ -17,6 +17,13 @@ wiki_ingest:
   max_pages_per_run: 15
   min_pages_per_run: 10
   max_planner_rounds: 3
+  # Omitting corpus_mode_enabled ⇒ true (notebook-wide digest + rotated excerpts).
+  # Set explicitly to false if you rely on legacy 40-file planner digest / 5-file writer excerpt.
+  # corpus_mode_enabled: false
+  corpus_digest_max_files: 500
+  corpus_digest_offset: 0
+  corpus_writer_excerpt_mode: filesystem_slice
+  corpus_chroma_top_k: 8
 
 write_back:
   sources_enabled: false

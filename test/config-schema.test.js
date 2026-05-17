@@ -81,3 +81,138 @@ required_hub_pages: []
       /** @type {Error & { code?: string }} */ (e).code === "SCHEMA_INVALID",
   );
 });
+
+test("SCN-WCC-CFG corpus_mode_enabled omitted defaults true + digest defaults", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wccfg-"));
+  const notes = path.join(tmp, "notes");
+  fs.mkdirSync(notes);
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(cfgPath);
+  assert.strictEqual(cfg.wiki_ingest.corpus_mode_enabled, true);
+  assert.strictEqual(cfg.wiki_ingest.corpus_digest_max_files, 500);
+});
+
+test("SCN-WCC-CFG corpus_mode_enabled false + invalid excerpt enum rejected", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wccfg2-"));
+  const notes = path.join(tmp, "notes");
+  fs.mkdirSync(notes);
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(tmp, "ok.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_mode_enabled: false
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const ok = await loadConfig(path.join(tmp, "ok.yaml"));
+  assert.strictEqual(ok.wiki_ingest.corpus_mode_enabled, false);
+
+  fs.writeFileSync(
+    path.join(tmp, "bad.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_writer_excerpt_mode: chroma_cloud
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "bad.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});
+
+test("SCN-WCC-CFG corpus_digest_max_files below minimum rejected", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wccfg3-"));
+  const notes = path.join(tmp, "notes");
+  fs.mkdirSync(notes);
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_digest_max_files: 39
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});

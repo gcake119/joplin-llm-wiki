@@ -13,6 +13,8 @@ wiki_ingest:
   max_pages_per_run: 15
   min_pages_per_run: 10
   max_planner_rounds: 3
+  # Omitted corpus_mode_enabled ⇒ true (notebook-wide digest). Uncomment to pin legacy planner/excerpt sizing:
+  # corpus_mode_enabled: false
 
 write_back:
   sources_enabled: false

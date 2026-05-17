@@ -7,6 +7,8 @@ import {
 } from "../schema/schema-validator.js";
 import { OllamaClient } from "../ollama/client.js";
 import { summarizeSourcesForPlanner, planWikiPaths } from "./wiki-planner.js";
+import { rotatedSlice } from "./corpus-slice.js";
+import { corpusChromaAugmentFromChroma } from "./corpus-chroma-excerpt.js";
 import {
   serializeWikiPage,
   validateCompiledFrontmatter,
@@ -20,6 +22,24 @@ import {
 } from "../joplin/wiki-writeback.js";
 
 /**
+ * @param {Record<string, unknown>} payload
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {{ digest_paths_in_prompt_count?: number }} notesBundle
+ */
+function attachCorpusTelemetry(payload, cfg, notesBundle) {
+  const wi = cfg.wiki_ingest;
+  payload.corpus_mode = wi.corpus_mode_enabled === true;
+  if (wi.corpus_mode_enabled) {
+    payload.corpus_digest_paths_in_prompt_count =
+      notesBundle.digest_paths_in_prompt_count ?? 0;
+  }
+}
+
+/**
+ * Wiki-compile flow: planner uses **Ollama chat only** for JSON paths (`planWikiPaths`);
+ * excerpts may rotate over `notes_root` and optionally call local **`collection_sources`**
+ * via embedding + chromadb SDK (see `corpus-chroma-excerpt.js`, design Decision on local-only vectors).
+ *
  * @param {{ ctx: { configPath: string, argv: string[], opts: Map<string, string> } }} args
  */
 export async function runWikiCompileFlow(args) {
@@ -101,7 +121,9 @@ export async function runWikiCompileFlow(args) {
     assertHubCoverage(schema, plannedSet, wikiRoot);
 
   if (paths.length === 0) {
-    console.log(JSON.stringify({ warning: "PLAN_EMPTY", paths: [] }));
+    const emptyPlan = { warning: "PLAN_EMPTY", paths: [] };
+    attachCorpusTelemetry(emptyPlan, cfg, notesBundle);
+    console.log(JSON.stringify(emptyPlan));
     return { dryRun: dryRun === true, paths, truncated };
   }
 
@@ -112,6 +134,7 @@ export async function runWikiCompileFlow(args) {
       truncated,
       planner_raw: plan.raw?.slice(0, 2000),
     };
+    attachCorpusTelemetry(dryPayload, cfg, notesBundle);
     if (cfg.joplin_wiki_writeback.enabled) {
       Object.assign(dryPayload, summarizeWikiWritebackDry(cfg, wikiRoot, paths));
     }
@@ -156,6 +179,7 @@ export async function runWikiCompileFlow(args) {
     pages_written: paths.length,
     truncated,
   };
+  attachCorpusTelemetry(compileSummary, cfg, notesBundle);
   if (cfg.joplin_wiki_writeback.enabled) {
     Object.assign(
       compileSummary,
@@ -216,7 +240,7 @@ async function pickDefaultSourceRefs(cfg) {
  */
 async function writeWikiPageBody(args) {
   const { cfg, ollama, relPath, schema, notesSummary } = args;
-  const excerpt = await readSourcesExcerpt(cfg);
+  const excerpt = await readSourcesExcerpt(cfg, ollama, relPath);
   const prompt = `Write a concise Markdown wiki page for path "${relPath}".
 
 Schema hubs: ${schema.required_hub_pages.join(", ")}
@@ -240,18 +264,48 @@ ${excerpt}
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {import('../ollama/client.js').OllamaClient} ollama
+ * @param {string} relPath
  */
-async function readSourcesExcerpt(cfg) {
+async function readSourcesExcerpt(cfg, ollama, relPath) {
   const root = path.resolve(cfg.notes_root);
   const files = await discoverMarkdown(root, cfg.notes_glob);
+  const ingest = cfg.wiki_ingest;
+
+  /** @type {string[]} */
+  let sliceAbs;
+  if (!ingest.corpus_mode_enabled) {
+    sliceAbs = files.slice(0, 5);
+  } else {
+    const maxTake = Math.min(files.length, ingest.corpus_digest_max_files);
+    sliceAbs = rotatedSlice(files, ingest.corpus_digest_offset, maxTake);
+  }
+
   const parts = [];
   let budget = 8000;
-  for (const abs of files.slice(0, 5)) {
+  for (const abs of sliceAbs) {
     const rel = relativeUnder(root, abs);
-    const t = fs.readFileSync(abs, "utf8").slice(0, budget);
+    let t = fs.readFileSync(abs, "utf8");
+    if (budget <= 0) break;
+    t = t.slice(0, budget);
     budget -= t.length;
     parts.push(`### ${rel}\n\n${t}`);
-    if (budget <= 0) break;
   }
-  return parts.join("\n\n");
+  let out = parts.join("\n\n");
+
+  if (
+    ingest.corpus_mode_enabled &&
+    ingest.corpus_writer_excerpt_mode === "filesystem_plus_chroma"
+  ) {
+    const chromaMd = await corpusChromaAugmentFromChroma(
+      cfg,
+      ollama,
+      relPath,
+    );
+    if (chromaMd) {
+      out = `${out}\n\n### chroma_neighbors\n\n${chromaMd}`;
+    }
+  }
+
+  return out;
 }
