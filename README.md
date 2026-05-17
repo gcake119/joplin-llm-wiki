@@ -28,7 +28,7 @@ pnpm exec joplin-brain ask --config ./my.config.yaml "你的問題"
 pnpm exec joplin-brain lint --config ./my.config.yaml
 ```
 
-Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
+Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 寫回（`JOPLIN_CLI_FAILED` / `JOPLIN_CLI_WRITE_FAILED`）** 等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
 
 ## 設定範例
 
@@ -68,8 +68,7 @@ pnpm test
 整合索引測試預設使用記憶體向量後端（不透過 Chroma HTTP），以降低 CI 對本機 Chroma 版本的耦合：
 
 - `JOPLIN_BRAIN_TEST_MEMORY_VECTOR=1`（測試會自動設定）
-
-真實環境請勿設定上述變數，並先啟動 `chroma run`。
+- 迷你 `config.yaml` 若**不需**驗證 Joplin 寫回，請設 `joplin_wiki_writeback.enabled: false`（或啟用 `joplin_cli`），否則 `load-config` 會因預設寫回開啟而 `CONFIG_INVALID`。
 
 ## 風險與注意
 

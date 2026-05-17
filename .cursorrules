@@ -15,4 +15,8 @@ This project uses Spectra for Spec-Driven Development(SDD).
 
 discuss? → propose → apply ⇄ ingest → archive
 
+## joplin-brain（實作速記）
+
+- `wiki-compile` 可觸發 **`joplin_wiki_writeback`**（預設開啟）；迷你測試用設定請見 `.cursor/rules/joplin-brain-config.mdc`。
+
 <!-- SPECTRA:END -->

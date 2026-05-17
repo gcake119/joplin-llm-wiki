@@ -1,0 +1,18 @@
+---
+description: joplin-brain 設定與測試中的 joplin_wiki_writeback／load-config 慣例
+alwaysApply: true
+---
+
+# joplin-brain 設定與測試
+
+- **`joplin_wiki_writeback.enabled` 預設為 true**（YAML 省略該鍵時等同開啟）。當寫回視為開啟時，`load-config` 要求 **`joplin_cli.enabled: true`** 且 **`joplin_cli.command`** 非空，否則拋 **`CONFIG_INVALID`**。
+- 在 **單元／整合測試**裡若只驗證 `wiki-compile`、`index`、`sqlite-sync` 等、**不需要**真的呼叫 Joplin CLI，請在迷你設定中加入：
+
+```yaml
+joplin_wiki_writeback:
+  enabled: false
+```
+
+  或改為啟用 `joplin_cli` 並指向測試用 fake 可執行檔（見 `test/joplin-wiki-writeback.test.js` 的 `fakeJoplinExit0`）。
+- **`wiki-compile --dry-run`**：不會執行會變更 Joplin 資料庫的寫回子程序；仍可能輸出 `writeback_would_write` 等乾跑統計（對 planner 路徑若檔案尚未存在，僅依路徑推估 topic）。
+- 參考實作：`src/config/load-config.js`、`src/joplin/wiki-writeback.js`、`src/wiki/wiki-compiler.js`。
