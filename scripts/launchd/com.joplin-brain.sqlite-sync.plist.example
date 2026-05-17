@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.joplin-brain.sqlite-sync</string>
+  <key>WorkingDirectory</key>
+  <string>__REPO_ROOT__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO_ROOT__/scripts/launchd/run-sqlite-sync.sh</string>
+    <string>__CONFIG_ABS__</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>REPO_ROOT</key>
+    <string>__REPO_ROOT__</string>
+    <key>JOPLIN_BRAIN_CONFIG</key>
+    <string>__CONFIG_ABS__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/joplin-brain/sqlite-sync.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/joplin-brain/sqlite-sync.err.log</string>
+</dict>
+</plist>

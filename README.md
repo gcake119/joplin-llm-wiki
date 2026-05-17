@@ -40,7 +40,7 @@ Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 
 
 - **預設筆記目錄**：範例使用倉庫根目錄 `./notes_root`；此資料夾已列於 `.gitignore`，**筆記 Markdown 不會進版控**。克隆後若無此目錄，請自行 `mkdir -p notes_root` 或由匯出流程建立。
 - **原生模組**：`sqlite-sync` 依賴 `better-sqlite3`。若 `pnpm install` 後出現 bindings／「Could not locate」類錯誤，在 pnpm 11+ 通常需先執行 `pnpm approve-builds --all`（或依互動提示核准該套件），再重新安裝以完成編譯。
-- **來源**：Joplin Desktop 設定檔目錄內之 `database.sqlite`（依你的安裝位置調整絕對路徑）。
+- **來源**：Joplin Desktop 設定檔目錄內之 `database.sqlite`（依你的安裝位置調整絕對路徑；常見預設為 **`~/.config/joplin-desktop/database.sqlite`**）。
 - **行為**：`joplin_sqlite_sync.enabled: true` 時，`sqlite-sync` 以唯讀開啟 SQLite，將筆記匯出至 `notes_root`（`reconcile_mode: mirror` 時會刪除資料庫已不存在的對應 `.md`）；可選擇接續執行與 `index`／`wiki-compile` 相同的管線。
 - **風險**：勿將匯出目錄指到 Joplin Profile 內你仍手動維護的 `.md`，除非你確定 mirror 刪除策略可接受。
 
@@ -50,6 +50,8 @@ pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml --dry-run
 ```
 
 定時執行建議使用系統 cron 或 macOS `launchd` 呼叫上述命令；亦可於設定中設定 `joplin_sqlite_sync.schedule.every_seconds` 或使用 `--every <秒數>` 由單一行程輪詢（收到 SIGINT 時停止）。
+
+**macOS 一鍵常駐（Ollama + Chroma + `sqlite-sync`）**：若要以登入後三支 LaunchAgent 全堆疊背景執行（含就緒等待與日誌路徑），見 **[`docs/macos-launchd-stack.md`](docs/macos-launchd-stack.md)**。
 
 ## Joplin：Desktop、CLI 與 Wiki 寫回（`joplin_wiki_writeback`）
 
@@ -76,4 +78,4 @@ pnpm test
 - **矛盾判定為「候選」**：需人工複核。
 - **Chroma CLI 與 `chromadb` client 版本**：若連線異常，請確認 `pnpm exec chroma --version` 與官方相容矩陣；本 repo 已將 CLI 心跳改用 `listCollections` 探測以避免部分版本的 `heartbeat` 動詞不一致。
 
-排程範例見 `docs/scheduling-examples.md`。
+排程範例見 `docs/scheduling-examples.md`。macOS `launchd` 全堆疊安裝見 `docs/macos-launchd-stack.md`。
