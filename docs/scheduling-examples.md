@@ -6,10 +6,10 @@
 
 ```cron
 # 每小時編譯 wiki（請改成你的 config 路徑）
-0 * * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-brain wiki-compile --config ./my-karpathy.config.yaml >> ~/logs/joplin-brain-wiki.log 2>&1
+0 * * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki wiki-compile --config ./my-karpathy.config.yaml >> ~/logs/joplin-llm-wiki-wiki-compile.log 2>&1
 
 # 每天凌晨跑 lint 報告
-15 3 * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-brain lint --config ./my-karpathy.config.yaml >> ~/logs/joplin-brain-lint.log 2>&1
+15 3 * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki lint --config ./my-karpathy.config.yaml >> ~/logs/joplin-llm-wiki-lint.log 2>&1
 ```
 
 建議：

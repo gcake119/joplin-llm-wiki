@@ -1,4 +1,4 @@
-# joplin-brain（Karpathy MVP）
+# joplin-llm-wiki（Karpathy MVP）
 
 本機-first 的 **Sources → Compiled Wiki → Schema** 三層管線：向量分 `collection_sources` / `collection_wiki`，`wiki-compile` 透過本機 Ollama 規劃並撰寫 `wiki_root`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
 
@@ -21,13 +21,13 @@ pnpm exec chroma run --path ./data/chroma --host 127.0.0.1 --port 8000
 
 ```bash
 pnpm install
-pnpm exec joplin-brain --help
-pnpm exec joplin-brain index --config ./my.config.yaml
-pnpm exec joplin-brain watch --config ./my.config.yaml
-pnpm exec joplin-brain wiki-compile --config ./my.config.yaml
-pnpm exec joplin-brain wiki-compile --config ./my.config.yaml --dry-run
-pnpm exec joplin-brain ask --config ./my.config.yaml "你的問題"
-pnpm exec joplin-brain lint --config ./my.config.yaml
+pnpm exec joplin-llm-wiki --help
+pnpm exec joplin-llm-wiki index --config ./my.config.yaml
+pnpm exec joplin-llm-wiki watch --config ./my.config.yaml
+pnpm exec joplin-llm-wiki wiki-compile --config ./my.config.yaml
+pnpm exec joplin-llm-wiki wiki-compile --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki ask --config ./my.config.yaml "你的問題"
+pnpm exec joplin-llm-wiki lint --config ./my.config.yaml
 ```
 
 Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 寫回（`JOPLIN_CLI_FAILED` / `JOPLIN_CLI_WRITE_FAILED`）** 等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
@@ -40,7 +40,7 @@ Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 
 pnpm install
 # 若 electron 被 pnpm 拒跑 postinstall：pnpm approve-builds --all && pnpm install
 pnpm run health-gui -- --config ./my.config.yaml
-# 或：pnpm exec joplin-brain-health-gui -- --config ./my.config.yaml
+# 或：pnpm exec joplin-llm-wiki-health-gui -- --config ./my.config.yaml
 ```
 
 - **必備**：`--config <path>`。
@@ -66,8 +66,8 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 - **風險**：勿將匯出目錄指到 Joplin Profile 內你仍手動維護的 `.md`，除非你確定 mirror 刪除策略可接受。
 
 ```bash
-pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml
-pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml
+pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml --dry-run
 ```
 
 定時執行建議使用系統 cron 或 macOS `launchd` 呼叫上述命令；亦可於設定中設定 `joplin_sqlite_sync.schedule.every_seconds` 或使用 `--every <秒數>` 由單一行程輪詢（收到 SIGINT 時停止）。
@@ -90,7 +90,7 @@ pnpm test
 
 整合索引測試預設使用記憶體向量後端（不透過 Chroma HTTP），以降低 CI 對本機 Chroma 版本的耦合：
 
-- `JOPLIN_BRAIN_TEST_MEMORY_VECTOR=1`（測試會自動設定）
+- `JOPLIN_LLMWIKI_TEST_MEMORY_VECTOR=1`（建議）；仍相容 `JOPLIN_BRAIN_TEST_MEMORY_VECTOR=1`（測試會擇一自動設定）
 - 迷你 `config.yaml` 若**不需**驗證 Joplin 寫回，請設 `joplin_wiki_writeback.enabled: false`（或啟用 `joplin_cli`），否則 `load-config` 會因預設寫回開啟而 `CONFIG_INVALID`。
 
 ## 風險與注意
