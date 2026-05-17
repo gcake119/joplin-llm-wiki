@@ -9,7 +9,7 @@ import { indexAll } from "../src/index/indexer.js";
 import { installMockOllamaFetch } from "./helpers/mock-ollama-fetch.mjs";
 
 test("SCN-IDX-01 + SCN-IDX-DUAL indexing writes chroma chunks", async () => {
-  process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR = "1";
+  process.env.JOPLIN_LLMWIKI_TEST_MEMORY_VECTOR = "1";
   const restoreFetch = installMockOllamaFetch({ embedDim: 16 });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-idx-"));
   const notes = path.join(tmp, "notes");
@@ -71,7 +71,7 @@ required_hub_pages: []
 });
 
 test("SCN-IDX-IDEMP second index skips embeddings", async () => {
-  process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR = "1";
+  process.env.JOPLIN_LLMWIKI_TEST_MEMORY_VECTOR = "1";
   const restoreFetch = installMockOllamaFetch({ embedDim: 8 });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-idem-"));
   const notes = path.join(tmp, "notes");

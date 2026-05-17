@@ -29,7 +29,7 @@ function parseConfigArg(argv) {
 
 const rawConfig = parseConfigArg(process.argv.slice(1));
 if (!rawConfig) {
-  console.error("joplin-brain-health-gui: missing --config <path>");
+  console.error("joplin-llm-wiki-health-gui: missing --config <path>");
   process.exit(1);
 }
 const configPath = path.resolve(rawConfig);

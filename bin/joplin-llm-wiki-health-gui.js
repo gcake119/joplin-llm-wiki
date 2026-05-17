@@ -21,7 +21,7 @@ function parseConfig(argv) {
 
 const configPath = parseConfig(process.argv.slice(2));
 if (!configPath) {
-  console.error("joplin-brain-health-gui: --config <path> is required");
+  console.error("joplin-llm-wiki-health-gui: --config <path> is required");
   process.exit(1);
 }
 

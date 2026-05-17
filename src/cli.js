@@ -130,10 +130,10 @@ function emitErr(error, message) {
 }
 
 function printGlobalHelp() {
-  console.log(`joplin-brain — local Karpathy-style wiki + RAG over Joplin markdown
+  console.log(`joplin-llm-wiki — local Karpathy-style wiki + RAG over Joplin markdown
 
 Usage:
-  joplin-brain [options] <command> [command-options]
+  joplin-llm-wiki [options] <command> [command-options]
 
 Commands:
   index          Index sources (and wiki when configured)
@@ -150,8 +150,8 @@ Common:
   --config <path>          Path to YAML config (required for commands above)
 
 Examples:
-  pnpm exec joplin-brain --help
-  pnpm exec joplin-brain index --config config.yaml
+  pnpm exec joplin-llm-wiki --help
+  pnpm exec joplin-llm-wiki index --config config.yaml
 `);
 }
 
@@ -162,7 +162,7 @@ function printCommandHelp(command) {
   console.log(`${command}
 
 Usage:
-  joplin-brain ${command} --config <path> [options]
+  joplin-llm-wiki ${command} --config <path> [options]
 
 Run with a valid config file; see config.yaml.example.
 `);

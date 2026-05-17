@@ -8,7 +8,10 @@
  * }} opts
  */
 export async function createVectorStore(opts) {
-  if (process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR === "1") {
+  const memVec =
+    process.env.JOPLIN_LLMWIKI_TEST_MEMORY_VECTOR === "1" ||
+    process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR === "1";
+  if (memVec) {
     const { MemoryVectorStore } = await import("./memory-vector-store.js");
     return new MemoryVectorStore(opts);
   }
