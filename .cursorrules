@@ -10,6 +10,7 @@ This project uses Spectra for Spec-Driven Development(SDD).
 - **Changes**: `openspec/changes/` - Proposals, what SHOULD change
 - **Archive**: `openspec/changes/archive/` - Completed changes
 - **Config**: `openspec/config.yaml` - Project context and rules
+- **Roadmap**: `openspec/ROADMAP.md` - Planned capabilities (non-normative until proposed)
 
 ## Workflow
 

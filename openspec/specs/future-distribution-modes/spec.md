@@ -144,6 +144,7 @@
 
 ## Related specs & docs
 
+- **Roadmap 總覽（與其他規劃項並列）**：[`openspec/ROADMAP.md`](../ROADMAP.md) — **PR-DISTRIBUTION-PLUGIN-BREW**（本檔兩條交付路線）、**PR-PIPELINE-RESUME**（管線 checkpoint 等）
 - 現行 Health GUI／堆疊：`openspec/specs/local-runtime-health-gui/spec.md`、`openspec/specs/macos-launchd-stack/spec.md`
 - 專案脈絡與全本機規則：`openspec/config.yaml`
 - 使用者操作入口：`README.md`
@@ -155,3 +156,4 @@
 | 日期 | 說明 |
 |------|------|
 | 2026-05-17 | 初版：記錄 TRACK-A（Joplin plugin）與 TRACK-B（Homebrew／獨立 app）之規範與決策約束 |
+| 2026-05-17 | Roadmap 互指：`openspec/ROADMAP.md` **PR-DISTRIBUTION-PLUGIN-BREW**，Related docs 合併重複項目 |

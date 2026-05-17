@@ -718,3 +718,9 @@ code:
 tests:
   - test/config-schema.test.js
 -->
+
+---
+
+### Roadmap 指標（非規範義務）
+
+- **規劃中**：長時程 `index`／Health GUI 管線於行程中斷後的 **checkpoint／自動接續**、細粒度 state 落盤、可選進度回報——見 **[`openspec/ROADMAP.md`](../../ROADMAP.md)** 小節 **PR-PIPELINE-RESUME**。

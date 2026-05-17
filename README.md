@@ -2,7 +2,38 @@
 
 本機-first 的 **Sources → Compiled Wiki → Schema** 三層管線：向量分 `collection_sources` / `collection_wiki`，`wiki-compile` 透過本機 Ollama 規劃並撰寫 `wiki_root`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
 
-未來若評估改為 **Joplin 外掛** 或經 **Homebrew** 發布獨立應用，架構約束與決策檢核見 [`openspec/specs/future-distribution-modes/spec.md`](openspec/specs/future-distribution-modes/spec.md)。
+規劃中的產品路線見下方 **[Roadmap（規劃中）](#readme-roadmap)**；完整表格與細節以 [`openspec/ROADMAP.md`](openspec/ROADMAP.md) 為準。
+
+<a id="readme-roadmap"></a>
+
+## Roadmap（規劃中）
+
+以下為**規劃能力**，在另開 Spectra `changes/` proposal 並實作前**不作為**現行行為規格；現行已定義仍以 [`openspec/specs/`](openspec/specs/) 為準。
+
+<a id="readme-roadmap-pipeline-resume"></a>
+
+### PR-PIPELINE-RESUME：管線 checkpoint／從中斷處接續
+
+聚焦 **Health GUI**「初始化」「corpus」等**序向 subprocess 管線**（條件式 `sqlite-sync --export-only` → `index` → `wiki-compile`）：
+
+- **現況**：關閉視窗或程序中斷後**不會**自動從上次斷點接續；**無預估耗時**。`index-state.json` 若在中長版 `index` 中延後大量落盤，中斷時可能 **state 落後於已寫入 Chroma**，下一輪多為重做而非精準 resume。
+- **規劃方向（可分期）**：相位級 checkpoint 紀錄；`indexAll`／依 layer 或每 **N** 檔原子寫入 state；CLI 可選**機器可讀進度**供 GUI／進度條；`sqlite-sync` 分段／可恢復匯出的設計須對齊 `reconcile_mode: mirror`。
+
+<a id="readme-roadmap-distribution"></a>
+
+### PR-DISTRIBUTION-PLUGIN-BREW：Joplin 外掛或 Homebrew 獨立 App
+
+在 **pnpm + CLI（＋可選 Health GUI／launchd）baseline 穩定後**，評估擴充裝載方式（須提案；**REQ-DIST-PARK**：未宣告 baseline 穩定前，不得將 plugin／brew 訂為必達里程碑或廢除現行開發者路徑）：
+
+| 路線 | 概要 |
+|------|------|
+| **TRACK-A**（Joplin **plugin**） | Host 在 Joplin 內建 Electron；優先 Plugin API 讀寫／wiki 寫回；面板式 UI；長任務不中斷 UI；Ollama／Chroma spawn 對齊外掛模型（亦可 **plugin + 伴隨 helper**）。 |
+| **TRACK-B**（**Homebrew**） | **B1** CLI formula（PATH 即用、不依賴使用者本機必有 pnpm）；**B2** GUI cask／`.app` 打包（原生 ABI、資源路徑）；**B3** plist／shim 指向 Cellar；Chroma CLI 依賴須在文件中明示解法。 |
+
+- **架構**：**Core／Host 分離**（管線可被 Host 呼叫；Host 管路徑與 spawn）；維持**全本機預設**（與 [`openspec/config.yaml`](openspec/config.yaml) 一致）。
+- **詳細 REQ／決策清單**：[`openspec/specs/future-distribution-modes/spec.md`](openspec/specs/future-distribution-modes/spec.md)。
+
+**單一路線全文**（問題陳述、風險、相關路徑表）：[**`openspec/ROADMAP.md`**](openspec/ROADMAP.md)。
 
 ## 需求
 
@@ -50,6 +81,8 @@ pnpm run health-gui -- --config ./my.config.yaml
 - **stack**：詳見 [`docs/macos-launchd-stack.md`](docs/macos-launchd-stack.md)；解除 stack **不**刪除筆記／向量資料。
 
 Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟動失敗。
+
+目前「初始化」與 corpus 管線為序向 spawn（關閉視窗／中斷後**無**自動從斷點接續）；規劃中的 checkpoint／進度請見 [Roadmap — PR-PIPELINE-RESUME](#readme-roadmap-pipeline-resume)。
 
 ## 設定範例
 

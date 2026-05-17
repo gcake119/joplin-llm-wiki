@@ -794,3 +794,9 @@ tests:
   - test/ollama-client.test.js
   - test/joplin-sqlite.test.js
 -->
+
+---
+
+### Roadmap 指標（非規範義務）
+
+- **規劃中**：`run-init-pipeline`／`run-corpus-pipeline` 於異常終止後的 **相位檢查點、可選接續進入點**，以及對應的 `index`／`sqlite-sync` 持久化細節——見 **[`openspec/ROADMAP.md`](../../ROADMAP.md)** 小節 **PR-PIPELINE-RESUME**。（現行行為：序向子程序、`PIPELINE_IN_FLIGHT`；**不保證**自動 resume。）

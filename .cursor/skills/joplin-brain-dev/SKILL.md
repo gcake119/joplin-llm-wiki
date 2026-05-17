@@ -37,6 +37,7 @@ joplin_wiki_writeback:
 ## 規格真相來源
 
 - 主流規格：`openspec/specs/`（含 `joplin-wiki-writeback`、`wiki-ingest`、`compiled-wiki`）
+- **Roadmap（規劃中非義務）**：`openspec/ROADMAP.md`（管線 checkpoint、Joplin 外掛／Homebrew 等）
 - 封存變更：`openspec/changes/archive/*-joplin-wiki-db-writeback/`
 
 ## 使用者文件
