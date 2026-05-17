@@ -20,6 +20,39 @@ function el(id) {
 /** @type {unknown} */
 let lastHealthSnap = null;
 
+/** @param {unknown} snap */
+function applyHealthSnapshot(snap) {
+  lastHealthSnap = snap;
+  el("health-json").textContent = JSON.stringify(snap, null, 2);
+  renderConnectionLabels(lastHealthSnap);
+  syncDependencyButtons(lastHealthSnap);
+}
+
+/**
+ * @param {typeof window.jbHealth} jbApi
+ * @param {"chroma-server" | "ollama-serve"} kind
+ * @param {number} [maxWaitMs]
+ */
+async function pollUntilDependencyReachable(jbApi, kind, maxWaitMs = 25000) {
+  const start = Date.now();
+  const intervalMs = 500;
+  while (Date.now() - start < maxWaitMs) {
+    const snap = await jbApi.checkHealth();
+    if (snap && typeof snap === "object" && snap.ok === true) {
+      if (kind === "chroma-server" && snap.chroma?.reachable === true) {
+        applyHealthSnapshot(snap);
+        return true;
+      }
+      if (kind === "ollama-serve" && snap.ollama?.reachable === true) {
+        applyHealthSnapshot(snap);
+        return true;
+      }
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
 function buildPullText(snap) {
   if (!snap || typeof snap !== "object") return "";
   const rec = /** @type {{ ok?: boolean, ollama?: { missingModels?: string[] } }} */ (
@@ -122,9 +155,7 @@ async function init() {
       return;
     }
     lastHealthSnap = r.result;
-    el("health-json").textContent = JSON.stringify(r.result, null, 2);
-    renderConnectionLabels(lastHealthSnap);
-    syncDependencyButtons(lastHealthSnap);
+    applyHealthSnapshot(lastHealthSnap);
   }
 
   el("btn-refresh").addEventListener("click", () => {
@@ -220,7 +251,8 @@ async function init() {
 
   function formatDepResult(res) {
     if (!res || typeof res !== "object") return "無效回應";
-    if (res.ok === true) return `已送出啟動（pid=${res.pid ?? "?"}），請按「重新整理」確認連線。`;
+    if (res.ok === true)
+      return `已送出啟動（pid=${res.pid ?? "?"}）；介面將自動輪詢連線狀態。`;
     const code = /** @type {{ code?: string, message?: string }} */ (res).code;
     const msg = /** @type {{ message?: string }} */ (res).message;
     if (code === "ALREADY_RUNNING") return "探測為已連線，未重複啟動。";
@@ -242,7 +274,19 @@ async function init() {
       st.textContent = "略過（上一輪尚在進行）";
       return;
     }
-    st.textContent = formatDepResult(r.result);
+    const res = r.result;
+    if (!res || typeof res !== "object" || !("ok" in res) || res.ok !== true) {
+      st.textContent = formatDepResult(
+        /** @type {Parameters<typeof formatDepResult>[0]} */ (res),
+      );
+      return;
+    }
+    const pid = "pid" in res ? res.pid : undefined;
+    st.textContent = "啟動已送出，正在等待連線…";
+    const up = await pollUntilDependencyReachable(jb, "ollama-serve");
+    st.textContent = up
+      ? "Ollama 已連線。"
+      : `已送出啟動（pid=${pid ?? "?"}），約 25s 內仍未連線；請查日誌或按「重新整理」。`;
   });
 
   el("btn-start-chroma").addEventListener("click", async () => {
@@ -258,7 +302,19 @@ async function init() {
       st.textContent = "略過（上一輪尚在進行）";
       return;
     }
-    st.textContent = formatDepResult(r.result);
+    const res = r.result;
+    if (!res || typeof res !== "object" || !("ok" in res) || res.ok !== true) {
+      st.textContent = formatDepResult(
+        /** @type {Parameters<typeof formatDepResult>[0]} */ (res),
+      );
+      return;
+    }
+    const pid = "pid" in res ? res.pid : undefined;
+    st.textContent = "啟動已送出，正在等待連線…";
+    const up = await pollUntilDependencyReachable(jb, "chroma-server");
+    st.textContent = up
+      ? "Chroma 已連線。"
+      : `已送出啟動（pid=${pid ?? "?"}），約 25s 內仍未連線；請查日誌或按「重新整理」。`;
   });
 
   await refresh();

@@ -53,6 +53,7 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 
 ## 設定範例
 
+- **`chroma.persist_path`**：若為相對路徑，會以**設定檔所在目錄**為錨點展開（與 `loadConfig` 內 **`cfgDir`** 語意一致）；若舊腳本假設相對於 shell 的工作目錄（cwd），請改為絕對路徑或調整 `config.yaml` 的位置。
 - `config.yaml.example`
 - `wiki-schema.example.yaml`
 - `fixtures/full-karpathy.config.yaml`（需改成你的絕對路徑）

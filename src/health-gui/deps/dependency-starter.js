@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -107,6 +108,15 @@ export async function startLocalDependency(repoRoot, configPath, payload, deps =
         return { ok: false, code: "ALREADY_RUNNING" };
       }
       const persistAbs = cfg.chroma.persist_path;
+      try {
+        fs.mkdirSync(persistAbs, { recursive: true });
+      } catch (e) {
+        return {
+          ok: false,
+          code: "PERSIST_DIR_CREATE_FAILED",
+          message: String(/** @type {Error} */ (e)?.message ?? e),
+        };
+      }
       const host = procEnv.CHROMA_HOST ?? "127.0.0.1";
       const port = Number(procEnv.CHROMA_PORT ?? 8000);
       return spawnDetached(spawnImpl, "pnpm", ["exec", "chroma", "run", "--path", persistAbs, "--host", host, "--port", String(port)], {

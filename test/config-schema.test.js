@@ -47,6 +47,7 @@ required_hub_pages: []
   assert.strictEqual(cfg.notes_root, path.resolve(tmp, "notes"));
   assert.strictEqual(cfg.wiki_root, path.resolve(tmp, "wiki"));
   assert.strictEqual(cfg.wiki_schema.path, path.resolve(tmp, "schema.yaml"));
+  assert.strictEqual(cfg.chroma.persist_path, path.resolve(tmp, "chroma-data"));
   assert.strictEqual(cfg.rag.retrieve_mode, "wiki_first");
 });
 

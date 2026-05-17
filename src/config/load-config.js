@@ -146,7 +146,7 @@ export async function loadConfig(configPath) {
   const chromaPersistRaw = str(nest(doc, "chroma"), "persist_path", "data/chroma");
   const chromaPersist = path.isAbsolute(chromaPersistRaw)
     ? chromaPersistRaw
-    : path.resolve(process.cwd(), chromaPersistRaw);
+    : path.resolve(cfgDir, chromaPersistRaw);
 
   const chroma = {
     persist_path: chromaPersist,
