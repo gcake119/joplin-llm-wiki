@@ -83,28 +83,54 @@ export class OllamaClient {
   }
 
   /**
+   * Prefer Ollama `POST /api/embed` (returns `embeddings: number[][]`).
+   * Fall back to legacy `POST /api/embeddings` (often only `embedding` for single input).
+   *
    * @param {string|string[]} input
    */
   async _postEmbeddingPayload(input) {
+    const multi = Array.isArray(input);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.timeoutMs);
     try {
-      const res = await fetch(`${this.baseUrl}/api/embeddings`, {
+      let res = await fetch(`${this.baseUrl}/api/embed`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model: this.embedModel, input }),
         signal: ctrl.signal,
       });
-      if (!res.ok) {
-        throw new Error(`embeddings HTTP ${res.status}`);
+
+      if (!res.ok && (res.status === 404 || res.status === 405)) {
+        res = await fetch(`${this.baseUrl}/api/embeddings`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: this.embedModel, input }),
+          signal: ctrl.signal,
+        });
       }
+
+      if (!res.ok) {
+        throw new Error(`embed HTTP ${res.status}`);
+      }
+
       /** @type {{ embedding?: number[], embeddings?: number[][] }} */
       const body = await res.json();
-      if (Array.isArray(body.embeddings))
-        return /** @type {number[][]} */ (body.embeddings);
+      if (Array.isArray(body.embeddings)) {
+        if (!multi) {
+          const row = body.embeddings[0];
+          if (!row) throw new Error("embeddings[0] missing");
+          return row;
+        }
+        if (body.embeddings.length !== input.length) {
+          throw new Error("embeddings length mismatch");
+        }
+        return body.embeddings;
+      }
       if (body.embedding) {
-        if (typeof input === "string") return body.embedding;
-        throw new Error("batch response missing embeddings[]");
+        if (multi) {
+          throw new Error("batch response missing embeddings[]");
+        }
+        return body.embedding;
       }
       throw new Error("unexpected embeddings response shape");
     } finally {

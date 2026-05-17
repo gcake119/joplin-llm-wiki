@@ -26,6 +26,7 @@ const defaultDeps = {
 export async function runSqliteSync(ctx, deps = defaultDeps) {
   const cfg = await deps.loadConfig(ctx.configPath);
   const sync = cfg.joplin_sqlite_sync;
+  const exportOnlyCli = ctx.opts.get("export-only") === "true";
   if (!sync.enabled) {
     console.log(
       JSON.stringify({
@@ -50,13 +51,13 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
   }
 
   if (dryRun) {
-    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, true, deps);
+    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, true, deps, exportOnlyCli);
     console.log(JSON.stringify({ cycle: 1, ...summary }));
     return 0;
   }
 
   if (!intervalSec) {
-    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps);
+    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps, exportOnlyCli);
     console.log(JSON.stringify({ cycle: 1, ...summary }));
     return 0;
   }
@@ -72,7 +73,7 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
     let cycle = 0;
     while (!shutdown) {
       cycle++;
-      const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps);
+      const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps, exportOnlyCli);
       console.log(JSON.stringify({ cycle, ...summary }));
       if (shutdown) break;
       await delay(Number(intervalSec) * 1000);
@@ -94,8 +95,9 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {boolean} dryRun
  * @param {typeof defaultDeps} deps
+ * @param {boolean} exportOnlyCli — when true, skip config `pipeline` even if enabled (CLI `--export-only`)
  */
-async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps) {
+async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnlyCli) {
   const sync = cfg.joplin_sqlite_sync;
   const summary = await deps.exportNotesFromSqlite({
     databasePath: sync.database_path,
@@ -107,6 +109,9 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps) {
   });
   if (dryRun) {
     return { ...summary, dry_run: true };
+  }
+  if (exportOnlyCli) {
+    return { ...summary, export_only: true };
   }
   if (sync.pipeline.run_index) {
     await deps.runIndex(ctx);

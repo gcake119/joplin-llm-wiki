@@ -27,7 +27,7 @@ notes_root: ${notes}
 joplin_cli:
   enabled: true
   command: joplin
-  preflight_argv: ["config","version"]
+  preflight_argv: ["version"]
   timeout_ms: 5000
 `,
     "utf8",

@@ -44,9 +44,11 @@ export class ChromaStore {
   async initCollections() {
     this._sources = await this.client.getOrCreateCollection({
       name: this.sourcesCollection,
+      embeddingFunction: null,
     });
     this._wiki = await this.client.getOrCreateCollection({
       name: this.wikiCollection,
+      embeddingFunction: null,
     });
   }
 

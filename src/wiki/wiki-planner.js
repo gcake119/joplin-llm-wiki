@@ -15,7 +15,10 @@ export async function summarizeSourcesForPlanner(cfg) {
     lines.push(`${rel} mtime_ms=${Math.trunc(st.mtimeMs)}`);
   }
   if (files.length > 40) lines.push(`… ${files.length - 40} more files`);
-  return lines.join("\n");
+  return {
+    summary: lines.join("\n"),
+    sourceFileCount: files.length,
+  };
 }
 
 /**
@@ -23,7 +26,7 @@ export async function summarizeSourcesForPlanner(cfg) {
  *   cfg: import('../config/load-config.js').AppConfig,
  *   schema: import('../schema/schema-validator.js').WikiSchema,
  *   ollama: import('../ollama/client.js').OllamaClient,
- *   notesSummary: string,
+ *   notesSummary: { summary: string, sourceFileCount: number },
  * }} args
  * @returns {Promise<{ paths: string[], raw: string }>}
  */
@@ -37,7 +40,7 @@ Required hub pages from schema: ${JSON.stringify(schema.required_hub_pages)}
 Page type ids: ${schema.page_types.map((p) => p.id).join(", ")}
 
 Sources digest (relative paths + mtimes):
-${notesSummary}
+${notesSummary.summary}
 
 Constraints:
 - Return between 0 and ${cfg.wiki_ingest.max_pages_per_run} paths (relative to wiki_root, use forward slashes).

@@ -220,7 +220,6 @@ export async function loadConfig(configPath) {
     enabled: bool(nest(doc, "joplin_cli"), "enabled", false),
     command: str(nest(doc, "joplin_cli"), "command", "joplin"),
     preflight_argv: strArr(nest(doc, "joplin_cli"), "preflight_argv", [
-      "config",
       "version",
     ]),
     timeout_ms: num(nest(doc, "joplin_cli"), "timeout_ms", 30_000, {

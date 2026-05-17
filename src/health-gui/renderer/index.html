@@ -99,6 +99,41 @@
         font-size: 0.8rem;
         color: #57606a;
       }
+      .pipeline-progress-wrap {
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        background: #fafbfc;
+      }
+      .pipeline-progress-wrap.hidden {
+        display: none;
+      }
+      .pipeline-steps {
+        margin: 0 0 8px 1.2rem;
+        padding: 0;
+        font-size: 0.82rem;
+        line-height: 1.55;
+      }
+      .pipeline-steps li.pending {
+        color: #57606a;
+      }
+      .pipeline-steps li.run {
+        color: #0969da;
+        font-weight: 600;
+      }
+      .pipeline-steps li.done {
+        color: #116329;
+      }
+      .pipeline-steps li.bad {
+        color: #82071e;
+        font-weight: 600;
+      }
+      pre#pipeline-progress-live {
+        max-height: 200px;
+        margin-top: 6px;
+        font-size: 0.72rem;
+      }
     </style>
   </head>
   <body>
@@ -140,6 +175,34 @@
         </div>
       </form>
       <p class="muted" id="save-msg"></p>
+    </section>
+
+    <section>
+      <h2>全庫索引與 Wiki</h2>
+      <p class="muted">
+        <strong>初始化管線</strong>在需匯出時會執行 <code>sqlite-sync --export-only</code>（僅寫入
+        <code>notes_root</code>，不在此步驟跑 index／wiki；後續仍由本管線依序執行 index 與 wiki-compile，請先讓
+        Ollama／Chroma 就緒）。
+      </p>
+      <p class="muted">
+        <strong>僅索引＋Wiki</strong>不會觸發匯出，適合來源檔已就緒後重跑。長時程作業需本機 Ollama／Chroma；若啟用
+        wiki 寫回會呼叫 Joplin CLI。
+      </p>
+      <div class="row">
+        <button type="button" class="primary" id="btn-run-init">
+          初始化（匯出→索引＋Wiki）
+        </button>
+        <button type="button" id="btn-run-corpus">僅索引＋Wiki</button>
+        <span class="muted" id="corpus-status"></span>
+      </div>
+      <div id="pipeline-progress-wrap" class="pipeline-progress-wrap hidden">
+        <p class="muted" id="pipeline-progress-hint" style="margin: 0 0 6px">
+          執行進度（即時輸出）
+        </p>
+        <ol id="pipeline-step-list" class="pipeline-steps"></ol>
+        <pre id="pipeline-progress-live"></pre>
+      </div>
+      <pre id="corpus-log"></pre>
     </section>
 
     <section>

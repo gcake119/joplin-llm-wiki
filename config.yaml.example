@@ -58,8 +58,8 @@ lint:
 joplin_cli:
   enabled: false
   command: joplin
+  # Read-only probe: runs `joplin version` (not `joplin config version`, which treats "version" as a setting key).
   preflight_argv:
-    - config
     - version
   timeout_ms: 30000
 

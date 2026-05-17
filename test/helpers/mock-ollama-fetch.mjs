@@ -24,7 +24,7 @@ export function installMockOllamaFetch(opts = {}) {
       body = {};
     }
 
-    if (url.includes("/api/embeddings")) {
+    if (url.includes("/api/embed") || url.includes("/api/embeddings")) {
       const rawIn = body.input;
       const inputs = Array.isArray(rawIn) ? rawIn : [rawIn];
       const embeddings = inputs.map((_, idx) =>

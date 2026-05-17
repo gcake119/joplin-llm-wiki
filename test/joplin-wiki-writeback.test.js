@@ -36,7 +36,6 @@ joplin_cli:
   enabled: true
   command: joplin
   preflight_argv:
-    - config
     - version
   timeout_ms: 5000
 ${extra}

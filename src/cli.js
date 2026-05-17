@@ -141,7 +141,7 @@ Commands:
   wiki-compile   Compile wiki pages under wiki_root
   ask            Retrieval-augmented Q&A
   lint           Karpathy lint (duplicates, orphans, contradictions, schema gaps)
-  sqlite-sync    Export Joplin SQLite to notes_root; optional index + wiki-compile
+  sqlite-sync    Export Joplin SQLite to notes_root; optional index + wiki-compile (--export-only: export only)
 
 Global:
   --help, -h               Show help

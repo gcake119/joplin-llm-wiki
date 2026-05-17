@@ -244,6 +244,59 @@ chroma:
   assert.strictEqual(wikiRan, false);
 });
 
+test("sqlite-sync --export-only skips pipeline despite run_index true", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-exo-"));
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  const notes = path.join(tmp, "notes");
+  fs.mkdirSync(notes);
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ./notes
+wiki_root: ""
+joplin_sqlite_sync:
+  enabled: true
+  database_path: ${path.join(tmp, "db.sqlite").replace(/\\/g, "/")}
+  pipeline:
+    run_index: true
+    run_wiki_compile: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ./chroma
+`,
+    "utf8",
+  );
+
+  let indexRan = false;
+  let wikiRan = false;
+  const opts = new Map([["export-only", "true"]]);
+  const code = await runSqliteSync(
+    { configPath: cfgPath, argv: [], opts },
+    {
+      ...defaultDeps,
+      exportNotesFromSqlite: async () => ({
+        exported_notes: 1,
+        written_files: 1,
+        skipped_notes: [],
+        deleted_files: 0,
+        duration_ms: 1,
+      }),
+      runIndex: async () => {
+        indexRan = true;
+        return 0;
+      },
+      runWikiCompile: async () => {
+        wikiRan = true;
+        return 0;
+      },
+    },
+  );
+  assert.strictEqual(code, 0);
+  assert.strictEqual(indexRan, false);
+  assert.strictEqual(wikiRan, false);
+});
+
 test("REQ-JSQ-REPO-NOTES-LAYOUT: .gitignore lists notes_root/", () => {
   const gi = fs.readFileSync(path.join(rootDir, ".gitignore"), "utf8");
   assert.ok(

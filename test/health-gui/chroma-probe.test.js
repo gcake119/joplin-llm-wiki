@@ -41,7 +41,7 @@ const cfg = {
   joplin_cli: {
     enabled: false,
     command: "joplin",
-    preflight_argv: ["config", "version"],
+    preflight_argv: ["version"],
     timeout_ms: 30_000,
   },
   joplin_wiki_writeback: {

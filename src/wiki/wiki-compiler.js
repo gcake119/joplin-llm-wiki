@@ -50,12 +50,33 @@ export async function runWikiCompileFlow(args) {
     embedBatchSize: cfg.ollama.embed_batch_size,
   });
 
-  const notesSummary = await summarizeSourcesForPlanner(cfg);
+  const notesBundle = await summarizeSourcesForPlanner(cfg);
+  if (notesBundle.sourceFileCount === 0) {
+    const hint =
+      "no markdown files under notes_root matching notes_glob; add .md files or run joplin-sqlite-sync export before wiki-compile";
+    if (dryRun) {
+      console.log(
+        JSON.stringify({
+          dry_run: true,
+          warning: "NO_SOURCE_MARKDOWN",
+          message: hint,
+          paths: [],
+          notes_root: cfg.notes_root,
+          notes_glob: cfg.notes_glob,
+        }),
+      );
+      return { dryRun: true, paths: [], truncated: false };
+    }
+    const err = new Error(hint);
+    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
+    throw err;
+  }
+
   const plan = await planWikiPaths({
     cfg,
     schema,
     ollama,
-    notesSummary,
+    notesSummary: notesBundle,
   });
 
   let paths = plan.paths;
@@ -107,7 +128,7 @@ export async function runWikiCompileFlow(args) {
       ollama,
       relPath: rel,
       schema,
-      notesSummary,
+      notesSummary: notesBundle.summary,
     });
     const meta = wikiListingMetaFromRelPath(rel);
     const pageData = {
@@ -175,7 +196,9 @@ async function pickDefaultSourceRefs(cfg) {
     out.push(relativeUnder(root, abs));
   }
   if (out.length === 0) {
-    const err = new Error("no source markdown files to anchor wiki page");
+    const err = new Error(
+      "no markdown files under notes_root matching notes_glob (required for wiki source_refs)",
+    );
     /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
     throw err;
   }

@@ -13,6 +13,7 @@ import { loadConfig } from "../config/load-config.js";
 import { buildHealthSnapshot } from "./health-snapshot.js";
 import { findRepoRoot } from "./lib/repo-root.js";
 import { startLocalDependency } from "./deps/dependency-starter.js";
+import { runCorpusPipeline, runInitPipeline } from "./corpus/corpus-pipeline-runner.js";
 import { runStackScript } from "./stack/stack-script-runner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -142,6 +143,63 @@ function wireIpc() {
       };
     }
     return runStackScript(repoRoot, configPath, /** @type {*} */ (payload));
+  });
+
+  ipcMain.handle("run-init-pipeline", async (evt, payload) => {
+    if (!payload || typeof payload !== "object") {
+      return {
+        ok: false,
+        code: "BAD_REQUEST",
+        sqliteSync: {
+          exitCode: null,
+          stdoutTail: "",
+          stderrTail: "",
+          skipped: false,
+        },
+        index: { exitCode: null, stdoutTail: "", stderrTail: "" },
+        wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
+      };
+    }
+    const sender = evt.sender;
+    return runInitPipeline(
+      repoRoot,
+      configPath,
+      /** @type {*} */ (payload),
+      spawn,
+      {},
+      (p) => {
+        try {
+          sender.send("pipeline-progress", p);
+        } catch {
+          /* closed */
+        }
+      },
+    );
+  });
+
+  ipcMain.handle("run-corpus-pipeline", async (evt, payload) => {
+    if (!payload || typeof payload !== "object") {
+      return {
+        ok: false,
+        code: "BAD_REQUEST",
+        index: { exitCode: null, stdoutTail: "", stderrTail: "" },
+        wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
+      };
+    }
+    const sender = evt.sender;
+    return runCorpusPipeline(
+      repoRoot,
+      configPath,
+      /** @type {*} */ (payload),
+      spawn,
+      (p) => {
+        try {
+          sender.send("pipeline-progress", p);
+        } catch {
+          /* closed */
+        }
+      },
+    );
   });
 
   ipcMain.handle("start-local-dependency", async (_evt, payload) => {

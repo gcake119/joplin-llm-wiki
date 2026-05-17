@@ -17,6 +17,112 @@ function el(id) {
   return node;
 }
 
+/**
+ * @param {typeof window.jbHealth} jbApi
+ * @param {"init" | "corpus"} mode
+ */
+function bindPipelineProgressUi(jbApi, mode) {
+  const wrap = document.getElementById("pipeline-progress-wrap");
+  const live = document.getElementById("pipeline-progress-live");
+  const list = document.getElementById("pipeline-step-list");
+  const hint = document.getElementById("pipeline-progress-hint");
+  const subscribe =
+    jbApi && typeof jbApi === "object" && "subscribePipelineProgress" in jbApi
+      ? /** @type {{ subscribePipelineProgress?: (fn: (data: unknown) => void) => () => void }} */ (
+          jbApi
+        ).subscribePipelineProgress
+      : undefined;
+  if (!wrap || !live || !list || typeof subscribe !== "function") {
+    return () => {};
+  }
+
+  wrap.classList.remove("hidden");
+  live.textContent = "";
+  list.innerHTML = "";
+  if (hint) hint.textContent = "執行進度（即時輸出）";
+
+  const steps =
+    mode === "init"
+      ? [
+          { id: "sqlite", text: "SQLite 匯出（若需要）" },
+          { id: "index", text: "index（向量索引）" },
+          { id: "wiki", text: "wiki-compile" },
+        ]
+      : [
+          { id: "index", text: "index（向量索引）" },
+          { id: "wiki", text: "wiki-compile" },
+        ];
+
+  /** @type {Record<string, HTMLLIElement>} */
+  const liById = {};
+  for (const s of steps) {
+    const li = document.createElement("li");
+    li.className = "pending";
+    li.textContent = s.text;
+    li.dataset.stepId = s.id;
+    list.appendChild(li);
+    liById[s.id] = li;
+  }
+
+  function setStepState(stepId, state) {
+    const li = liById[stepId];
+    if (li) li.className = state;
+  }
+
+  function mapPhaseToStepId(phase) {
+    if (phase === "sqlite-sync") return "sqlite";
+    if (phase === "index") return "index";
+    if (phase === "wiki-compile") return "wiki";
+    return null;
+  }
+
+  function appendLive(text) {
+    live.textContent = (live.textContent + text).slice(-20000);
+    live.scrollTop = live.scrollHeight;
+  }
+
+  const unsub = subscribe((raw) => {
+    const ev = /** @type {{ kind?: string, message?: string, phase?: string, label?: string, channel?: string, text?: string, exitCode?: number | null, spawnFailed?: boolean }} */ (
+      raw && typeof raw === "object" ? raw : {}
+    );
+    if (ev.kind === "precheck" && hint) {
+      hint.textContent = ev.message ?? "";
+      return;
+    }
+    if (ev.kind === "sqlite_skipped") {
+      const li = liById["sqlite"];
+      if (li) li.textContent = "SQLite 匯出（略過）";
+      setStepState("sqlite", "done");
+      appendLive(`— ${ev.message ?? ""}\n`);
+      return;
+    }
+    if (ev.kind === "phase_start") {
+      const sid = mapPhaseToStepId(/** @type {string} */ (ev.phase));
+      if (sid) setStepState(sid, "run");
+      appendLive(`\n▶ ${ev.label ?? ev.phase}\n`);
+      return;
+    }
+    if (ev.kind === "phase_stream") {
+      const line = ev.text ?? "";
+      if (line === "") return;
+      const prefix = ev.channel === "stderr" ? "err: " : "";
+      appendLive(`${prefix}${line}\n`);
+      return;
+    }
+    if (ev.kind === "phase_end") {
+      const sid = mapPhaseToStepId(/** @type {string} */ (ev.phase));
+      if (!sid) return;
+      const ok = ev.exitCode === 0 && !ev.spawnFailed;
+      setStepState(sid, ok ? "done" : "bad");
+    }
+  });
+
+  return () => {
+    unsub();
+    wrap.classList.add("hidden");
+  };
+}
+
 /** @type {unknown} */
 let lastHealthSnap = null;
 
@@ -315,6 +421,135 @@ async function init() {
     st.textContent = up
       ? "Chroma 已連線。"
       : `已送出啟動（pid=${pid ?? "?"}），約 25s 內仍未連線；請查日誌或按「重新整理」。`;
+  });
+
+  function appendPipelineLog(res, runLabel) {
+    const pre = el("corpus-log");
+    const rec = /** @type {{ ok?: boolean, code?: string, message?: string }} */ (res);
+    let chunk = `\n--- ${runLabel} ---\nok=${rec.ok} code=${rec.code ?? ""}\n`;
+    if (rec.message) chunk += `message: ${rec.message}\n`;
+
+    const maybeSq =
+      res && typeof res === "object" && res !== null && "sqliteSync" in res
+        ? /** @type {{ sqliteSync?: object }} */ (res).sqliteSync
+        : null;
+    if (maybeSq && typeof maybeSq === "object") {
+      const s = /** @type {{ skipped?: boolean, exitCode?: number | null, stdoutTail?: string, stderrTail?: string }} */ (
+        maybeSq
+      );
+      chunk += `sqlite-sync skipped=${s.skipped === true} exit=${s.exitCode}\nsqlite-sync stdout (tail):\n${s.stdoutTail ?? ""}\nsqlite-sync stderr (tail):\n${s.stderrTail ?? ""}\n`;
+    }
+
+    const idx = /** @type {{ exitCode?: number | null, stdoutTail?: string, stderrTail?: string }} */ (
+      res && typeof res === "object" && res !== null && "index" in res
+        ? /** @type {{ index: object }} */ (res).index
+        : {}
+    );
+    const wiki = /** @type {{ exitCode?: number | null, stdoutTail?: string, stderrTail?: string }} */ (
+      res && typeof res === "object" && res !== null && "wikiCompile" in res
+        ? /** @type {{ wikiCompile: object }} */ (res).wikiCompile
+        : {}
+    );
+    chunk += `index exit=${idx.exitCode}\nindex stdout (tail):\n${idx.stdoutTail ?? ""}\nindex stderr (tail):\n${idx.stderrTail ?? ""}\nwiki-compile exit=${wiki.exitCode}\nwiki stdout (tail):\n${wiki.stdoutTail ?? ""}\nwiki stderr (tail):\n${wiki.stderrTail ?? ""}\n`;
+    pre.textContent = (pre.textContent + chunk).slice(-12000);
+  }
+
+  function setPipelineButtonsDisabled(disabled) {
+    /** @type {HTMLButtonElement} */ (el("btn-run-init")).disabled = disabled;
+    /** @type {HTMLButtonElement} */ (el("btn-run-corpus")).disabled = disabled;
+  }
+
+  const runInit = createSingleFlight(() => jb.runInitPipeline({ confirmed: true }));
+  const runCorpus = createSingleFlight(() => jb.runCorpusPipeline({ confirmed: true }));
+
+  el("btn-run-init").addEventListener("click", async () => {
+    if (
+      !confirm(
+        "初始化管線：若 notes_root 無 .md，先執行 sqlite-sync --export-only（僅匯出，不接續 config 內 pipeline），再執行 index 與 wiki-compile（需 Ollama／Chroma）。寫回若啟用可能影響 Joplin。確定執行？",
+      )
+    )
+      return;
+    const st = el("corpus-status");
+    let tearProgress = () => {};
+    st.textContent = "初始化執行中…（請勿關閉視窗）";
+    setPipelineButtonsDisabled(true);
+    try {
+      tearProgress = bindPipelineProgressUi(jb, "init");
+      const r = await runInit();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪管線尚在進行）";
+        return;
+      }
+      const res = r.result;
+      appendPipelineLog(res, "init-pipeline");
+      st.textContent =
+        res && typeof res === "object" && res.ok === true
+          ? "初始化完成（匯出如需已執行，index 與 wiki-compile 皆成功）。"
+          : `初始化結束：${/** @type {{ code?: string }} */ (res).code ?? "錯誤"}（詳見下方日誌）`;
+    } catch (e) {
+      appendPipelineLog(
+        {
+          ok: false,
+          code: "EXCEPTION",
+          message: String(e),
+          sqliteSync: {
+            exitCode: null,
+            stdoutTail: "",
+            stderrTail: "",
+            skipped: false,
+          },
+          index: { exitCode: null, stdoutTail: "", stderrTail: String(e) },
+          wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
+        },
+        "init-pipeline",
+      );
+      st.textContent = "執行時發生例外（見日誌）";
+    } finally {
+      tearProgress();
+      setPipelineButtonsDisabled(false);
+    }
+  });
+
+  el("btn-run-corpus").addEventListener("click", async () => {
+    if (
+      !confirm(
+        "將依序執行「pnpm exec joplin-llm-wiki index」與「wiki-compile」（不會自動匯出 SQLite；可能耗時數分鐘）。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。若設定啟用 Joplin wiki 寫回，wiki-compile 會呼叫 Joplin CLI，可能覆寫 note-wiki 樹下同名筆記。確定執行？",
+      )
+    )
+      return;
+    const st = el("corpus-status");
+    let tearProgress = () => {};
+    st.textContent = "執行中…（請勿關閉視窗）";
+    setPipelineButtonsDisabled(true);
+    try {
+      tearProgress = bindPipelineProgressUi(jb, "corpus");
+      const r = await runCorpus();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪管線尚在進行）";
+        return;
+      }
+      const res = r.result;
+      appendPipelineLog(res, "corpus-pipeline");
+      st.textContent =
+        res && typeof res === "object" && res.ok === true
+          ? "管線完成（index 與 wiki-compile 皆成功）。"
+          : `管線結束：${/** @type {{ code?: string }} */ (res).code ?? "錯誤"}（詳見下方日誌）`;
+    } catch (e) {
+      appendPipelineLog(
+        {
+          ok: false,
+          code: "EXCEPTION",
+          message: String(e),
+          index: { exitCode: null, stdoutTail: "", stderrTail: String(e) },
+          wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
+        },
+        "corpus-pipeline",
+      );
+      st.textContent = "執行時發生例外（見日誌）";
+    } finally {
+      tearProgress();
+      setPipelineButtonsDisabled(false);
+    }
   });
 
   await refresh();

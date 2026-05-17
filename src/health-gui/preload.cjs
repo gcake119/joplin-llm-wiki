@@ -8,5 +8,12 @@ contextBridge.exposeInMainWorld("jbHealth", {
   saveConfig: (yamlText) => ipcRenderer.invoke("save-config", yamlText),
   saveConfigFields: (fields) => ipcRenderer.invoke("save-config-fields", fields),
   runStackScript: (payload) => ipcRenderer.invoke("run-stack-script", payload),
+  runInitPipeline: (payload) => ipcRenderer.invoke("run-init-pipeline", payload),
+  runCorpusPipeline: (payload) => ipcRenderer.invoke("run-corpus-pipeline", payload),
+  subscribePipelineProgress: (handler) => {
+    const fn = (_e, /** @type {unknown} */ data) => handler(data);
+    ipcRenderer.on("pipeline-progress", fn);
+    return () => ipcRenderer.removeListener("pipeline-progress", fn);
+  },
   startLocalDependency: (payload) => ipcRenderer.invoke("start-local-dependency", payload),
 });

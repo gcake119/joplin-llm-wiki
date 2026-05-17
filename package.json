@@ -5,7 +5,10 @@
   "pnpm": {
     "allowBuilds": {
       "better-sqlite3": true,
-      "electron": true
+      "electron": true,
+      "onnxruntime-node": true,
+      "protobufjs": true,
+      "sharp": true
     }
   },
   "bin": {
@@ -21,6 +24,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@chroma-core/default-embed": "^0.1.9",
     "better-sqlite3": "11.8.1",
     "chromadb": "^3.4.3",
     "fast-glob": "^3.3.3",
