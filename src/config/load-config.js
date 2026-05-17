@@ -24,6 +24,13 @@ import YAML from "yaml";
  *     contradiction: { max_pairs: number, timeout_ms: number },
  *   },
  *   joplin_cli: { enabled: boolean, command: string, preflight_argv: string[], timeout_ms: number },
+ *   joplin_wiki_writeback: {
+ *     enabled: boolean,
+ *     parent_notebook_title: string,
+ *     topic_frontmatter_key: string,
+ *     note_title_key: string,
+ *     max_cli_attempts: number,
+ *   },
  *   joplin_sqlite_sync: {
  *     enabled: boolean,
  *     database_path: string,
@@ -222,6 +229,45 @@ export async function loadConfig(configPath) {
     }),
   };
 
+  const wbNest =
+    typeof doc.joplin_wiki_writeback === "object" &&
+    doc.joplin_wiki_writeback !== null
+      ? /** @type {Record<string, unknown>} */ (doc.joplin_wiki_writeback)
+      : {};
+  const parent_notebook_title = str(
+    wbNest,
+    "parent_notebook_title",
+    "note-wiki",
+  ).trim();
+  if (!parent_notebook_title) {
+    const err = new Error(
+      "joplin_wiki_writeback.parent_notebook_title must be non-empty",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+
+  const joplin_wiki_writeback = {
+    enabled: bool(wbNest, "enabled", true),
+    parent_notebook_title,
+    topic_frontmatter_key: str(wbNest, "topic_frontmatter_key", "domain"),
+    note_title_key: str(wbNest, "note_title_key", "title"),
+    max_cli_attempts: num(wbNest, "max_cli_attempts", 3, {
+      min: 1,
+      max: 100,
+    }),
+  };
+
+  if (joplin_wiki_writeback.enabled) {
+    if (!joplin_cli.enabled || !joplin_cli.command.trim()) {
+      const err = new Error(
+        "joplin_cli.enabled and non-empty command required when joplin_wiki_writeback.enabled",
+      );
+      /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+      throw err;
+    }
+  }
+
   const syncNest =
     typeof doc.joplin_sqlite_sync === "object" && doc.joplin_sqlite_sync !== null
       ? /** @type {Record<string, unknown>} */ (doc.joplin_sqlite_sync)
@@ -309,6 +355,7 @@ export async function loadConfig(configPath) {
     rag,
     lint,
     joplin_cli,
+    joplin_wiki_writeback,
     joplin_sqlite_sync,
   };
 }

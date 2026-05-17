@@ -48,6 +48,8 @@ wiki_schema:
   strict: true
 wiki_ingest:
   max_pages_per_run: 15
+joplin_wiki_writeback:
+  enabled: false
 `,
     "utf8",
   );

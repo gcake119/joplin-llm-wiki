@@ -33,6 +33,8 @@ wiki_root: ""
 joplin_sqlite_sync:
   enabled: true
   database_path: ""
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,
@@ -60,6 +62,8 @@ joplin_sqlite_sync:
   enabled: true
   database_path: ${path.join(tmp, "x.db").replace(/\\/g, "/")}
   export_root: ./other
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,
@@ -151,6 +155,8 @@ joplin_sqlite_sync:
   pipeline:
     run_index: false
     run_wiki_compile: false
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,
@@ -200,6 +206,8 @@ joplin_sqlite_sync:
   pipeline:
     run_index: true
     run_wiki_compile: true
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,
@@ -304,6 +312,8 @@ joplin_sqlite_sync:
   pipeline:
     run_index: false
     run_wiki_compile: false
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,
@@ -357,6 +367,8 @@ joplin_sqlite_sync:
     run_wiki_compile: false
   schedule:
     every_seconds: 1
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ./chroma
 `,

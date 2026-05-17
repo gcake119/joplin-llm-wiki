@@ -5,7 +5,7 @@
 notes_root: ./notes_root
 notes_glob: "**/*.md"
 
-wiki_root: /absolute/path/to/compiled/wiki
+wiki_root: ./wiki_root
 wiki:
   glob: "**/*.md"
 
@@ -62,6 +62,15 @@ joplin_cli:
     - config
     - version
   timeout_ms: 30000
+
+# LLM Wiki 編譯完成後可選將頁面寫回 Joplin（預設開啟）。啟用時 **必須** 將 joplin_cli.enabled 設為 true 且 command 可執行，否則 load-config 會 CONFIG_INVALID。
+# 寫回會在與 sqlite-sync 相同的 Profile 下建立筆記本樹（預設頂層 note-wiki；子筆記本依 wiki frontmatter 的 domain，見 README）。
+joplin_wiki_writeback:
+  # enabled 省略時視同 true
+  parent_notebook_title: note-wiki
+  topic_frontmatter_key: domain
+  note_title_key: title
+  max_cli_attempts: 3
 
 # Optional: batch-export notes from Joplin Desktop database.sqlite into notes_root, then run pipelines.
 # When enabled, database_path is required. For MVP, export_root must match notes_root (omit export_root to use notes_root).

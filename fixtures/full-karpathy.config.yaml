@@ -38,3 +38,7 @@ lint:
 
 joplin_cli:
   enabled: false
+
+# 與範例相同：writeback 預設開啟；若未啟用 CLI 請維持 enabled: false 以免 CONFIG_INVALID。
+joplin_wiki_writeback:
+  enabled: false

@@ -35,6 +35,8 @@ chroma:
   persist_path: ${path.join(tmp, "chroma")}
   collection_sources: test_sources
   collection_wiki: test_wiki
+joplin_wiki_writeback:
+  enabled: false
 rag:
   retrieve_mode: wiki_first
 `,
@@ -80,6 +82,8 @@ test("SCN-IDX-IDEMP second index skips embeddings", async () => {
     cfgPath,
     `
 notes_root: ${notes}
+joplin_wiki_writeback:
+  enabled: false
 chroma:
   persist_path: ${path.join(tmp, "chroma")}
   collection_sources: test_sources

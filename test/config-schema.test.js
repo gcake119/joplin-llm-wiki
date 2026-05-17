@@ -25,6 +25,8 @@ wiki:
   glob: "**/*.md"
 chroma:
   persist_path: ./chroma-data
+joplin_wiki_writeback:
+  enabled: false
 `,
     "utf8",
   );

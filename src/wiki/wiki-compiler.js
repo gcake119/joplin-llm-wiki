@@ -13,6 +13,11 @@ import {
   assertSourceRefsResolvable,
 } from "./frontmatter.js";
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
+import {
+  runWikiWriteback,
+  summarizeWikiWritebackDry,
+  normalizeWikiWritebackTopic,
+} from "../joplin/wiki-writeback.js";
 
 /**
  * @param {{ ctx: { configPath: string, argv: string[], opts: Map<string, string> } }} args
@@ -80,14 +85,16 @@ export async function runWikiCompileFlow(args) {
   }
 
   if (dryRun) {
-    console.log(
-      JSON.stringify({
-        dry_run: true,
-        paths,
-        truncated,
-        planner_raw: plan.raw?.slice(0, 2000),
-      }),
-    );
+    const dryPayload = {
+      dry_run: true,
+      paths,
+      truncated,
+      planner_raw: plan.raw?.slice(0, 2000),
+    };
+    if (cfg.joplin_wiki_writeback.enabled) {
+      Object.assign(dryPayload, summarizeWikiWritebackDry(cfg, wikiRoot, paths));
+    }
+    console.log(JSON.stringify(dryPayload));
     return { dryRun: true, paths, truncated };
   }
 
@@ -102,10 +109,13 @@ export async function runWikiCompileFlow(args) {
       schema,
       notesSummary,
     });
+    const meta = wikiListingMetaFromRelPath(rel);
     const pageData = {
       source_refs: sourceRefs,
       compiled_at: new Date().toISOString(),
       compiler_revision: revision,
+      domain: meta.domain,
+      title: meta.title,
     };
     validateCompiledFrontmatter(pageData);
     assertSourceRefsResolvable(pageData, cfg.notes_root);
@@ -119,14 +129,39 @@ export async function runWikiCompileFlow(args) {
     );
   }
 
-  console.log(
-    JSON.stringify({
-      wiki_compile: "ok",
-      pages_written: paths.length,
-      truncated,
-    }),
-  );
+  /** Wiki compile output: paths written this run = planner `paths` after `max_pages_per_run` truncate (same array passed to `runWikiWriteback`). See design joplin-wiki-db-writeback Open Questions. */
+  const compileSummary = {
+    wiki_compile: "ok",
+    pages_written: paths.length,
+    truncated,
+  };
+  if (cfg.joplin_wiki_writeback.enabled) {
+    Object.assign(
+      compileSummary,
+      await runWikiWriteback(cfg, wikiRoot, paths, { dryRun: false }),
+    );
+  }
+
+  console.log(JSON.stringify(compileSummary));
   return { dryRun: false, paths, truncated };
+}
+
+/**
+ * Derive `domain` / `title` frontmatter for Joplin writeback routing (`domain` = first path segment).
+ *
+ * @param {string} relPath
+ */
+function wikiListingMetaFromRelPath(relPath) {
+  const norm = relPath.replace(/\\/g, "/");
+  const parts = norm.split("/").filter(Boolean);
+  const title = path.basename(norm, ".md");
+  if (parts.length <= 1) {
+    return { domain: "_uncategorized", title };
+  }
+  return {
+    domain: normalizeWikiWritebackTopic(parts[0]),
+    title,
+  };
 }
 
 /**

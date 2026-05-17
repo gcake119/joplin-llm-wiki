@@ -51,6 +51,14 @@ pnpm exec joplin-brain sqlite-sync --config ./my.config.yaml --dry-run
 
 定時執行建議使用系統 cron 或 macOS `launchd` 呼叫上述命令；亦可於設定中設定 `joplin_sqlite_sync.schedule.every_seconds` 或使用 `--every <秒數>` 由單一行程輪詢（收到 SIGINT 時停止）。
 
+## Joplin：Desktop、CLI 與 Wiki 寫回（`joplin_wiki_writeback`）
+
+- **Joplin Desktop（或官方行動／桌面客戶端）**：用來**瀏覽與手動管理**完整筆記庫（同步、搜尋、編輯）。請與本工具使用**同一個 Joplin Profile**，這樣 `joplin_sqlite_sync` 所讀的 `database.sqlite` 路徑、以及 CLI 寫回的目標樹才會一致。
+- **Joplin 終端機 CLI**：需**另外安裝**；**專供 `wiki-compile` 成功後**把本輪編譯的 Markdown **寫入 Joplin**（預設頂層筆記本 `note-wiki`，其下依 wiki 的 **YAML frontmatter** 欄位 **`domain`**——或設定裡的 `topic_frontmatter_key`——建立**子筆記本**，並以**筆記標題**做 upsert）。若省略 `domain`（或該鍵非字串／為空），寫回會落到 **`_uncategorized`** 子筆記本。請先**備份 Profile**；寫回會覆寫 `note-wiki` 樹下**同名 note** 的正文。可用 `wiki-compile --dry-run` 演練（不呼叫會變更 Joplin 的 CLI）；要完全關閉寫回請在設定中設 `joplin_wiki_writeback.enabled: false`。
+- **`sqlite-sync`**：仍以 **better-sqlite3 唯讀**開啟 `database.sqlite` 匯出至 `notes_root`；**不**在本變更中改為全面改用 CLI 匯出。建議避免與大批量 CLI 寫回在同一短時間窗內並行操作同一 Profile。
+
+編譯產物目錄：`config.yaml.example` 預設 **`wiki_root: ./wiki_root`**（與 `notes_root` 相同層級的倉庫根相對路徑）。`.gitignore` 已包含 **`wiki_root/`**，編譯出的 Wiki 預設不進版控。
+
 ## 測試
 
 ```bash

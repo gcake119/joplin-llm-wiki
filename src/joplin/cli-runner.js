@@ -1,20 +1,27 @@
 import { spawn } from "node:child_process";
 
 /**
+ * Run Joplin CLI with `cfg.joplin_cli.command` as executable and `argvArgs` as arguments
+ * (e.g. `['ls','/','-f','json']`). Collects stdout/stderr; rejects on non-zero exit, timeout, or spawn error.
+ *
  * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {string[]} argvArgs
+ * @returns {Promise<{ stdout: string, stderr: string }>}
  */
-export async function runJoplinCliPreflight(cfg) {
-  if (!cfg.joplin_cli.enabled) return;
+export async function runJoplinCliProcess(cfg, argvArgs) {
   const cmd = cfg.joplin_cli.command;
-  const argv = [cmd, ...cfg.joplin_cli.preflight_argv];
   const timeoutMs = cfg.joplin_cli.timeout_ms;
 
-  await new Promise((resolve, reject) => {
-    const child = spawn(argv[0], argv.slice(1), {
-      stdio: ["ignore", "ignore", "pipe"],
+  return await new Promise((resolve, reject) => {
+    const child = spawn(cmd, argvArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout?.on("data", (d) => {
+      stdout += String(d);
+    });
     child.stderr?.on("data", (d) => {
       stderr += String(d);
     });
@@ -31,15 +38,23 @@ export async function runJoplinCliPreflight(cfg) {
     });
     child.on("close", (code) => {
       clearTimeout(t);
-      if (code === 0) resolve(undefined);
+      if (code === 0) resolve({ stdout, stderr });
       else
         reject(
           cliFail(
-            `exit ${code}${stderr ? `: ${stderr.trim()}` : ""}`,
+            `exit ${code}${stderr ? `: ${stderr.trim()}` : ""}${stdout ? `; out: ${stdout.slice(0, 500)}` : ""}`,
           ),
         );
     });
   });
+}
+
+/**
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ */
+export async function runJoplinCliPreflight(cfg) {
+  if (!cfg.joplin_cli.enabled) return;
+  await runJoplinCliProcess(cfg, cfg.joplin_cli.preflight_argv);
 }
 
 /**
