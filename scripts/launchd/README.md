@@ -8,6 +8,7 @@
 
 | 檔案 | 用途 |
 |------|------|
+| `shims/joplin-brain-*` | 指向 `/bin/bash` 的 symlink，`plist` 以之作為 argv0，讓 Activity Monitor／`ps` 顯示易辨識名稱（見 `docs/macos-launchd-stack.md`） |
 | `run-ollama.sh` | 前景執行 `ollama serve`（stdout／stderr 建議由 plist 導向日誌） |
 | `run-chroma.sh` | 於 repo root 執行 `pnpm exec chroma run …`（對齊 README 預設 host／port／`data/chroma`） |
 | `run-sqlite-sync.sh` | 等待 Ollama／Chroma 就緒後執行 `pnpm exec joplin-brain sqlite-sync` |

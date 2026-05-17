@@ -49,4 +49,5 @@ while true; do
   sleep "$WAIT_INTERVAL"
 done
 
-exec pnpm exec joplin-brain sqlite-sync --config "$JOPLIN_BRAIN_CONFIG"
+# argv0 利於 Activity Monitor／ps 辨識（與 shims/joplin-brain-sqlite-sync 語意一致）
+exec -a "joplin-brain-sqlite-sync" pnpm exec joplin-brain sqlite-sync --config "$JOPLIN_BRAIN_CONFIG"

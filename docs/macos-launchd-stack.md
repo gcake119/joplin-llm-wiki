@@ -8,6 +8,8 @@
 
 設計前提是**全本機**、無對外 HTTP API；監聽僅限本機 loopback（與專案 README 一致）。
 
+亦可經 **Health GUI**（Electron）執行相同的 install／uninstall 腳本與設定編輯，詳見根目錄 `README.md` 的 **Health GUI** 章節。
+
 ## 前置條件
 
 - macOS，可寫入 `~/Library/LaunchAgents/` 與 `~/Library/Logs/joplin-brain/`
@@ -48,6 +50,20 @@ plist 將輸出導向（安裝後已由占位符替換為你的 `$HOME`）：
 
 若 **Chroma 或 Ollama 未在逾時內就緒**，`run-sqlite-sync.sh` 會在 **stderr** 印出**單行**錯誤並以**非零退出**（見 `sqlite-sync.err.log`），避免無窮等待。
 
+### Activity Monitor／`ps` 里的工序名
+
+三支 plist 改以 **`scripts/launchd/shims/`** 下指向 **`/bin/bash`** 的**具名 symlink** 作為程式進入點（再載入對應的 `run-*.sh`），避免清一色顯示為無區別的 `bash`。語意對應如下：
+
+| 顯示名稱（約） | 實際行為 |
+|----------------|----------|
+| `joplin-brain-ollama-serve` | 執行 **`ollama serve`** |
+| `joplin-brain-chroma-server` | 執行 **`pnpm exec chroma run …`**（本機 Chroma） |
+| `joplin-brain-sqlite-sync` | **輪詢 Ollama／Chroma 就緒**後執行 **`joplin-brain sqlite-sync`** |
+
+wrapper 內對長駐子行程另使用 **`exec -a`** 將程式名與上列對齊（最終在監視器里看到的標籤可能仍依 runtime／系統版本略有差異）。
+
+**若你已裝過舊版 plist**：請再跑一次 **`install-joplin-brain-stack.sh`**，覆寫 `~/Library/LaunchAgents/` 內三份 plist 後 **`launchctl bootout`／`bootstrap`**，才會套用新工序名。
+
 ## 一鍵安裝
 
 於專案 repo 根目錄（已 `pnpm install`）：
@@ -76,7 +92,7 @@ REPO_ROOT="$(pwd)" JOPLIN_BRAIN_CONFIG="/絕對路徑/你的.config.yaml" \
 launchctl print "gui/$(id -u)" | grep -E 'com\.joplin-brain\.(ollama|chroma|sqlite-sync)' || true
 ```
 
-（若你的系統之 `launchctl print` 輸出格式不同，請改以 Activity Monitor 或 `ps` 檢查 `ollama`、`chroma`、`joplin-brain` 行程。）
+（若你的系統之 `launchctl print` 輸出格式不同，請改以 Activity Monitor 或 `ps` 檢查 **`joplin-brain-ollama-serve`**、**`joplin-brain-chroma-server`**、**`joplin-brain-sqlite-sync`**（shell／pnpm／node／ollama 子行程另可依進程樹辨識）。）
 
 ## 解除安裝
 

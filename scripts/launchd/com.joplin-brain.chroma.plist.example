@@ -8,7 +8,7 @@
   <string>__REPO_ROOT__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
+    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-brain-chroma-server</string>
     <string>__REPO_ROOT__/scripts/launchd/run-chroma.sh</string>
   </array>
   <key>EnvironmentVariables</key>

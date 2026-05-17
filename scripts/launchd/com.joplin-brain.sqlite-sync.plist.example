@@ -8,7 +8,7 @@
   <string>__REPO_ROOT__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
+    <string>__REPO_ROOT__/scripts/launchd/shims/joplin-brain-sqlite-sync</string>
     <string>__REPO_ROOT__/scripts/launchd/run-sqlite-sync.sh</string>
     <string>__CONFIG_ABS__</string>
   </array>

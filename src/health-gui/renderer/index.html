@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <title>joplin-brain Health GUI</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.4;
+      }
+      body {
+        margin: 0;
+        padding: 12px 16px 24px;
+        background: #f6f7f9;
+        color: #1a1a1a;
+      }
+      h1 {
+        font-size: 1.1rem;
+        margin: 0 0 8px;
+      }
+      section {
+        background: #fff;
+        border: 1px solid #e1e4e8;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      section h2 {
+        margin: 0 0 8px;
+        font-size: 0.95rem;
+      }
+      label {
+        display: block;
+        font-size: 0.8rem;
+        margin-top: 6px;
+        color: #444;
+      }
+      input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        margin-top: 2px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      button {
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        background: #fff;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #0969da;
+        border-color: #0969da;
+        color: #fff;
+      }
+      button.danger {
+        border-color: #cf222e;
+        color: #cf222e;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      pre {
+        margin: 8px 0 0;
+        padding: 8px;
+        background: #f0f3f6;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 220px;
+        overflow: auto;
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        margin-right: 6px;
+      }
+      .ok {
+        background: #dafbe1;
+        color: #116329;
+      }
+      .bad {
+        background: #ffebe9;
+        color: #82071e;
+      }
+      .muted {
+        font-size: 0.8rem;
+        color: #57606a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>joplin-brain — 本機依賴與設定</h1>
+    <p class="muted" id="meta-line"></p>
+    <p class="muted">
+      僅檢查依賴與 stack 腳本輸出；全文索引／RAG／Lint 仍以 CLI 為準。
+    </p>
+
+    <section>
+      <h2>健康檢查</h2>
+      <div class="row">
+        <button type="button" class="primary" id="btn-refresh">重新整理</button>
+        <span class="muted" id="refresh-status"></span>
+      </div>
+      <div class="row" style="margin-top: 8px">
+        <button type="button" id="btn-copy-pull">複製缺模型之 ollama pull</button>
+        <button type="button" id="btn-copy-chroma">複製 Chroma 啟動建議</button>
+      </div>
+      <p class="muted" id="dep-line-ollama">Ollama：請按「重新整理」以顯示連線狀態</p>
+      <p class="muted" id="dep-line-chroma">Chroma：請按「重新整理」以顯示連線狀態</p>
+      <div class="row" style="margin-top: 8px">
+        <button type="button" id="btn-start-ollama">啟動 Ollama（ollama serve）</button>
+        <button type="button" id="btn-start-chroma">啟動 Chroma 伺服器</button>
+      </div>
+      <pre id="health-json"></pre>
+    </section>
+
+    <section>
+      <h2>設定（config.yaml 片段）</h2>
+      <form id="cfg-form">
+        <label>notes_root <input type="text" name="notes_root" /></label>
+        <label>ollama.base_url <input type="text" name="ollama_base_url" /></label>
+        <label>ollama.embed_model <input type="text" name="ollama_embed_model" /></label>
+        <label>ollama.chat_model <input type="text" name="ollama_chat_model" /></label>
+        <label>chroma.persist_path <input type="text" name="chroma_persist_path" /></label>
+        <div class="row" style="margin-top: 10px">
+          <button type="submit" class="primary">儲存（經 loadConfig 驗證）</button>
+        </div>
+      </form>
+      <p class="muted" id="save-msg"></p>
+    </section>
+
+    <section>
+      <h2>LaunchAgent stack（macOS）</h2>
+      <p class="muted">
+        呼叫 repo 內 <code>scripts/launchd/</code> 腳本；解除安裝不刪除 notes／向量資料。
+      </p>
+      <div class="row">
+        <button type="button" id="btn-install-stack">安裝 stack</button>
+        <button type="button" class="danger" id="btn-uninstall-stack">解除 stack</button>
+      </div>
+      <pre id="stack-log"></pre>
+    </section>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -4,14 +4,17 @@
   "type": "module",
   "pnpm": {
     "allowBuilds": {
-      "better-sqlite3": true
+      "better-sqlite3": true,
+      "electron": true
     }
   },
   "bin": {
-    "joplin-brain": "bin/joplin-brain.js"
+    "joplin-brain": "bin/joplin-brain.js",
+    "joplin-brain-health-gui": "bin/joplin-brain-health-gui.js"
   },
   "scripts": {
     "postinstall": "node scripts/register-bin.mjs",
+    "health-gui": "electron src/health-gui/main.js",
     "test": "node --test \"test/**/*.test.js\""
   },
   "engines": {
@@ -22,5 +25,8 @@
     "chromadb": "^3.4.3",
     "fast-glob": "^3.3.3",
     "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "electron": "33.3.1"
   }
 }

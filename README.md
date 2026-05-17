@@ -30,6 +30,25 @@ pnpm exec joplin-brain lint --config ./my.config.yaml
 
 Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 寫回（`JOPLIN_CLI_FAILED` / `JOPLIN_CLI_WRITE_FAILED`）** 等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
 
+## Health GUI（Electron）
+
+本機圖形介面：檢查 **Ollama**／**Chroma**、編輯並儲存主要 **`config.yaml` 欄位**（儲存前經與 CLI 相同的 **`loadConfig` 驗證**）、以連線狀態列顯示兩者是否**已連線**／未連線、並可由允許清單於背景 **detached** 啟動 **`ollama serve`** 與 **`pnpm exec chroma run …`**（等同 `scripts/launchd/run-ollama.sh`／`run-chroma.sh` 語意；啟動前會先做探測，**已在線時不重複 spawn**，並須確認對話）。另有 **`scripts/launchd/install-joplin-brain-stack.sh`**／**`uninstall-joplin-brain-stack.sh`**（確認對話；僅 main 行程會 spawn）。
+
+```bash
+pnpm install
+# 若 electron 被 pnpm 拒跑 postinstall：pnpm approve-builds --all && pnpm install
+pnpm run health-gui -- --config ./my.config.yaml
+# 或：pnpm exec joplin-brain-health-gui -- --config ./my.config.yaml
+```
+
+- **必備**：`--config <path>`。
+- **網路**：預設 `loadFile` 載入本地頁面，**不**對 `0.0.0.0` 監聽。
+- **依賴一鍵啟動**：IPC `start-local-dependency`（preload：`jbHealth.startLocalDependency`）。行程為 **detached**，關閉 GUI 後仍可能繼續；**stdout／stderr 不會**顯示在視窗內（請用終端機或 launchd 日誌除錯）。探測為已連線時回 **`ALREADY_RUNNING`**，不會再次 spawn。
+- **YAML**：表單儲存會 merge 後整檔回寫，**可能移除註解／鍵順序**；請先備份。
+- **stack**：詳見 [`docs/macos-launchd-stack.md`](docs/macos-launchd-stack.md)；解除 stack **不**刪除筆記／向量資料。
+
+Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟動失敗。
+
 ## 設定範例
 
 - `config.yaml.example`
@@ -38,7 +57,7 @@ Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 
 
 ## Joplin Desktop SQLite 匯出＋排程（`sqlite-sync`）
 
-- **預設筆記目錄**：範例使用倉庫根目錄 `./notes_root`；此資料夾已列於 `.gitignore`，**筆記 Markdown 不會進版控**。克隆後若無此目錄，請自行 `mkdir -p notes_root` 或由匯出流程建立。
+- **預設筆記目錄**：範例使用倉庫根目錄 `./notes_root`；此資料夾已列於 `.gitignore`，**筆記 Markdown 不會進版控**。Clone 後若無此目錄，請自行 `mkdir -p notes_root` 或由匯出流程建立。
 - **原生模組**：`sqlite-sync` 依賴 `better-sqlite3`。若 `pnpm install` 後出現 bindings／「Could not locate」類錯誤，在 pnpm 11+ 通常需先執行 `pnpm approve-builds --all`（或依互動提示核准該套件），再重新安裝以完成編譯。
 - **來源**：Joplin Desktop 設定檔目錄內之 `database.sqlite`（依你的安裝位置調整絕對路徑；常見預設為 **`~/.config/joplin-desktop/database.sqlite`**）。
 - **行為**：`joplin_sqlite_sync.enabled: true` 時，`sqlite-sync` 以唯讀開啟 SQLite，將筆記匯出至 `notes_root`（`reconcile_mode: mirror` 時會刪除資料庫已不存在的對應 `.md`）；可選擇接續執行與 `index`／`wiki-compile` 相同的管線。
