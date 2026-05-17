@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const cli = path.join(root, "bin/joplin-brain.js");
+const cli = path.join(root, "bin/joplin-llm-wiki.js");
 
 function run(argv) {
   return execFileSync(process.execPath, [cli, ...argv], {

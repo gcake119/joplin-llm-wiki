@@ -18,7 +18,7 @@ import { runSqliteSync, defaultDeps } from "../src/commands/cmd-sqlite-sync.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(here, "..");
-const binCli = path.join(rootDir, "bin", "joplin-brain.js");
+const binCli = path.join(rootDir, "bin", "joplin-llm-wiki.js");
 
 test("REQ-JSQ-CONFIG: enabled without database_path throws CONFIG_INVALID", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sql-cfg-"));
