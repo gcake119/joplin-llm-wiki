@@ -1,11 +1,11 @@
 ---
 name: joplin-brain-dev
 description: >-
-  joplin-llm-wiki（npm 套件）本 repo 開發慣例：wiki-compile、Joplin CLI 寫回、load-config、測試迷你 YAML。
+  joplin-llm-wiki（npm 套件）本 repo 開發慣例：wiki-compile、Joplin Desktop Data API 寫回、load-config、測試迷你 YAML。
 license: MIT
 metadata:
   author: project
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # joplin-llm-wiki 開發慣例
@@ -14,34 +14,34 @@ metadata:
 
 ## `joplin_wiki_writeback` 與測試
 
-- 寫回預設**開啟**（省略 `enabled` 即 true）。未啟用 `joplin_cli` 的迷你設定會在 `loadConfig` 階段失敗。
-- 非 Joplin 寫回測試請加上：
+- 寫回預設**開啟**（省略 `enabled` 即 true）。寫回視為開啟時，`load-config` 要求 **`joplin_data_api.token`** 非空且 **`joplin_data_api.base_url`** 為 loopback（見 `load-config.js`）；否則 **`CONFIG_INVALID`**。
+- 不需真的打到 Joplin、也不想載入上述約束時，於迷你設定加上：
 
 ```yaml
 joplin_wiki_writeback:
   enabled: false
 ```
 
-- 需模擬寫回時：使用 `runWikiWriteback(..., { runCli })` 或於 `tmp` 建立 **exit 0** 的假 `joplin_cli.command`（`spectra apply` 產物中 `test/joplin-wiki-writeback.test.js` 有範例）。
+- 需模擬寫回：`runWikiWriteback(..., { fetch })` 傳入 mock **`fetch`**（見 `test/joplin-wiki-writeback.test.js`）。**index** 在寫回開啟時會先做 **`runJoplinDataApiPreflight`**（見 `test/joplin-cli.test.js` / `test/integration-index.test.js` 慣例）。
 
 ## 模組位置
 
 | 行為 | 路徑 |
 |------|------|
 | 設定解析 | `src/config/load-config.js` |
-| CLI spawn／preflight | `src/joplin/cli-runner.js` |
+| Data API 傳輸／預檢／分頁 | `src/joplin/data-api-client.js` |
 | 寫回筆記本樹 + upsert | `src/joplin/wiki-writeback.js` |
 | 編譯編排（含寫回觸發） | `src/wiki/wiki-compiler.js`；CLI 薄封裝 `src/commands/cmd-wiki-compile.js` |
-| 錯誤碼 | `JOPLIN_CLI_FAILED`、`JOPLIN_CLI_WRITE_FAILED` 於 `src/cli.js` |
+| 錯誤碼 | `JOPLIN_DATA_API_FAILED`、`JOPLIN_DATA_API_WRITE_FAILED`（`src/cli.js`；仍相容舊字串 `JOPLIN_CLI_*`） |
 
 ## 規格真相來源
 
-- 主流規格：`openspec/specs/`（含 `joplin-wiki-writeback`、`wiki-ingest`、`compiled-wiki`）
-- **Roadmap（規劃中非義務）**：`openspec/ROADMAP.md`（管線 checkpoint、Joplin 外掛／Homebrew 等）
-- 封存變更：`openspec/changes/archive/*-joplin-wiki-db-writeback/`
+- 主流規格：`openspec/specs/`（含 `joplin-wiki-writeback`、`joplin-data-api`、`wiki-ingest`、`compiled-wiki`）
+- **Roadmap（規劃中非義務）**：`openspec/ROADMAP.md`
+- 封存變更範例：`openspec/changes/archive/*-joplin-wiki-db-writeback/`、`openspec/changes/archive/*-joplin-data-api-read-write/`
 
 ## 使用者文件
 
-- `README.md`（Desktop vs CLI、Profile、`--dry-run`、關閉寫回）
+- `README.md`（Desktop、Web Clipper／Data API、Profile、`--dry-run`、關閉寫回）
 - `config.yaml.example`
-- `docs/scheduling-examples.md`（排程與 `PATH`／寫回）
+- `docs/scheduling-examples.md`（排程與寫回／Data API 前提）

@@ -123,14 +123,14 @@ code:
 -->
 
 ---
-### Requirement: REQ-MLS-OBSERVABILITY Logging locations and Joplin CLI PATH
+### Requirement: REQ-MLS-OBSERVABILITY Logging locations and Joplin Data API prerequisites
 
-The system SHALL document how operators ensure the Joplin CLI used for write-back is discoverable under launchd (for example by setting `PATH` in `EnvironmentVariables` in the plist or exporting it in each wrapper script). The operator guide SHALL require that stdout and stderr from **`sqlite-sync`** are captured using `StandardOutPath` and `StandardErrorPath`, and SHALL require the same for **Ollama** and **Chroma** jobs in the full-stack path, so periodic JSON summaries from `cmd-sqlite-sync` and server startup diagnostics remain available for troubleshooting.
+The system SHALL document how operators satisfy **Joplin Data API** prerequisites for scheduled wiki write-back under launchd: **`joplin_data_api.token`** (Web Clipper) configured, **`joplin_data_api.base_url`** reachable from the agent environment (loopback only per product rules), and awareness that **Joplin Desktop** must expose the Clipper service when write-back is enabled. The operator guide SHALL require that stdout and stderr from **`sqlite-sync`** are captured using `StandardOutPath` and `StandardErrorPath`, and SHALL require the same for **Ollama** and **Chroma** jobs in the full-stack path, so periodic JSON summaries from `cmd-sqlite-sync` and server startup diagnostics remain available for troubleshooting.
 
 #### Scenario: Write-back prerequisites are visible to operators
 
-- **WHEN** an operator enables Joplin CLI write-back in configuration (`joplin_wiki_writeback` enabled and `joplin_cli.enabled: true`)
-- **THEN** the macOS launchd documentation shipped in `docs/macos-launchd-stack.md` SHALL explicitly require that the resolved `joplin_cli.command` binary is reachable in the LaunchAgent environment and SHALL describe how to validate this with a non-interactive command from the same wrapper prior to relying on scheduled write-back.
+- **WHEN** an operator enables Joplin wiki write-back in configuration (`joplin_wiki_writeback` enabled by default or explicitly)
+- **THEN** `docs/macos-launchd-stack.md` SHALL describe Data API / Clipper setup (not the Joplin terminal CLI PATH requirement), SHALL reference `README.md` for token acquisition, and SHALL call out headless launchd limitations (Desktop not running → disable write-back or use `--dry-run`).
 
 
 <!-- @trace

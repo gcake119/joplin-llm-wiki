@@ -3,7 +3,7 @@ import { loadConfig } from "../config/load-config.js";
 import { createVectorStore } from "../vector/store-factory.js";
 import { OllamaClient } from "../ollama/client.js";
 import { indexAll } from "../index/indexer.js";
-import { runJoplinCliPreflight } from "../joplin/cli-runner.js";
+import { runJoplinDataApiPreflight } from "../joplin/data-api-client.js";
 
 /**
  * 若 collection 內已有向量，維度須與目前 `ollama.embed_model` 一致；否則首次 upsert 才由 Chroma 回錯。
@@ -47,7 +47,9 @@ async function assertChromaMatchesOllamaEmbedding(chroma, ollama) {
  * @param {import('../config/load-config.js').AppConfig} cfg
  */
 export async function createIndexRuntime(cfg) {
-  await runJoplinCliPreflight(cfg);
+  if (cfg.joplin_wiki_writeback.enabled) {
+    await runJoplinDataApiPreflight(cfg);
+  }
 
   const chroma = await createVectorStore({
     persistPath: cfg.chroma.persist_path,

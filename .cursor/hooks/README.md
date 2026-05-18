@@ -21,3 +21,4 @@
 
 - 本專案主要驗證指令為 **`pnpm test`**（`node --test test/**/*.test.js`）。
 - 若 hook 內呼叫 `pnpm`，請確認 hook 行程的 `PATH` 與互動式終端一致（`launchd`／Agent 環境常缺路徑）。
+- **Joplin wiki 寫回**依 **本機 Data API**（Web Clipper token）；舊版「PATH 裡要有 `joplin` CLI」敘述已廢止。排程／無頭環境若要跳過寫回，設定檔使用 `joplin_wiki_writeback.enabled: false` 或僅 `--dry-run`（詳見 `README.md`、`docs/scheduling-examples.md`）。

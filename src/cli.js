@@ -57,6 +57,8 @@ export async function main(argv) {
       code === "SCHEMA_INVALID" ||
       code === "JOPLIN_CLI_FAILED" ||
       code === "JOPLIN_CLI_WRITE_FAILED" ||
+      code === "JOPLIN_DATA_API_FAILED" ||
+      code === "JOPLIN_DATA_API_WRITE_FAILED" ||
       code === "FRONTMATTER_INVALID" ||
       code === "WIKI_COMPILE_ABORT" ||
       code === "SQLITE_OPEN_FAILED" ||

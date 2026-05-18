@@ -123,7 +123,7 @@
 
 1. **使用者畫像**：以 CLI 批次為主，還是需要 Joplin 內嵌操作？
 2. **原生模組矩陣**：目標 macOS 版本、是否必須 Electron、是否接受維護多個預編譯 target？
-3. **Joplin 整合**：能否接受長期依賴 **Joplin CLI** 寫回，或必須 **Plugin API**？
+3. **Joplin 整合**：能否接受長期依賴 **Joplin Desktop Data API（Web Clipper）** 寫回，或必須 **Plugin API**？
 4. **Chroma／Ollama 啟動**：是否堅持「一鍵 spawn」；若 plugin 受限，是否接受 **伴隨 helper**？
 5. **設定來源**：維持單一 YAML、改為 app／plugin 設定儲存，或雙向同步？
 6. **測試與 CI**：brew bottle／plugin 載入是否納入自動化（到哪個程度）？

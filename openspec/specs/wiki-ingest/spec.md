@@ -49,7 +49,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -109,7 +109,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -166,7 +166,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -188,19 +188,19 @@ tests:
 -->
 
 ---
-### Requirement: REQ-WI-020 Post-compile optional Joplin database writeback orchestration
+### Requirement: REQ-WI-020 Post-compile optional Joplin Data API writeback orchestration
 
-When `joplin_wiki_writeback.enabled` is true (including the default `true` when the key is omitted) and `wiki-compile` completes wiki file writes successfully without `--dry-run`, the system SHALL invoke the Joplin CLI writeback stage before the `wiki-compile` process exits with code 0.
+When `joplin_wiki_writeback.enabled` is true (including the default `true` when the key is omitted) and `wiki-compile` completes wiki file writes successfully without `--dry-run`, the system SHALL invoke the Joplin Data API writeback stage before the `wiki-compile` process exits with code 0.
 
-When `wiki-compile` is invoked with `--dry-run`, the system SHALL NOT execute writeback Joplin CLI invocations that mutate Joplin profile data, regardless of `joplin_wiki_writeback.enabled`.
+When `wiki-compile` is invoked with `--dry-run`, the system SHALL NOT execute writeback Data API requests that mutate Joplin resources managed by this capability, regardless of `joplin_wiki_writeback.enabled`.
 
 When `joplin_wiki_writeback.enabled` is false, the system SHALL NOT invoke the writeback stage during `wiki-compile`.
 
-#### Scenario: SCN-WI-WB-01 Dry-run skips mutating CLI
+#### Scenario: SCN-WI-WB-01 Dry-run skips mutating Data API calls
 
 - **WHEN** wiki-compile runs with --dry-run
 - **AND** joplin_wiki_writeback.enabled is true
-- **THEN** no writeback mutating Joplin CLI subprocess runs
+- **THEN** no writeback mutating Data API requests are executed
 
 #### Scenario: SCN-WI-WB-02 Success runs writeback after compile
 
@@ -217,7 +217,7 @@ When `joplin_wiki_writeback.enabled` is false, the system SHALL NOT invoke the w
 #### Scenario: SCN-WI-WB-04 Omitted enabled key defaults to writeback on
 
 - **WHEN** configuration omits `joplin_wiki_writeback.enabled`
-- **AND** `joplin_cli.enabled` is true with a non-empty `joplin_cli.command`
+- **AND** `load-config` succeeds for writeback-enabled constraints (including a non-empty `joplin_data_api.token` after trim)
 - **AND** wiki-compile completes file writes successfully without --dry-run
 - **THEN** the writeback stage SHALL execute before exit code 0
 
@@ -231,7 +231,7 @@ code:
   - fixtures/full-karpathy.config.yaml
   - README.md
   - config.yaml.example
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - src/cli.js
   - src/wiki/wiki-compiler.js
 tests:

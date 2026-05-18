@@ -44,7 +44,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -110,7 +110,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -177,7 +177,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -237,7 +237,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -306,7 +306,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -368,7 +368,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -428,7 +428,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -488,7 +488,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -548,7 +548,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -570,20 +570,20 @@ tests:
 -->
 
 ---
-### Requirement: REQ-JOP-CLI-001 Optional official Joplin CLI preflight
+### Requirement: REQ-JOP-DAPI-001 Joplin Data API preflight when wiki writeback is enabled
 
-When `joplin_cli.enabled` is false, the system SHALL NOT spawn `joplin_cli.command`.
+When `joplin_wiki_writeback.enabled` is false, the system SHALL NOT invoke Joplin Data API preflight solely because `index` or `watch` is running.
 
-When `joplin_cli.enabled` is true, before reading Markdown for `index` or `watch`, the system SHALL spawn exactly one subprocess whose argv is `joplin_cli.command` followed by every token in `joplin_cli.preflight_argv` in order.
+When `joplin_wiki_writeback.enabled` is true, before reading Markdown from `notes_root` for `index` or `watch`, the system SHALL successfully complete the Data API availability check documented in `README.md` (the same check used before wiki-compile writeback mutations), using `joplin_data_api` configuration.
 
-The system SHALL enforce `joplin_cli.timeout_ms` wall-clock limit and SHALL terminate the subprocess on timeout.
+The system SHALL honor `joplin_data_api.timeout_ms` and retry semantics bounded by `joplin_wiki_writeback.max_cli_attempts` for this check.
 
-The system SHALL treat non-zero exit codes or spawn failures as fatal with exit code 1 and SHALL emit stderr JSON containing `"error":"JOPLIN_CLI_FAILED"`.
+On irrecoverable failure after retries are exhausted, the command SHALL exit with code 1 and SHALL emit stderr JSON containing `"error":"JOPLIN_DATA_API_FAILED"`.
 
-#### Scenario: SCN-JOP-CLI-01 Preflight failure surfaces
+#### Scenario: SCN-JOP-DAPI-01 Preflight failure surfaces on index
 
-- **WHEN** `joplin_cli.enabled` is true and the `joplin` executable exits with code 1
-- **THEN** `pnpm exec joplin-brain index` exits with code 1 and stderr includes `JOPLIN_CLI_FAILED`
+- **WHEN** `joplin_wiki_writeback.enabled` is true and the Data API returns HTTP 403 for the preflight request
+- **THEN** `pnpm exec joplin-llm-wiki index` exits with code 1 and stderr includes `JOPLIN_DATA_API_FAILED`
 
 
 <!-- @trace
@@ -612,7 +612,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -634,16 +634,16 @@ tests:
 -->
 
 ---
-### Requirement: REQ-JOP-CLI-002 CLI must not supply corpus bytes
+### Requirement: REQ-JOP-CORPUS-001 Filesystem remains embedding source of truth
 
-The system SHALL NOT pass Markdown bodies from `notes_root` through the Joplin CLI subprocess.
+The system SHALL NOT pass Markdown bodies from `notes_root` through any Joplin integration transport for the purpose of supplying corpus text to the indexer.
 
-The system SHALL NOT use Joplin CLI output as the embedding source of truth; corpus bytes SHALL always come from filesystem reads under `notes_root`.
+Indexed chunk text SHALL always be derived from filesystem reads under `notes_root`.
 
-#### Scenario: SCN-JOP-CLI-02 Filesystem remains source
+#### Scenario: SCN-JOP-CORPUS-01 Filesystem remains source
 
-- **WHEN** indexing runs with `joplin_cli.enabled` true and fixtures on disk
-- **THEN** indexed chunk text is derived only from files under `notes_root` regardless of CLI stdout content
+- **WHEN** indexing runs with fixtures on disk and `joplin_wiki_writeback.enabled` is true
+- **THEN** indexed chunk text is derived only from files under `notes_root` regardless of Data API responses used solely for preflight
 
 <!-- @trace
 source: joplin-brain-mvp
@@ -671,7 +671,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js

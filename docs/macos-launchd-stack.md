@@ -20,9 +20,9 @@
   - `joplin_sqlite_sync.database_path`：指向與 **Joplin Desktop** 相同 profile 之 `database.sqlite` 的**絕對路徑**
   - 在常見預設 profile 佈局下，該檔路徑為 **`~/.config/joplin-desktop/database.sqlite`**（請在 YAML 展開為絕對路徑，勿直接寫 `~`，除非你使用的 YAML 載入器會展開）
   - `joplin_sqlite_sync.schedule.every_seconds: 600`（或你希望的秒數；600＝約 10 分鐘一輪）
-  - 若啟用 **Joplin 寫回**：`joplin_cli.enabled: true` 且 plist／wrapper 的 **PATH** 能找到 `joplin` CLI
+  - 若啟用 **Joplin 寫回**：在 `config.yaml` 設定 **`joplin_data_api`**（**token** 非空、**base_url** 為 loopback，見 README）；**Joplin Desktop** 須啟用 **Web Clipper／Data API** 服務，排程主機須能連到該埠（預設常見 `41184`）。純 launchd、無圖形環境時通常**無法**常駐 Clipper——請改 **`joplin_wiki_writeback.enabled: false`** 或使用僅 **`wiki-compile --dry-run`** 的排程。
 
-- **Joplin Desktop** 與 **Joplin CLI** 指向同一 profile（寫回情境）
+- **Joplin Desktop** 與 **`database.sqlite`／匯出路徑**須對齊同一 profile（寫回與 sqlite-sync 皆然）。
 
 ## 環境變數（可選）
 

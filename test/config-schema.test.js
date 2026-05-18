@@ -216,3 +216,157 @@ chroma:
     (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
   );
 });
+
+/**
+ * @param {string} tmp
+ * @param {string} notes
+ */
+function writeMinimalSchema(tmp, notes) {
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+  fs.mkdirSync(notes);
+  return schemaPath;
+}
+
+test("SCN-JDA-CFG writeback enabled rejects non-integer timeout_ms", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-timeout-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  token: ok-token
+  timeout_ms: 3000.5
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});
+
+test("SCN-JDA-CFG writeback enabled rejects timeout_ms below minimum", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-timeout2-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  token: ok-token
+  timeout_ms: 500
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});
+
+test("SCN-JDA-CFG writeback enabled accepts token + timeout_ms defaults", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-ok-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  token: ok-token
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(path.join(tmp, "cfg.yaml"));
+  assert.strictEqual(cfg.joplin_data_api.token, "ok-token");
+  assert.strictEqual(cfg.joplin_data_api.timeout_ms, 30_000);
+  assert.strictEqual(cfg.joplin_data_api.base_url, "http://127.0.0.1:41184");
+});
+
+test("SCN-JDA-ALLOWLIST non-loopback base_url rejected when writeback enabled", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-host-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  base_url: http://192.168.1.10:41184
+  token: ok-token
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});
+
+test("SCN-JDA-ALLOWLIST non-loopback base_url allowed when writeback disabled", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-host-off-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+joplin_wiki_writeback:
+  enabled: false
+joplin_data_api:
+  base_url: http://192.168.1.10:41184
+  token: ""
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(path.join(tmp, "cfg.yaml"));
+  assert.strictEqual(cfg.joplin_data_api.base_url, "http://192.168.1.10:41184");
+});

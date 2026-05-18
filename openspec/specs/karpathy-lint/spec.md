@@ -42,7 +42,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -100,7 +100,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -158,7 +158,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -218,7 +218,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -276,7 +276,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js
@@ -335,7 +335,7 @@ code:
   - src/commands/cmd-lint.js
   - src/commands/cmd-index.js
   - src/config/load-config.js
-  - src/joplin/cli-runner.js
+  - src/joplin/data-api-client.js
   - test/helpers/mock-ollama-fetch.mjs
   - wiki-schema.example.yaml
   - src/ollama/client.js

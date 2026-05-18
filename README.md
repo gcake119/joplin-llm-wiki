@@ -61,7 +61,7 @@ pnpm exec joplin-llm-wiki ask --config ./my.config.yaml "你的問題"
 pnpm exec joplin-llm-wiki lint --config ./my.config.yaml
 ```
 
-Exit codes：**0** 成功；**1** 設定／schema／CLI 預檢／**wiki-compile 寫回（`JOPLIN_CLI_FAILED` / `JOPLIN_CLI_WRITE_FAILED`）** 等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
+Exit codes：**0** 成功；**1** 設定／schema／Joplin Data API 預檢／**wiki-compile 寫回（`JOPLIN_DATA_API_FAILED` / `JOPLIN_DATA_API_WRITE_FAILED`）** 等；**2** Ollama／Chroma 不可用；**3** 其他錯誤。
 
 ## Health GUI（Electron）
 
@@ -118,11 +118,12 @@ pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml --dry-run
 
 **macOS 一鍵常駐（Ollama + Chroma + `sqlite-sync`）**：若要以登入後三支 LaunchAgent 全堆疊背景執行（含就緒等待與日誌路徑），見 **[`docs/macos-launchd-stack.md`](docs/macos-launchd-stack.md)**。
 
-## Joplin：Desktop、CLI 與 Wiki 寫回（`joplin_wiki_writeback`）
+## Joplin：Desktop、Data API 與 Wiki 寫回（`joplin_wiki_writeback`）
 
-- **Joplin Desktop（或官方行動／桌面客戶端）**：用來**瀏覽與手動管理**完整筆記庫（同步、搜尋、編輯）。請與本工具使用**同一個 Joplin Profile**，這樣 `joplin_sqlite_sync` 所讀的 `database.sqlite` 路徑、以及 CLI 寫回的目標樹才會一致。
-- **Joplin 終端機 CLI**：需**另外安裝**；**專供 `wiki-compile` 成功後**把本輪編譯的 Markdown **寫入 Joplin**（預設頂層筆記本 `note-wiki`，其下依 wiki 的 **YAML frontmatter** 欄位 **`domain`**——或設定裡的 `topic_frontmatter_key`——建立**子筆記本**，並以**筆記標題**做 upsert）。若省略 `domain`（或該鍵非字串／為空），寫回會落到 **`_uncategorized`** 子筆記本。請先**備份 Profile**；寫回會覆寫 `note-wiki` 樹下**同名 note** 的正文。可用 `wiki-compile --dry-run` 演練（不呼叫會變更 Joplin 的 CLI）；要完全關閉寫回請在設定中設 `joplin_wiki_writeback.enabled: false`。
-- **`sqlite-sync`**：仍以 **better-sqlite3 唯讀**開啟 `database.sqlite` 匯出至 `notes_root`；**不**在本變更中改為全面改用 CLI 匯出。建議避免與大批量 CLI 寫回在同一短時間窗內並行操作同一 Profile。
+- **Joplin Desktop（或官方行動／桌面客戶端）**：用來**瀏覽與手動管理**完整筆記庫（同步、搜尋、編輯）。請與本工具使用**同一個 Joplin Profile**，這樣 `joplin_sqlite_sync` 所讀的 `database.sqlite` 路徑、以及寫回目標筆記本樹才會一致。
+- **Joplin Data API（Clipper）**：在 Desktop **設定 → 網頁剪輯器**啟用 **Web Clipper 服務**，複製 **授權權杖（token）**，並確認 **埠號**（預設常見為 `41184`）。`wiki-compile` 成功寫入 `wiki_root` 後，當 `joplin_wiki_writeback` 啟用且非 `--dry-run` 時，會透過 **`joplin_data_api`**（僅允許 **本機 loopback**：`127.0.0.1`／`localhost`／`::1`）將本輪頁面 **upsert** 至 Joplin：預設頂層筆記本 **`note-wiki`**，其下依 wiki **YAML frontmatter** 的 **`domain`**（或 `topic_frontmatter_key`）建**子筆記本**，並以**筆記標題**做 upsert。若省略 `domain`（或該鍵非字串／為空），寫回會落到 **`_uncategorized`**。請先**備份 Profile**；寫回會覆寫 `note-wiki` 樹下**同名 note** 的正文。`wiki-compile --dry-run` **不會**對 Joplin 發送會變更資料的 HTTP；仍會輸出 `writeback_would_write` 等乾跑統計。關閉寫回：設 `joplin_wiki_writeback.enabled: false`。
+- **寫回預檢（`GET /ping?token=…`）**：`index` 與非 dry-run 的 `wiki-compile` 寫回階段前會呼叫一次 ping 以確認 API 可用；失敗時 stderr 為單行 JSON，`error` 為 **`JOPLIN_DATA_API_FAILED`**。
+- **`sqlite-sync`**：仍以 **better-sqlite3 唯讀**開啟 `database.sqlite` 匯出至 `notes_root`；**不**以 Data API 取代大宗匯出。建議避免與大批量寫回在同一短時間窗內並行操作同一 Profile。
 
 編譯產物目錄：`config.yaml.example` 預設 **`wiki_root: ./wiki_root`**（與 `notes_root` 相同層級的倉庫根相對路徑）。`.gitignore` 已包含 **`wiki_root/`**，編譯出的 Wiki 預設不進版控。
 
@@ -135,7 +136,7 @@ pnpm test
 整合索引測試預設使用記憶體向量後端（不透過 Chroma HTTP），以降低 CI 對本機 Chroma 版本的耦合：
 
 - `JOPLIN_LLMWIKI_TEST_MEMORY_VECTOR=1`（建議）；仍相容 `JOPLIN_BRAIN_TEST_MEMORY_VECTOR=1`（測試會擇一自動設定）
-- 迷你 `config.yaml` 若**不需**驗證 Joplin 寫回，請設 `joplin_wiki_writeback.enabled: false`（或啟用 `joplin_cli`），否則 `load-config` 會因預設寫回開啟而 `CONFIG_INVALID`。
+- 迷你 `config.yaml` 若**不需**驗證 Joplin 寫回，請設 `joplin_wiki_writeback.enabled: false`；否則在寫回開啟時須提供非空 **`joplin_data_api.token`** 與 loopback **`joplin_data_api.base_url`**，否則 `load-config` 會 **`CONFIG_INVALID`**。
 
 ## 風險與注意
 

@@ -1,12 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseWikiMarkdown } from "../wiki/frontmatter.js";
-import { runJoplinCliPreflight, runJoplinCliProcess } from "./cli-runner.js";
-
-/** Joplin item type: notebook */
-const TYPE_FOLDER = 2;
-/** Joplin item type: note */
-const TYPE_NOTE = 1;
+import { createJoplinDataApiClient } from "./data-api-client.js";
 
 /**
  * Topic string for Joplin notebook title: NFC trim, strip path/control chars, max 128 units.
@@ -51,12 +46,12 @@ export function summarizeWikiWritebackDry(cfg, wikiRootAbs, relPaths) {
 }
 
 /**
- * Write compiled wiki pages into Joplin via the terminal CLI (notebook tree under `parent_notebook_title`).
+ * Write compiled wiki pages into Joplin via the Desktop Data API.
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs
  * @param {string[]} relPaths relative paths under `wiki_root` touched this run
- * @param {{ runCli?: typeof defaultRunCli, dryRun?: boolean }} [options]
+ * @param {{ fetch?: typeof fetch, dryRun?: boolean }} [options]
  */
 export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {}) {
   const wb = cfg.joplin_wiki_writeback;
@@ -78,7 +73,7 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
     };
   }
 
-  const runCli = options.runCli ?? defaultRunCli;
+  const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
   const { entries, collisions } = readWikiEntries(cfg, wikiRootAbs, relPaths, false);
 
   if (options.dryRun) {
@@ -92,15 +87,16 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
     };
   }
 
-  await runJoplinCliPreflight(cfg);
+  const client = createJoplinDataApiClient(cfg, { fetch: fetchImpl });
+  await client.pingWithRetries();
 
   const parentTitle = wb.parent_notebook_title;
 
-  let rootFolders = await listRootFolders(cfg, runCli);
+  let rootFolders = await client.listRootFolders();
   let parent = rootFolders.find((f) => f.title === parentTitle);
   if (!parent) {
-    await joplinRetry(cfg, ["mkbook", parentTitle], runCli);
-    rootFolders = await listRootFolders(cfg, runCli);
+    await client.createFolder(parentTitle, "");
+    rootFolders = await client.listRootFolders();
     parent = rootFolders.find((f) => f.title === parentTitle);
   }
   if (!parent?.id) {
@@ -113,7 +109,7 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
   /** @type {Map<string, string>} topic title → notebook id */
   const topicNotebookIds = new Map();
   for (const topic of topicsTouched) {
-    const { id, created } = await ensureTopicFolder(cfg, runCli, parentId, topic);
+    const { id, created } = await ensureTopicFolder(client, parentId, topic);
     if (created) notebooksCreated++;
     topicNotebookIds.set(topic, id);
   }
@@ -123,7 +119,7 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
     const topicId = topicNotebookIds.get(e.topic);
     if (!topicId)
       throw writePhaseFail(`internal: missing notebook id for topic: ${e.topic}`);
-    await upsertNoteInTopic(cfg, runCli, topicId, e.noteTitle, e.body);
+    await upsertNoteInTopic(client, topicId, e.noteTitle, e.body);
     written++;
   }
 
@@ -199,106 +195,20 @@ function entryFromRelPathOnly(rel) {
 }
 
 /**
- * @param {import('../config/load-config.js').AppConfig} cfg
- * @param {string[]} args
- * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
- */
-async function joplinRetry(cfg, args, runCli) {
-  const max = cfg.joplin_wiki_writeback.max_cli_attempts;
-  /** @type {unknown} */
-  let last = undefined;
-  for (let i = 0; i < max; i++) {
-    try {
-      return await runCli(cfg, args);
-    } catch (e) {
-      last = e;
-    }
-  }
-  const err = /** @type {Error} */ (last) ?? new Error("joplin cli failed");
-  const code = /** @type {Error & { code?: string }} */ (err).code;
-  if (code === "JOPLIN_CLI_FAILED") {
-    const w = new Error(err.message);
-    /** @type {Error & { code?: string }} */ (w).code = "JOPLIN_CLI_WRITE_FAILED";
-    throw w;
-  }
-  throw err;
-}
-
-/**
- * Anchor CLI context to notebook `parentId`, return child notebooks only.
- *
- * Joplin `use "<title>"` is unreliable vs `use "<notebookId>"`; `mkbook` creates
- * under the anchored notebook — wrong anchor ⇒ folders at profile root (`parent_id` "").
- *
- * @param {import('../config/load-config.js').AppConfig} cfg
- * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
+ * @param {ReturnType<typeof createJoplinDataApiClient>} client
  * @param {string} parentId
- */
-async function foldersUnderParent(cfg, runCli, parentId) {
-  await joplinRetry(cfg, ["use", parentId], runCli);
-  const { stdout } = await joplinRetry(cfg, ["ls", "-f", "json"], runCli);
-  /** @type {unknown} */
-  let arr;
-  try {
-    arr = JSON.parse(stdout.trim());
-  } catch {
-    throw writePhaseFail("invalid JSON from joplin ls (under parent)");
-  }
-  if (!Array.isArray(arr)) return [];
-  return arr.filter(
-    (o) =>
-      o &&
-      typeof o === "object" &&
-      /** @type {{ parent_id?: string, type_?: number, deleted_time?: number }} */ (
-        o
-      ).parent_id === parentId &&
-      /** @type {{ type_?: number }} */ (o).type_ === TYPE_FOLDER &&
-      !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
-  );
-}
-
-/**
- * @param {import('../config/load-config.js').AppConfig} cfg
- * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
- */
-async function listRootFolders(cfg, runCli) {
-  const { stdout } = await joplinRetry(cfg, ["ls", "/", "-f", "json"], runCli);
-  /** @type {unknown} */
-  let arr;
-  try {
-    arr = JSON.parse(stdout.trim());
-  } catch {
-    throw writePhaseFail("invalid JSON from joplin ls /");
-  }
-  if (!Array.isArray(arr)) return [];
-  return arr.filter(
-    (o) =>
-      o &&
-      typeof o === "object" &&
-      /** @type {{ parent_id?: string, type_?: number, deleted_time?: number, title?: string, id?: string }} */ (
-        o
-      ).parent_id === "" &&
-      /** @type {{ type_?: number }} */ (o).type_ === TYPE_FOLDER &&
-      !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
-  );
-}
-
-/**
+ * @param {string} topic
  * @returns {Promise<{ id: string, created: boolean }>}
  */
-async function ensureTopicFolder(cfg, runCli, parentId, topic) {
-  let subFolders = await foldersUnderParent(cfg, runCli, parentId);
+async function ensureTopicFolder(client, parentId, topic) {
+  let subFolders = await client.listChildFolders(parentId);
 
-  const existed = subFolders.some(
-    (/** @param {any} */ f) => f.title === topic,
-  );
+  const existed = subFolders.some((f) => f.title === topic);
   if (!existed) {
-    await joplinRetry(cfg, ["mkbook", topic], runCli);
-    subFolders = await foldersUnderParent(cfg, runCli, parentId);
+    await client.createFolder(topic, parentId);
+    subFolders = await client.listChildFolders(parentId);
   }
-  const found = /** @type {{ title?: string, id?: string } | undefined} */ (
-    subFolders.find((/** @param {any} */ f) => f.title === topic)
-  );
+  const found = subFolders.find((f) => f.title === topic);
   const id =
     found && typeof found.id === "string" && found.id.trim() ?
       found.id
@@ -309,80 +219,24 @@ async function ensureTopicFolder(cfg, runCli, parentId, topic) {
 }
 
 /**
- * @param {import('../config/load-config.js').AppConfig} cfg
- * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
- * @param {string} topicNotebookId nested topic folder notebook id (child of configured parent_notebook_title)
+ * @param {ReturnType<typeof createJoplinDataApiClient>} client
+ * @param {string} topicNotebookId
  * @param {string} noteTitle
  * @param {string} body
  */
-async function upsertNoteInTopic(
-  cfg,
-  runCli,
-  topicNotebookId,
-  noteTitle,
-  body,
-) {
-  await joplinRetry(cfg, ["use", topicNotebookId], runCli);
-  const { stdout } = await joplinRetry(cfg, ["ls", "-f", "json", "-t", "n"], runCli);
-  /** @type {unknown} */
-  let arr;
-  try {
-    arr = JSON.parse(stdout.trim());
-  } catch {
-    throw writePhaseFail("invalid JSON from joplin ls notes");
-  }
-  if (!Array.isArray(arr)) throw writePhaseFail("invalid ls for notes");
-  const notes = arr.filter(
-    (o) =>
-      o &&
-      typeof o === "object" &&
-      /** @type {{ type_?: number, deleted_time?: number }} */ (o).type_ === TYPE_NOTE &&
-      !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
-  );
-  const matches = notes.filter(/** @param {any} */ (n) => n.title === noteTitle);
+async function upsertNoteInTopic(client, topicNotebookId, noteTitle, body) {
+  const notes = await client.listNotesInFolder(topicNotebookId);
+  const matches = notes.filter((n) => n.title === noteTitle);
   if (matches.length > 1) {
     throw writePhaseFail(`duplicate note title in folder: ${noteTitle}`);
   }
   const bodyText = body.trimEnd() + "\n";
   if (matches.length === 1) {
-    const id = /** @type {{ id: string }} */ (matches[0]).id;
-    await joplinRetry(cfg, ["set", id, "body", bodyText], runCli);
+    const id = matches[0].id;
+    await client.updateNoteBody(id, bodyText);
     return;
   }
-  await joplinRetry(cfg, ["mknote", noteTitle], runCli);
-  const { stdout: out2 } = await joplinRetry(cfg, ["ls", "-f", "json", "-t", "n"], runCli);
-  let arr2;
-  try {
-    arr2 = JSON.parse(out2.trim());
-  } catch {
-    throw writePhaseFail("invalid JSON after mknote");
-  }
-  const notes2 = Array.isArray(arr2)
-    ? arr2.filter(
-        (o) =>
-          o &&
-          typeof o === "object" &&
-          /** @type {{ type_?: number, deleted_time?: number }} */ (o).type_ === TYPE_NOTE &&
-          !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
-      )
-    : [];
-  const m2 = notes2.filter(/** @param {any} */ (n) => n.title === noteTitle);
-  if (m2.length !== 1) {
-    throw writePhaseFail(`could not resolve new note for title: ${noteTitle}`);
-  }
-  await joplinRetry(
-    cfg,
-    ["set", /** @type {{ id: string }} */ (m2[0]).id, "body", bodyText],
-    runCli,
-  );
-}
-
-/**
- * @param {import('../config/load-config.js').AppConfig} cfg
- * @param {string[]} args
- */
-async function defaultRunCli(cfg, args) {
-  return runJoplinCliProcess(cfg, args);
+  await client.createNote(topicNotebookId, noteTitle, bodyText);
 }
 
 /**
@@ -390,6 +244,6 @@ async function defaultRunCli(cfg, args) {
  */
 function writePhaseFail(message) {
   const err = new Error(message);
-  /** @type {Error & { code?: string }} */ (err).code = "JOPLIN_CLI_WRITE_FAILED";
+  /** @type {Error & { code?: string }} */ (err).code = "JOPLIN_DATA_API_WRITE_FAILED";
   return err;
 }

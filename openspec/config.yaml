@@ -46,7 +46,7 @@ context: |
 
   ## 交付範圍（Karpathy LLM Wiki 全套，單一 change）
   1. **Sources**：唯讀 `notes_root`；向量入 `chroma.collection_sources`；`index`／`watch`
-  2. **Compiled Wiki**：可設定 `wiki_root`；`wiki-compile`（含 planner、預設 max_pages_per_run=15、`--dry-run`）；前置 YAML schema；強制 frontmatter（`source_refs`、`compiled_at`、`compiler_revision`）；預設不寫回 `notes_root`。**可選 Joplin CLI 寫回**：成功寫入 `wiki_root` 後，當 `joplin_wiki_writeback` 啟用（預設 true）且非 `--dry-run` 時，透過 `joplin_cli` 將本輪頁面 upsert 至 Joplin 筆記本樹（預設 `note-wiki`／`domain` 子資料夾）；啟用寫回時 load-config 要求 `joplin_cli.enabled` 與可執行 `command`，否則 `CONFIG_INVALID`
+  2. **Compiled Wiki**：可設定 `wiki_root`；`wiki-compile`（含 planner、預設 max_pages_per_run=15、`--dry-run`）；前置 YAML schema；強制 frontmatter（`source_refs`、`compiled_at`、`compiler_revision`）；預設不寫回 `notes_root`。**可選 Joplin Data API 寫回**：成功寫入 `wiki_root` 後，當 `joplin_wiki_writeback` 啟用（預設 true）且非 `--dry-run` 時，經 **`joplin_data_api`**（本機 loopback HTTP + Clipper token）將本輪頁面 upsert 至 Joplin 筆記本樹（預設 `note-wiki`／`domain` 子資料夾）；啟用寫回時 load-config 要求 **`joplin_data_api.token`** 非空且 **base_url hostname** 限 loopback，否則 `CONFIG_INVALID`
   3. **Schema**：`wiki_schema.path` 驗證、hub 頁規則、缺口偵測
   4. **雙 collection 索引**：wiki 樹入 `chroma.collection_wiki`，metadata `layer`
   5. **RAG**：`rag.retrieve_mode`：`wiki_first`（預設）／`sources_only`／`merged`
@@ -71,7 +71,7 @@ context: |
 
   ## 元件速查（供 specs/design 引用）
   Watcher(chokidar) → Indexer(parse/chunk/embed) → ChromaDB(local persist, dual collection)
-  WikiCompiler(wiki-compile + 可選 joplin_wiki_writeback) | SchemaValidator | RAGService(ask) | KarpathyLintEngine(lint) | ReportWriter | Scheduler(cron)
+  WikiCompiler(wiki-compile + 可選 joplin_wiki_writeback／Data API) | SchemaValidator | RAGService(ask) | KarpathyLintEngine(lint) | ReportWriter | Scheduler(cron)
   狀態：DISCOVERED→PARSED→CHUNKED→EMBEDDED→INDEXED；刪改 TOMBSTONE/REINDEX
 
 # =============================================================================
@@ -90,7 +90,7 @@ rules:
     - 明確標示變更類型：Feature | Bug Fix | Refactor | Infrastructure
     - 必須說明與 Joplin / Jarvis / joplin-llm-wiki 三者的關係（誰負責什麼、是否互補或取代）
     - 技術棧須寫明：Node.js + JavaScript (ESM) + pnpm + ChromaDB 本機嵌入式；不得預設 Python 或 npm/yarn
-    - 任何會**直接**寫入 Joplin Profile 內本機 `.md` 快取的行為須標為「需人工批准」並預設關閉；**例外**：經 **Joplin 官方 CLI** 之 `joplin_wiki_writeback`（設計上由 Joplin 引擎持久化）須在 README／範例載明預設開啟、風險、`enabled: false` 關閉方式與 `joplin_cli` 聯動驗證
+    - 任何會**直接**寫入 Joplin Profile 內本機 `.md` 快取的行為須標為「需人工批准」並預設關閉；**例外**：經 **Joplin Desktop Data API（Web Clipper）** 之 `joplin_wiki_writeback`（僅本機 loopback）須在 README／範例載明預設開啟、覆寫風險、`enabled: false` 關閉方式與 **`joplin_data_api.token`**／Clipper 啟用前提
     - 列出假設（Assumptions）：Profile 路徑、Ollama 模型已 pull、Node 20+、筆記量級 <10k
     - 列出 Rollback：停止 watcher、刪除/重建 data/chroma/、不影響 Joplin 資料
 
@@ -134,7 +134,7 @@ rules:
 
     # --- 與 specs 對齊 ---
     - 每個 REQ-xxx 在 design 中有對應小節或表格列（Traceability）
-    - CLI 簽名須完整：joplin-llm-wiki index|watch|wiki-compile|ask|lint|sqlite-sync 與參數、exit code（Node shebang 或 pnpm bin / pnpm exec）；寫回相關錯誤碼包含 `JOPLIN_CLI_FAILED`、`JOPLIN_CLI_WRITE_FAILED`（見 `src/cli.js`）
+    - CLI 簽名須完整：joplin-llm-wiki index|watch|wiki-compile|ask|lint|sqlite-sync 與參數、exit code（Node shebang 或 pnpm bin / pnpm exec）；寫回／Data API 預檢相關錯誤碼包含 `JOPLIN_DATA_API_FAILED`、`JOPLIN_DATA_API_WRITE_FAILED`（見 `src/cli.js`；相容舊字串 `JOPLIN_CLI_*`）
 
   tasks:
     # --- 格式 ---

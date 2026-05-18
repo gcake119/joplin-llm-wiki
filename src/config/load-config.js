@@ -33,6 +33,7 @@ import YAML from "yaml";
  *     contradiction: { max_pairs: number, timeout_ms: number },
  *   },
  *   joplin_cli: { enabled: boolean, command: string, preflight_argv: string[], timeout_ms: number },
+ *   joplin_data_api: { base_url: string, token: string, timeout_ms: number },
  *   joplin_wiki_writeback: {
  *     enabled: boolean,
  *     parent_notebook_title: string,
@@ -266,6 +267,15 @@ export async function loadConfig(configPath) {
     }),
   };
 
+  const apiNest = nest(doc, "joplin_data_api");
+  const joplin_data_api_base_url = str(
+    apiNest,
+    "base_url",
+    "http://127.0.0.1:41184",
+  ).trim();
+  const joplin_data_api_token = str(apiNest, "token", "").trim();
+  const joplin_data_api_timeout_ms = readJoplinDataApiTimeoutMs(apiNest);
+
   const wbNest =
     typeof doc.joplin_wiki_writeback === "object" &&
     doc.joplin_wiki_writeback !== null
@@ -295,10 +305,17 @@ export async function loadConfig(configPath) {
     }),
   };
 
+  const joplin_data_api = {
+    base_url: joplin_data_api_base_url,
+    token: joplin_data_api_token,
+    timeout_ms: joplin_data_api_timeout_ms,
+  };
+
   if (joplin_wiki_writeback.enabled) {
-    if (!joplin_cli.enabled || !joplin_cli.command.trim()) {
+    assertLoopbackJoplinDataApiUrl(joplin_data_api.base_url);
+    if (!joplin_data_api.token) {
       const err = new Error(
-        "joplin_cli.enabled and non-empty command required when joplin_wiki_writeback.enabled",
+        "joplin_data_api.token must be non-empty when joplin_wiki_writeback.enabled",
       );
       /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
       throw err;
@@ -392,9 +409,64 @@ export async function loadConfig(configPath) {
     rag,
     lint,
     joplin_cli,
+    joplin_data_api,
     joplin_wiki_writeback,
     joplin_sqlite_sync,
   };
+}
+
+/**
+ * @param {Record<string, unknown>} apiNest
+ */
+function readJoplinDataApiTimeoutMs(apiNest) {
+  if (!Object.prototype.hasOwnProperty.call(apiNest, "timeout_ms")) return 30_000;
+  const v = apiNest.timeout_ms;
+  if (typeof v !== "number" || !Number.isFinite(v) || Math.trunc(v) !== v) {
+    const err = new Error("joplin_data_api.timeout_ms must be an integer");
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  if (v < 1000 || v > 600_000) {
+    const err = new Error(
+      "joplin_data_api.timeout_ms must be between 1000 and 600000 inclusive",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return v;
+}
+
+/**
+ * @param {string} baseUrlRaw
+ */
+function assertLoopbackJoplinDataApiUrl(baseUrlRaw) {
+  /** @type {URL} */
+  let u;
+  try {
+    u = new URL(baseUrlRaw);
+  } catch {
+    const err = new Error(
+      "joplin_data_api.base_url must be a valid absolute HTTP(S) URL",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const scheme = u.protocol.replace(/:$/, "").toLowerCase();
+  if (scheme !== "http" && scheme !== "https") {
+    const err = new Error(
+      "joplin_data_api.base_url scheme must be http or https",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const host = u.hostname.toLowerCase();
+  if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+    const err = new Error(
+      "joplin_data_api.base_url hostname must be 127.0.0.1, localhost, or ::1",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
 }
 
 /**

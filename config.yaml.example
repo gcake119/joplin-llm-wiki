@@ -65,13 +65,18 @@ lint:
 joplin_cli:
   enabled: false
   command: joplin
-  # Read-only probe: runs `joplin version` (not `joplin config version`, which treats "version" as a setting key).
   preflight_argv:
     - version
   timeout_ms: 30000
 
-# LLM Wiki 編譯完成後可選將頁面寫回 Joplin（預設開啟）。啟用時 **必須** 將 joplin_cli.enabled 設為 true 且 command 可執行，否則 load-config 會 CONFIG_INVALID。
-# 寫回會在與 sqlite-sync 相同的 Profile 下建立筆記本樹（預設頂層 note-wiki；子筆記本依 wiki frontmatter 的 domain，見 README）。
+# Web Clipper / Data API：寫回開啟時 **必須** 設定非空 token，且 base_url 之 hostname 僅能為 127.0.0.1、localhost 或 ::1。
+joplin_data_api:
+  base_url: http://127.0.0.1:41184
+  token: "" # 於 Joplin Desktop → 設定 → 網頁剪輯器 複製授權權杖
+  timeout_ms: 30000
+
+# LLM Wiki 編譯完成後可選將頁面寫回 Joplin（預設開啟）。啟用時須設定 joplin_data_api.token；否則 load-config CONFIG_INVALID。
+# 寫回經 Data API（預設頂層 note-wiki；子筆記本依 wiki frontmatter 的 domain，見 README）。
 joplin_wiki_writeback:
   # enabled 省略時視同 true
   parent_notebook_title: note-wiki

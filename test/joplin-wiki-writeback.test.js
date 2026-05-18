@@ -12,14 +12,39 @@ import {
 import { runWikiCompileFlow } from "../src/wiki/wiki-compiler.js";
 import { installMockOllamaFetch } from "./helpers/mock-ollama-fetch.mjs";
 
-function fakeJoplinExit0(tmp) {
-  const p = path.join(tmp, "fake-joplin-exit-0");
-  fs.writeFileSync(
-    p,
-    "#!/usr/bin/env node\nprocess.exit(0);\n",
-    { mode: 0o755 },
-  );
-  return p;
+/**
+ * @param {unknown} obj
+ * @param {number} [status]
+ */
+function jsonOk(obj, status = 200) {
+  const s = JSON.stringify(obj);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      return JSON.parse(s);
+    },
+    async text() {
+      return s;
+    },
+  };
+}
+
+/**
+ * @param {string} t
+ * @param {number} [status]
+ */
+function textOk(t, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() {
+      throw new Error("not json");
+    },
+    async text() {
+      return t;
+    },
+  };
 }
 
 function baseCfgYaml(tmp, notes, wiki, schemaPath, extra = "") {
@@ -32,11 +57,9 @@ wiki_schema:
 wiki_ingest:
   max_pages_per_run: 15
   min_pages_per_run: 0
-joplin_cli:
-  enabled: true
-  command: joplin
-  preflight_argv:
-    - version
+joplin_data_api:
+  token: test-token
+  base_url: http://127.0.0.1:41184
   timeout_ms: 5000
 ${extra}
 chroma:
@@ -44,7 +67,7 @@ chroma:
 `;
 }
 
-test("SCN-JWKB-CFG-01 Writeback enabled without Joplin CLI fails fast", async () => {
+test("SCN-JWKB-CFG-01 Writeback enabled without Data API token fails fast", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-cfg-"));
   const cfgPath = path.join(tmp, "cfg.yaml");
   fs.mkdirSync(path.join(tmp, "notes"));
@@ -55,9 +78,8 @@ notes_root: ${path.join(tmp, "notes")}
 wiki_root: ""
 joplin_wiki_writeback:
   enabled: true
-joplin_cli:
-  enabled: false
-  command: joplin
+joplin_data_api:
+  token: ""
 chroma:
   persist_path: ${path.join(tmp, "chroma")}
 `,
@@ -78,9 +100,8 @@ test("SCN-JWKB-CFG-02 Defaults match notebook tree convention", async () => {
     `
 notes_root: ${path.join(tmp, "notes")}
 wiki_root: ""
-joplin_cli:
-  enabled: true
-  command: joplin
+joplin_data_api:
+  token: dummy-token
 chroma:
   persist_path: ${path.join(tmp, "chroma")}
 `,
@@ -93,7 +114,7 @@ chroma:
   assert.strictEqual(cfg.joplin_wiki_writeback.note_title_key, "title");
 });
 
-test("SCN-WI-WB-04 Omitted enabled key defaults to writeback on (runWikiWriteback runs)", async () => {
+test("SCN-WI-WB-04 Omitted enabled key defaults to writeback on (runWikiWriteback dry-run)", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-wb04-"));
   const cfgPath = path.join(tmp, "cfg.yaml");
   const notes = path.join(tmp, "notes");
@@ -101,7 +122,6 @@ test("SCN-WI-WB-04 Omitted enabled key defaults to writeback on (runWikiWritebac
   fs.mkdirSync(notes);
   fs.mkdirSync(wiki);
   fs.writeFileSync(path.join(wiki, "a.md"), "---\nstub: true\n---\n\nx\n", "utf8");
-  const fakeJ = fakeJoplinExit0(tmp);
   fs.writeFileSync(
     cfgPath,
     `
@@ -113,10 +133,8 @@ wiki_schema:
 wiki_ingest:
   max_pages_per_run: 15
   min_pages_per_run: 0
-joplin_cli:
-  enabled: true
-  command: ${fakeJ}
-  timeout_ms: 5000
+joplin_data_api:
+  token: test-token
 chroma:
   persist_path: ${path.join(tmp, "chroma")}
 `,
@@ -136,15 +154,15 @@ required_hub_pages: []
   );
   const cfg = await loadConfig(cfgPath);
   assert.strictEqual(cfg.joplin_wiki_writeback.enabled, true);
-  let invocations = 0;
+  let fetchCalls = 0;
   await runWikiWriteback(cfg, wiki, ["a.md"], {
     dryRun: true,
-    runCli: async () => {
-      invocations++;
-      return { stdout: "", stderr: "" };
+    fetch: async () => {
+      fetchCalls++;
+      return jsonOk({});
     },
   });
-  assert.strictEqual(invocations, 0);
+  assert.strictEqual(fetchCalls, 0);
 });
 
 test("normalizeWikiWritebackTopic trims and strips path chars", () => {
@@ -152,7 +170,7 @@ test("normalizeWikiWritebackTopic trims and strips path chars", () => {
   assert.ok(normalizeWikiWritebackTopic("a\\b/c").includes("_"));
 });
 
-test("SCN-JWKB-DRY-01 / SCN-WI-WB-01 dry-run: no Joplin subprocess (failing joplin on PATH still ok)", async () => {
+test("SCN-JWKB-DRY-01 / SCN-WI-WB-01 dry-run: no Joplin HTTP (bad PATH irrelevant)", async () => {
   process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR = "1";
   const restoreFetch = installMockOllamaFetch({
     embedDim: 8,
@@ -180,14 +198,6 @@ required_hub_pages: []
     "utf8",
   );
   const cfgPath = path.join(tmp, "cfg.yaml");
-  const binDir = path.join(tmp, "bin");
-  fs.mkdirSync(binDir, { recursive: true });
-  const fakeJoplin = path.join(binDir, "joplin");
-  fs.writeFileSync(
-    fakeJoplin,
-    "#!/usr/bin/env node\nprocess.exit(1)\n",
-    { mode: 0o755 },
-  );
   fs.writeFileSync(
     cfgPath,
     baseCfgYaml(tmp, notes, wiki, schemaPath, `
@@ -197,8 +207,6 @@ joplin_wiki_writeback:
 `),
     "utf8",
   );
-  const prevPath = process.env.PATH;
-  process.env.PATH = `${binDir}${path.delimiter}${prevPath ?? ""}`;
   try {
     await runWikiCompileFlow({
       ctx: {
@@ -209,13 +217,12 @@ joplin_wiki_writeback:
       },
     });
   } finally {
-    process.env.PATH = prevPath ?? "";
     delete process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR;
     restoreFetch();
   }
 });
 
-test("SCN-JWKB-TREE-01 parent missing → mkbook then topic mkbook", async () => {
+test("SCN-JWKB-TREE-01 parent missing → create folders then note", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-tree-"));
   const wiki = path.join(tmp, "wiki");
   fs.mkdirSync(wiki, { recursive: true });
@@ -226,7 +233,6 @@ test("SCN-JWKB-TREE-01 parent missing → mkbook then topic mkbook", async () =>
   );
   const cfgPath = path.join(tmp, "cfg.yaml");
   fs.mkdirSync(path.join(tmp, "notes"));
-  const fakeJ = fakeJoplinExit0(tmp);
   fs.writeFileSync(
     cfgPath,
     `
@@ -234,100 +240,103 @@ notes_root: ${path.join(tmp, "notes")}
 wiki_root: ${wiki}
 joplin_wiki_writeback:
   enabled: true
-joplin_cli:
-  enabled: true
-  command: ${fakeJ}
-  timeout_ms: 5000
+joplin_data_api:
+  token: x
 chroma:
   persist_path: ${path.join(tmp, "chroma")}
 `,
     "utf8",
   );
   const cfg = await loadConfig(cfgPath);
-  /** @type {string[][]} */
-  const argvLog = [];
   const parentId = "pid1111111111111111111111111111";
-  let lsRootPass = 0;
-  let lsFoldersUnderParent = 0;
-  let lsNotesInTopic = 0;
-  await runWikiWriteback(cfg, wiki, ["p.md"], {
-    dryRun: false,
-    runCli: async (_c, args) => {
-      argvLog.push(args);
-      if (args[0] === "ls" && args[1] === "/" && args.includes("json")) {
-        lsRootPass++;
-        if (lsRootPass === 1) {
-          return { stdout: "[]", stderr: "" };
-        }
-        return {
-          stdout: JSON.stringify([
-            {
-              id: parentId,
-              parent_id: "",
-              type_: 2,
-              title: "note-wiki",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
+  let rootPass = 0;
+  let childPass = 0;
+  /** @type {string[]} */
+  const posts = [];
+
+  const fetchMock = async (/** @type {string | URL} */ url, init) => {
+    const u = new URL(url);
+    const m = init?.method ?? "GET";
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    if (parts[parts.length - 1] === "ping") {
+      assert.strictEqual(m, "GET");
+      return textOk("JoplinClipperServer");
+    }
+
+    if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
+      rootPass++;
+      if (rootPass === 1) {
+        return jsonOk({ items: [], has_more: false });
       }
-      if (args[0] === "mkbook" && args[1] === "note-wiki") {
-        return { stdout: "", stderr: "" };
+      return jsonOk({
+        items: [
+          {
+            id: parentId,
+            parent_id: "",
+            title: "note-wiki",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+
+    if (m === "POST" && parts.length === 1 && parts[0] === "folders") {
+      const b = JSON.parse(String(init?.body ?? "{}"));
+      posts.push(`folder:${b.title}:${b.parent_id}`);
+      return jsonOk({ id: "new", title: b.title, parent_id: b.parent_id }, 200);
+    }
+
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "folders"
+    ) {
+      assert.strictEqual(parts[1], parentId);
+      childPass++;
+      if (childPass === 1) {
+        return jsonOk({ items: [], has_more: false });
       }
-      if (
-        args[0] === "ls" &&
-        args.includes("json") &&
-        args.includes("n") &&
-        args.includes("-t")
-      ) {
-        lsNotesInTopic++;
-        if (lsNotesInTopic === 1) return { stdout: "[]", stderr: "" };
-        return {
-          stdout: JSON.stringify([
-            {
-              id: "nid22222222222222222222222222222",
-              type_: 1,
-              title: "Overview",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
-      }
-      if (args[0] === "ls" && args.includes("json") && args[1] !== "/") {
-        lsFoldersUnderParent++;
-        if (lsFoldersUnderParent === 1) return { stdout: "[]", stderr: "" };
-        return {
-          stdout: JSON.stringify([
-            {
-              id: "sub1",
-              parent_id: parentId,
-              type_: 2,
-              title: "Networking",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
-      }
-      if (args[0] === "mkbook" && args[1] === "Networking") {
-        return { stdout: "", stderr: "" };
-      }
-      if (args[0] === "use") {
-        return { stdout: "", stderr: "" };
-      }
-      if (args[0] === "mknote") {
-        return { stdout: "", stderr: "" };
-      }
-      if (args[0] === "set") {
-        return { stdout: "", stderr: "" };
-      }
-      return { stdout: "", stderr: "" };
-    },
-  });
-  assert.ok(argvLog.some((a) => a[0] === "mkbook" && a[1] === "note-wiki"));
-  assert.ok(argvLog.some((a) => a[0] === "mkbook" && a[1] === "Networking"));
+      return jsonOk({
+        items: [
+          {
+            id: "sub1",
+            parent_id: parentId,
+            title: "Networking",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "notes"
+    ) {
+      return jsonOk({ items: [], has_more: false });
+    }
+
+    if (m === "POST" && parts.length === 1 && parts[0] === "notes") {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      assert.strictEqual(body.title, "Overview");
+      posts.push("note:create");
+      return jsonOk({ id: "nid22222222222222222222222222222" }, 200);
+    }
+
+    throw new Error(`unexpected fetch ${m} ${u.pathname}`);
+  };
+
+  await runWikiWriteback(cfg, wiki, ["p.md"], { fetch: fetchMock });
+  assert.strictEqual(rootPass, 2);
+  assert.strictEqual(childPass, 2);
+  assert.ok(posts.some((p) => p.startsWith("folder:note-wiki:")));
+  assert.ok(posts.some((p) => p.startsWith("folder:Networking:")));
+  assert.ok(posts.includes("note:create"));
 });
 
 test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () => {
@@ -339,179 +348,170 @@ test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () 
     '---\ndomain: Security\ntitle: "Overview"\n---\n\nHello\n',
     "utf8",
   );
-  const cfg = await loadConfig(
-    await writeMiniCfg(tmp, wiki, true),
-  );
-  /** @type {string[][]} */
-  const uses = [];
-  let lsNotePass = 0;
-  await runWikiWriteback(cfg, wiki, ["foo.md"], {
-    dryRun: false,
-    runCli: async (_c, args) => {
-      if (args[0] === "use") uses.push(args);
-      if (args[0] === "ls" && args[1] === "/" && args.includes("json")) {
-        return {
-          stdout: JSON.stringify([
-            {
-              id: "p",
-              parent_id: "",
-              type_: 2,
-              title: "note-wiki",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
-      }
-      if (
-        args[0] === "ls" &&
-        args.includes("json") &&
-        args.includes("-t") &&
-        args.includes("n")
-      ) {
-        lsNotePass++;
-        if (lsNotePass === 1) return { stdout: "[]", stderr: "" };
-        return {
-          stdout: JSON.stringify([
-            {
-              id: "n1",
-              type_: 1,
-              title: "Overview",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
-      }
-      if (args[0] === "ls" && args.includes("json") && args[1] !== "/") {
-        return {
-          stdout: JSON.stringify([
-            {
-              id: "s",
-              parent_id: "p",
-              type_: 2,
-              title: "Security",
-              deleted_time: 0,
-            },
-          ]),
-          stderr: "",
-        };
-      }
-      if (args[0] === "set") {
-        assert.strictEqual(args[3].includes("Hello"), true);
-        return { stdout: "", stderr: "" };
-      }
-      if (args[0] === "mknote") {
-        return { stdout: "", stderr: "" };
-      }
-      return { stdout: "", stderr: "" };
-    },
-  });
-  assert.ok(
-    uses.some((u) => u[0] === "use" && u[1] === "s"),
-    "expects use <topic-folder-id> rather than note-wiki/Security title path",
-  );
+  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki));
+
+  const fetchMock = async (/** @type {string | URL} */ url, init) => {
+    const u = new URL(url);
+    const m = init?.method ?? "GET";
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    if (parts[parts.length - 1] === "ping") return textOk("ok");
+
+    if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
+      return jsonOk({
+        items: [
+          {
+            id: "p",
+            parent_id: "",
+            title: "note-wiki",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "folders"
+    ) {
+      return jsonOk({
+        items: [
+          {
+            id: "s",
+            parent_id: "p",
+            title: "Security",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "notes"
+    ) {
+      return jsonOk({
+        items: [
+          {
+            id: "n1",
+            title: "Overview",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+
+    if (m === "PUT" && parts[0] === "notes" && parts.length === 2) {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      assert.strictEqual(body.body.includes("Hello"), true);
+      return jsonOk({}, 200);
+    }
+
+    throw new Error(`unexpected ${m} ${u.pathname}`);
+  };
+
+  await runWikiWriteback(cfg, wiki, ["foo.md"], { fetch: fetchMock });
 });
 
-test("SCN-JWKB-CLI-01 retries then JOPLIN_CLI_WRITE_FAILED", async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-cli-"));
+test("SCN-JWKB-DAPI-01 retries on transport failure then JOPLIN_DATA_API_FAILED", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-dapi-"));
   const wiki = path.join(tmp, "wiki");
   fs.mkdirSync(wiki);
   fs.writeFileSync(path.join(wiki, "a.md"), "---\nstub: true\n---\n\nx\n", "utf8");
-  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki, true));
+  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki));
   let n = 0;
   await assert.rejects(
     () =>
       runWikiWriteback(cfg, wiki, ["a.md"], {
         dryRun: false,
-        runCli: async () => {
+        fetch: async () => {
           n++;
-          const err = new Error("exit 1");
-          /** @type {Error & { code?: string }} */ (err).code = "JOPLIN_CLI_FAILED";
-          throw err;
+          throw new TypeError("network down");
         },
       }),
-    (e) => /** @type {{ code?: string }} */ (e).code === "JOPLIN_CLI_WRITE_FAILED",
+    (e) => /** @type {{ code?: string }} */ (e).code === "JOPLIN_DATA_API_FAILED",
   );
   assert.strictEqual(n, cfg.joplin_wiki_writeback.max_cli_attempts);
 });
 
-test("SCN-JWKB-LF-01 writeback mock does not call fetch", async () => {
+test("SCN-JWKB-LF-01 writeback uses loopback fetch only", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-lf-"));
   const wiki = path.join(tmp, "wiki");
   fs.mkdirSync(wiki);
   fs.writeFileSync(path.join(wiki, "a.md"), "---\nstub: true\n---\n\nx\n", "utf8");
-  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki, true));
+  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki));
   let fetchCalls = 0;
-  let lfLsNote = 0;
-  const orig = globalThis.fetch;
-  // @ts-expect-error stub
-  globalThis.fetch = async () => {
+  const fetchMock = async (/** @type {string | URL} */ url, init) => {
     fetchCalls++;
-    return /** @type {any} */ ({});
+    const u = new URL(url);
+    assert.strictEqual(u.hostname, "127.0.0.1");
+    assert.ok(u.searchParams.has("token"));
+    const parts = u.pathname.split("/").filter(Boolean);
+    const m = init?.method ?? "GET";
+
+    if (parts[parts.length - 1] === "ping") return textOk("ok");
+
+    if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
+      return jsonOk({
+        items: [
+          {
+            id: "p",
+            parent_id: "",
+            title: "note-wiki",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "folders"
+    ) {
+      return jsonOk({
+        items: [
+          {
+            id: "t",
+            parent_id: "p",
+            title: "_uncategorized",
+            deleted_time: 0,
+          },
+        ],
+        has_more: false,
+      });
+    }
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "notes"
+    ) {
+      return jsonOk({
+        items: [{ id: "n1", title: "a", deleted_time: 0 }],
+        has_more: false,
+      });
+    }
+    if (m === "PUT" && parts[0] === "notes") {
+      return jsonOk({}, 200);
+    }
+
+    throw new Error(`unexpected ${m} ${u.pathname}`);
   };
-  try {
-    await runWikiWriteback(cfg, wiki, ["a.md"], {
-      dryRun: false,
-      runCli: async (_c, args) => {
-        if (args[0] === "ls" && args[1] === "/" && args.includes("json")) {
-          return {
-            stdout: JSON.stringify([
-              {
-                id: "p",
-                parent_id: "",
-                type_: 2,
-                title: "note-wiki",
-                deleted_time: 0,
-              },
-            ]),
-            stderr: "",
-          };
-        }
-        if (
-          args[0] === "ls" &&
-          args.includes("json") &&
-          args.includes("-t") &&
-          args.includes("n")
-        ) {
-          lfLsNote++;
-          if (lfLsNote === 1) return { stdout: "[]", stderr: "" };
-          return {
-            stdout: JSON.stringify([
-              { id: "n1", type_: 1, title: "a", deleted_time: 0 },
-            ]),
-            stderr: "",
-          };
-        }
-        if (args[0] === "ls" && args.includes("json") && args[1] !== "/") {
-          return {
-            stdout: JSON.stringify([
-              {
-                id: "t",
-                parent_id: "p",
-                type_: 2,
-                title: "_uncategorized",
-                deleted_time: 0,
-              },
-            ]),
-            stderr: "",
-          };
-        }
-        if (args[0] === "mknote") {
-          return { stdout: "", stderr: "" };
-        }
-        if (args[0] === "set") return { stdout: "", stderr: "" };
-        if (args[0] === "use") return { stdout: "", stderr: "" };
-        return { stdout: "[]", stderr: "" };
-      },
-    });
-  } finally {
-    globalThis.fetch = orig;
-  }
-  assert.strictEqual(fetchCalls, 0);
+
+  await runWikiWriteback(cfg, wiki, ["a.md"], { fetch: fetchMock });
+  assert.ok(fetchCalls >= 1);
 });
 
-test("SCN-JWKB-ERR-01 wiki-compile writeback preflight failure → JOPLIN_CLI_FAILED", async () => {
+test("SCN-JWKB-ERR-01 wiki-compile writeback preflight failure → JOPLIN_DATA_API_FAILED", async () => {
   process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR = "1";
   const restoreFetch = installMockOllamaFetch({
     embedDim: 8,
@@ -519,6 +519,18 @@ test("SCN-JWKB-ERR-01 wiki-compile writeback preflight failure → JOPLIN_CLI_FA
       test: () => '{"paths":["stub/x.md"]}',
     },
   });
+  const mockFetch = globalThis.fetch;
+  // @ts-expect-error wrapper
+  globalThis.fetch = async (input, init) => {
+    const u = new URL(String(input));
+    if (u.pathname.endsWith("/ping")) {
+      return { ok: false, status: 403, async text() {
+        return "";
+      } };
+    }
+    return mockFetch(input, init);
+  };
+
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-err-"));
   const notes = path.join(tmp, "notes");
   const wiki = path.join(tmp, "wiki");
@@ -539,14 +551,6 @@ required_hub_pages: []
     "utf8",
   );
   const cfgPath = path.join(tmp, "cfg.yaml");
-  const binDir = path.join(tmp, "bin");
-  fs.mkdirSync(binDir, { recursive: true });
-  const fakeJoplin = path.join(binDir, "joplin");
-  fs.writeFileSync(
-    fakeJoplin,
-    "#!/usr/bin/env node\nprocess.exit(1);\n",
-    { mode: 0o755 },
-  );
   fs.writeFileSync(
     cfgPath,
     baseCfgYaml(tmp, notes, wiki, schemaPath, `
@@ -555,8 +559,7 @@ joplin_wiki_writeback:
 `),
     "utf8",
   );
-  const prevPath = process.env.PATH;
-  process.env.PATH = `${binDir}${path.delimiter}${prevPath ?? ""}`;
+
   try {
     await assert.rejects(
       () =>
@@ -568,12 +571,11 @@ joplin_wiki_writeback:
             flags: { help: false },
           },
         }),
-      (e) => /** @type {{ code?: string }} */ (e).code === "JOPLIN_CLI_FAILED",
+      (e) => /** @type {{ code?: string }} */ (e).code === "JOPLIN_DATA_API_FAILED",
     );
   } finally {
-    process.env.PATH = prevPath ?? "";
-    delete process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR;
     restoreFetch();
+    delete process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR;
   }
 });
 
@@ -583,7 +585,7 @@ test("summarizeWikiWritebackDry counts collisions", async () => {
   fs.mkdirSync(wiki);
   fs.writeFileSync(path.join(wiki, "a.md"), "---\ntitle: T\n---\n\n1\n", "utf8");
   fs.writeFileSync(path.join(wiki, "b.md"), "---\ntitle: T\n---\n\n2\n", "utf8");
-  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki, true));
+  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki));
   const s = summarizeWikiWritebackDry(cfg, wiki, ["a.md", "b.md"]);
   assert.strictEqual(s.writeback_collision_count, 1);
   assert.strictEqual(s.writeback_would_write, 2);
@@ -592,12 +594,10 @@ test("summarizeWikiWritebackDry counts collisions", async () => {
 /**
  * @param {string} tmp
  * @param {string} wiki
- * @param {boolean} cliOk
  */
-async function writeMiniCfg(tmp, wiki, cliOk) {
+async function writeMiniCfg(tmp, wiki) {
   const cfgPath = path.join(tmp, "m.yaml");
   fs.mkdirSync(path.join(tmp, "notes"));
-  const fakeJ = fakeJoplinExit0(tmp);
   fs.writeFileSync(
     cfgPath,
     `
@@ -605,10 +605,8 @@ notes_root: ${path.join(tmp, "notes")}
 wiki_root: ${wiki}
 joplin_wiki_writeback:
   enabled: true
-joplin_cli:
-  enabled: ${cliOk}
-  command: ${fakeJ}
-  timeout_ms: 5000
+joplin_data_api:
+  token: test-token
 chroma:
   persist_path: ${path.join(tmp, "c")}
 `,

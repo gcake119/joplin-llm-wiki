@@ -513,7 +513,7 @@ async function init() {
   el("btn-run-corpus").addEventListener("click", async () => {
     if (
       !confirm(
-        "將依序執行「pnpm exec joplin-llm-wiki index」與「wiki-compile」（不會自動匯出 SQLite；可能耗時數分鐘）。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。若設定啟用 Joplin wiki 寫回，wiki-compile 會呼叫 Joplin CLI，可能覆寫 note-wiki 樹下同名筆記。確定執行？",
+        "將依序執行「pnpm exec joplin-llm-wiki index」與「wiki-compile」（不會自動匯出 SQLite；可能耗時數分鐘）。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。若設定啟用 Joplin wiki 寫回，wiki-compile 會經 **本機 Data API** 更新 note-wiki 樹下同名筆記（須 Desktop Clipper 服務可用）。確定執行？",
       )
     )
       return;
