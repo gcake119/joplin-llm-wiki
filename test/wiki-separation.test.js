@@ -630,8 +630,114 @@ chroma:
   assert.ok(chats >= 1);
   const payload = JSON.parse(out);
   assert.strictEqual(payload.warning, "PLAN_EMPTY");
+  assert.strictEqual(typeof payload.planner_raw_preview, "string");
   assert.strictEqual(payload.corpus_mode, true);
   assert.strictEqual(payload.corpus_digest_paths_in_prompt_count, 1);
+});
+
+test("SCN-WCC-030 planner empty paths fall back to wiki_schema.required_hub_pages", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":[]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-hub-fallback-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "a.md"), "# a\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages:
+  - index.md
+  - topics/hub-overview.md
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 50
+  min_pages_per_run: 0
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(
+      typeof msg === "string"
+        ? msg
+        : msg != null ?
+          String(msg)
+        : "",
+    );
+    oe(msg, ...rest);
+  };
+
+  let out = "";
+  const ol = console.log.bind(console);
+  console.log = (ln) => {
+    out = typeof ln === "string" ? ln : JSON.stringify(ln);
+    ol(ln);
+  };
+
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath: cfgPath,
+        argv: [],
+        opts: new Map([["dry-run", "true"]]),
+        flags: { help: false },
+      },
+    });
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+
+  const joinedErr = stderrLines.join("\n");
+  assert.ok(
+    joinedErr.includes("PLAN_EMPTY_USING_SCHEMA_HUBS"),
+    "stderr should advertise hub fallback",
+  );
+
+  const payload = JSON.parse(out);
+  assert.strictEqual(payload.dry_run, true);
+  assert.ok(Array.isArray(payload.paths));
+  assert.deepStrictEqual(
+    [...payload.paths].sort(),
+    ["index.md", "topics/hub-overview.md"].sort(),
+  );
 });
 
 test("SCN-WCC-025 corpus chroma degraded path still completes wiki-compile", async () => {
@@ -891,6 +997,92 @@ chroma:
     assert.ok(Array.isArray(data.source_refs));
     assert.strictEqual(typeof data.compiled_at, "string");
     assert.strictEqual(typeof data.compiler_revision, "string");
+  } finally {
+    restorePlanner();
+  }
+});
+
+// Planner paths chosen so wiki path hash ⇒ distinct rotated windows (same offset mod 10 is rare fix).
+test("SCN-WCC-029 per-wiki-path source_refs rotate instead of repeating lex-first trio", async () => {
+  const restorePlanner = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      test() {
+        return '{"paths":["idx/0a.md","idx/1b.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-src-ref-rot-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  for (let i = 0; i < 10; i++) {
+    fs.writeFileSync(
+      path.join(notes, `${i.toString().padStart(2, "0")}n.md`),
+      `# note ${i}\n`,
+      "utf8",
+    );
+  }
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: true
+wiki_ingest:
+  max_pages_per_run: 15
+  min_pages_per_run: 0
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath: cfgPath,
+        argv: [],
+        opts: new Map(),
+        flags: { help: false },
+      },
+    });
+
+    const raw1 = fs.readFileSync(path.join(wiki, "idx/0a.md"), "utf8");
+    const raw2 = fs.readFileSync(path.join(wiki, "idx/1b.md"), "utf8");
+    const d1 = parseWikiMarkdown(raw1);
+    const d2 = parseWikiMarkdown(raw2);
+    const refs1 = [.../** @type {string[]} */ (d1.data.source_refs)].sort();
+    const refs2 = [.../** @type {string[]} */ (d2.data.source_refs)].sort();
+    assert.strictEqual(Array.isArray(d1.data.source_refs), true);
+    assert.strictEqual(Array.isArray(d2.data.source_refs), true);
+    assert.notDeepStrictEqual(
+      refs1,
+      refs2,
+      "expected different wiki paths to cite different rotated source_refs windows",
+    );
   } finally {
     restorePlanner();
   }

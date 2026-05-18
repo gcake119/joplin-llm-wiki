@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
@@ -99,11 +100,31 @@ export async function runWikiCompileFlow(args) {
     notesSummary: notesBundle,
   });
 
-  let paths = plan.paths;
+  let paths = dedupePathsPreserveOrder(plan.paths.map((p) => p.replace(/\\/g, "/")));
   let truncated = false;
   if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
     truncated = true;
     paths = paths.slice(0, cfg.wiki_ingest.max_pages_per_run);
+  }
+
+  if (paths.length === 0) {
+    const fb = pathsFromRequiredHubPages(
+      schema,
+      cfg.wiki_ingest.max_pages_per_run,
+    );
+    if (fb.length > 0) {
+      paths = fb;
+      console.error(
+        JSON.stringify({
+          warning: "PLAN_EMPTY_USING_SCHEMA_HUBS",
+          message:
+            "planner emitted zero usable paths; falling back to wiki_schema.required_hub_pages",
+          paths,
+          planner_raw_preview: (plan.raw ?? "").slice(0, 900),
+          chat_model: cfg.ollama.chat_model,
+        }),
+      );
+    }
   }
 
   if (paths.length < cfg.wiki_ingest.min_pages_per_run) {
@@ -121,7 +142,16 @@ export async function runWikiCompileFlow(args) {
     assertHubCoverage(schema, plannedSet, wikiRoot);
 
   if (paths.length === 0) {
-    const emptyPlan = { warning: "PLAN_EMPTY", paths: [] };
+    const emptyPlan = {
+      warning: "PLAN_EMPTY",
+      paths: [],
+      planner_raw_preview: (plan.raw ?? "").slice(0, 1200),
+      hint:
+        (schema.required_hub_pages?.length ?? 0) === 0
+          ? "Ollama planner returned no usable paths. Add wiki_schema.required_hub_pages to enable automatic hub fallback when the model outputs an empty list. See planner_raw_preview."
+          : "Ollama returned no usable paths and required_hub_pages did not yield compilable paths after filtering. Inspect planner_raw_preview.",
+      chat_model: cfg.ollama.chat_model,
+    };
     attachCorpusTelemetry(emptyPlan, cfg, notesBundle);
     console.log(JSON.stringify(emptyPlan));
     return { dryRun: dryRun === true, paths, truncated };
@@ -143,15 +173,32 @@ export async function runWikiCompileFlow(args) {
   }
 
   const revision = `karpathy-mvp-${new Date().toISOString()}`;
-  const sourceRefs = await pickDefaultSourceRefs(cfg);
+  const notesRootResolved = path.resolve(cfg.notes_root);
+  const allNoteAbs = await discoverMarkdown(notesRootResolved, cfg.notes_glob);
+  if (allNoteAbs.length === 0) {
+    const err = new Error(
+      "no markdown files under notes_root matching notes_glob (required for wiki source_refs)",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
+    throw err;
+  }
 
   for (const rel of paths) {
+    const wikiNorm = rel.replace(/\\/g, "/");
+    const writerSliceAbs = writerNoteSliceForPage(cfg, wikiNorm, allNoteAbs);
+    const sourceRefs = sourceRefsFromWriterSlice(
+      wikiNorm,
+      writerSliceAbs,
+      notesRootResolved,
+    );
+
     const body = await writeWikiPageBody({
       cfg,
       ollama,
       relPath: rel,
       schema,
       notesSummary: notesBundle.summary,
+      writerSliceAbs,
     });
     const meta = wikiListingMetaFromRelPath(rel);
     const pageData = {
@@ -210,23 +257,126 @@ function wikiListingMetaFromRelPath(relPath) {
 }
 
 /**
- * @param {import('../config/load-config.js').AppConfig} cfg
+ * Fallback path list when the LLM emits no usable wiki paths (`PLAN_EMPTY` guardrail).
+ *
+ * @param {import('../schema/schema-validator.js').WikiSchema} schema
+ * @param {number} maxPages
  */
-async function pickDefaultSourceRefs(cfg) {
-  const root = path.resolve(cfg.notes_root);
-  const files = await discoverMarkdown(root, cfg.notes_glob);
+function pathsFromRequiredHubPages(schema, maxPages) {
+  const hubs = schema.required_hub_pages;
+  if (!Array.isArray(hubs) || hubs.length === 0) return [];
+  const norm = hubs
+    .map((h) =>
+      String(h).replace(/\\/g, "/").replace(/^\/+/, "").trim(),
+    )
+    .filter((p) => p && !p.includes(".."));
+  return dedupePathsPreserveOrder(norm).slice(
+    0,
+    Math.max(0, Math.trunc(maxPages)),
+  );
+}
+
+/** @param {string[]} plannerPaths normalized forward slashes */
+function dedupePathsPreserveOrder(plannerPaths) {
+  const seen = new Set();
   const out = [];
-  for (const abs of files.slice(0, 3)) {
-    out.push(relativeUnder(root, abs));
-  }
-  if (out.length === 0) {
-    const err = new Error(
-      "no markdown files under notes_root matching notes_glob (required for wiki source_refs)",
-    );
-    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
-    throw err;
+  for (const p of plannerPaths) {
+    if (!p || p.includes("..")) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
   }
   return out;
+}
+
+/**
+ * Sorted note paths that feed the trimmed writer excerpt for `wikiRelNorm`.
+ *
+ * - Non-corpus: rotating window (`max 5`) over all markdown.
+ * - Corpus + `filesystem_slice`: fixed planner digest alignment (tests pin excerpt content).
+ * - Corpus + `filesystem_plus_chroma`: digest start bumped by wiki path hash.
+ *
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {string} wikiRelNorm
+ * @param {string[]} noteFilesAbsSorted
+ */
+function writerNoteSliceForPage(cfg, wikiRelNorm, noteFilesAbsSorted) {
+  const n = noteFilesAbsSorted.length;
+  if (n === 0) return [];
+  const ingest = cfg.wiki_ingest;
+
+  if (!ingest.corpus_mode_enabled) {
+    const maxSlice = Math.min(n, 5);
+    const off = digestOffsetFromRel(wikiRelNorm, n);
+    return rotatedSlice(noteFilesAbsSorted, off, maxSlice);
+  }
+
+  const maxTake = Math.min(n, ingest.corpus_digest_max_files);
+
+  if (ingest.corpus_writer_excerpt_mode === "filesystem_slice") {
+    return rotatedSlice(noteFilesAbsSorted, ingest.corpus_digest_offset, maxTake);
+  }
+
+  const bumped = bumpedCorpusSliceStart(
+    ingest.corpus_digest_offset,
+    wikiRelNorm,
+    n,
+  );
+  return rotatedSlice(noteFilesAbsSorted, bumped, maxTake);
+}
+
+/**
+ * @param {number} baseOffsetRaw
+ * @param {string} wikiRelNorm
+ * @param {number} n
+ */
+function bumpedCorpusSliceStart(baseOffsetRaw, wikiRelNorm, n) {
+  const base = (((Math.trunc(baseOffsetRaw) % n) + n) % n);
+  const bump = digestOffsetFromRel(wikiRelNorm, n);
+  return (base + bump) % n;
+}
+
+/**
+ * Up to three `notes_root`-relative refs, each corresponding to raw bodies inside
+ * {@link writerNoteSliceForPage} (possibly truncated by excerpt byte budget later).
+ *
+ * @param {string} wikiRelNorm
+ * @param {string[]} writerSliceAbs abs paths matching writer excerpt slice order
+ * @param {string} notesRootResolved
+ */
+function sourceRefsFromWriterSlice(
+  wikiRelNorm,
+  writerSliceAbs,
+  notesRootResolved,
+) {
+  const m = writerSliceAbs.length;
+  if (m === 0) return [];
+  const k = Math.min(3, m);
+  const off = digestOffsetFromRel(wikiRelNorm, m);
+  const picks = rotatedSlice(writerSliceAbs, off, k);
+  return picks.map((abs) => relativeUnder(notesRootResolved, abs));
+}
+
+/**
+ * Stable [0,n) offset from wiki path hash (XOR-split digest words to reduce modulo collisions).
+ *
+ * @param {string} wikiRelNormalized
+ * @param {number} modulus
+ */
+function digestOffsetFromRel(wikiRelNormalized, modulus) {
+  if (modulus <= 0) return 0;
+  if (modulus === 1) return 0;
+  const digest = crypto
+    .createHash("sha256")
+    .update(wikiRelNormalized, "utf8")
+    .digest();
+  /** XOR first four big-endian UInt32 lanes for a fuller mix than `readUInt32BE(0)` alone. */
+  const mix =
+    digest.readUInt32BE(0) ^
+    digest.readUInt32BE(4) ^
+    digest.readUInt32BE(8) ^
+    digest.readUInt32BE(12);
+  return (mix >>> 0) % modulus;
 }
 
 /**
@@ -236,11 +386,20 @@ async function pickDefaultSourceRefs(cfg) {
  *   relPath: string,
  *   schema: import('../schema/schema-validator.js').WikiSchema,
  *   notesSummary: string,
+ *   writerSliceAbs: string[],
  * }} args
  */
 async function writeWikiPageBody(args) {
-  const { cfg, ollama, relPath, schema, notesSummary } = args;
-  const excerpt = await readSourcesExcerpt(cfg, ollama, relPath);
+  const {
+    cfg,
+    ollama,
+    relPath,
+    schema,
+    notesSummary,
+    writerSliceAbs,
+  } = args;
+  const wikiNorm = relPath.replace(/\\/g, "/");
+  const excerpt = await buildExcerptMarkdown(cfg, ollama, wikiNorm, writerSliceAbs);
   const prompt = `Write a concise Markdown wiki page for path "${relPath}".
 
 Schema hubs: ${schema.required_hub_pages.join(", ")}
@@ -265,21 +424,12 @@ ${excerpt}
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {import('../ollama/client.js').OllamaClient} ollama
- * @param {string} relPath
+ * @param {string} wikiRelNorm
+ * @param {string[]} sliceAbs precomputed writer slice (`writerNoteSliceForPage`)
  */
-async function readSourcesExcerpt(cfg, ollama, relPath) {
+async function buildExcerptMarkdown(cfg, ollama, wikiRelNorm, sliceAbs) {
   const root = path.resolve(cfg.notes_root);
-  const files = await discoverMarkdown(root, cfg.notes_glob);
   const ingest = cfg.wiki_ingest;
-
-  /** @type {string[]} */
-  let sliceAbs;
-  if (!ingest.corpus_mode_enabled) {
-    sliceAbs = files.slice(0, 5);
-  } else {
-    const maxTake = Math.min(files.length, ingest.corpus_digest_max_files);
-    sliceAbs = rotatedSlice(files, ingest.corpus_digest_offset, maxTake);
-  }
 
   const parts = [];
   let budget = 8000;
@@ -300,7 +450,7 @@ async function readSourcesExcerpt(cfg, ollama, relPath) {
     const chromaMd = await corpusChromaAugmentFromChroma(
       cfg,
       ollama,
-      relPath,
+      wikiRelNorm,
     );
     if (chromaMd) {
       out = `${out}\n\n### chroma_neighbors\n\n${chromaMd}`;
