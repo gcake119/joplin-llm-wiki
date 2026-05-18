@@ -740,6 +740,114 @@ chroma:
   );
 });
 
+test("SCN-WCC-031 PLAN_BELOW_MIN merges required_hub_pages when planner returns few paths", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["solo.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-below-min-topup-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "a.md"), "# a\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages:
+  - index.md
+  - topics/hub-overview.md
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 50
+  min_pages_per_run: 10
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(
+      typeof msg === "string"
+        ? msg
+        : msg != null ?
+          String(msg)
+        : "",
+    );
+    oe(msg, ...rest);
+  };
+
+  let out = "";
+  const ol = console.log.bind(console);
+  console.log = (ln) => {
+    out = typeof ln === "string" ? ln : JSON.stringify(ln);
+    ol(ln);
+  };
+
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath: cfgPath,
+        argv: [],
+        opts: new Map([["dry-run", "true"]]),
+        flags: { help: false },
+      },
+    });
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+
+  const joinedErr = stderrLines.join("\n");
+  assert.ok(
+    joinedErr.includes("PLAN_BELOW_MIN_TOPUP_HUBS"),
+    "stderr should advertise hub top-up below min",
+  );
+  assert.ok(
+    joinedErr.includes("PLAN_BELOW_MIN"),
+    "stderr should still warn when below min_soft after top-up",
+  );
+
+  const payload = JSON.parse(out);
+  assert.strictEqual(payload.dry_run, true);
+  assert.deepStrictEqual(
+    [...payload.paths].sort(),
+    ["index.md", "solo.md", "topics/hub-overview.md"].sort(),
+  );
+});
+
 test("SCN-WCC-025 corpus chroma degraded path still completes wiki-compile", async () => {
   process.env.JOPLIN_BRAIN_TEST_MEMORY_VECTOR = "1";
   const restore = installMockOllamaFetch({

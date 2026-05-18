@@ -95,6 +95,8 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 
 預設行為對齊 **notebook-wide thematic PKM**：**省略** `wiki_ingest.corpus_mode_enabled` 時視為 **`true`**，`wiki-compile` 會以 **`discoverMarkdown` 字典序**配合 **`corpus_digest_offset`**（環狀位移）將最多 **`corpus_digest_max_files`**（預設 500，合法 40–1000）筆來源路徑＋mtime 送入 planner；撰寫階段對同一視窗組裝 excerpts（仍可受內文明文長度上限切斷）。請留意 **tokens／本機流量**將高於過往兼容路徑。
 
+**一輪會編譯幾頁？** 每輪由 **Ollama planner** 產生 **`paths` 清單**，數量 **≤ `wiki_ingest.max_pages_per_run`**（預設 15）；digest 列了上百筆來源路徑 **不代表**本輪會生成上百篇 wiki。若要逐步覆蓋整庫，可多次執行並調整 **`corpus_digest_offset`**（digest 視窗會跟著滑動）。**`min_pages_per_run`** 為軟門檻：低於時 stderr 會出現 **`PLAN_BELOW_MIN`**；若 schema 有 **`required_hub_pages`**，實作會嘗試合併 hub 路徑並送出 **`PLAN_BELOW_MIN_TOPUP_HUBS`**（仍可能低於 `min_pages_per_run`，例如 hub 只有兩個時）。
+
 - **`corpus_digest_offset`**：整數輪替起點；多輪手動換 offset 可把 digest 視窗環狀移位以覆蓋不同排序區段。
 - **`corpus_writer_excerpt_mode`**：`filesystem_slice`（僅檔案系統）或 `filesystem_plus_chroma`（在成功命中時附加本機 **`collection_sources`** 鄰近 chunk；失效或無命中時自動降級，stderr 會出現單行 JSON：`{"warning":"CORPUS_CHROMA_DEGRADED",...}`）。
 - **Rollback（打破預設加寬視窗時）**：在 YAML **顯式**寫 **`wiki_ingest.corpus_mode_enabled: false`**，還原過往 forty-file digest／五檔 excerpt 自動化相容路徑；詳見 **`CHANGELOG.md`**。

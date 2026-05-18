@@ -127,6 +127,45 @@ export async function runWikiCompileFlow(args) {
     }
   }
 
+  if (
+    paths.length > 0 &&
+    paths.length < cfg.wiki_ingest.min_pages_per_run &&
+    Array.isArray(schema.required_hub_pages) &&
+    schema.required_hub_pages.length > 0
+  ) {
+    const hubFb = pathsFromRequiredHubPages(
+      schema,
+      cfg.wiki_ingest.max_pages_per_run,
+    );
+    const seen = new Set(paths.map((p) => p.replace(/\\/g, "/")));
+    const before = paths.length;
+    for (const h of hubFb) {
+      if (paths.length >= cfg.wiki_ingest.min_pages_per_run) break;
+      if (paths.length >= cfg.wiki_ingest.max_pages_per_run) break;
+      const hn = h.replace(/\\/g, "/");
+      if (!seen.has(hn)) {
+        seen.add(hn);
+        paths.push(h);
+      }
+    }
+    if (paths.length > before) {
+      console.error(
+        JSON.stringify({
+          warning: "PLAN_BELOW_MIN_TOPUP_HUBS",
+          message:
+            "planner returned fewer paths than wiki_ingest.min_pages_per_run; merged wiki_schema.required_hub_pages",
+          before,
+          after: paths.length,
+          min_soft: cfg.wiki_ingest.min_pages_per_run,
+        }),
+      );
+    }
+    if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
+      truncated = true;
+      paths = paths.slice(0, cfg.wiki_ingest.max_pages_per_run);
+    }
+  }
+
   if (paths.length < cfg.wiki_ingest.min_pages_per_run) {
     console.error(
       JSON.stringify({

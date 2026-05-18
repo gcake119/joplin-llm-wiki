@@ -56,6 +56,11 @@ export async function summarizeSourcesForPlanner(cfg) {
  */
 export async function planWikiPaths(args) {
   const { cfg, schema, ollama, notesSummary } = args;
+  const maxRun = cfg.wiki_ingest.max_pages_per_run;
+  const minSoft = cfg.wiki_ingest.min_pages_per_run;
+  const srcCount = notesSummary.sourceFileCount;
+  const digestCount = notesSummary.digest_paths_in_prompt_count;
+
   const system =
     "You output ONLY compact JSON with key paths (string array). No prose.";
   const prompt = `Plan wiki pages to update for Karpathy ingest.
@@ -67,8 +72,9 @@ Sources digest (relative paths + mtimes):
 ${notesSummary.summary}
 
 Constraints:
-- Return between 0 and ${cfg.wiki_ingest.max_pages_per_run} paths (relative to wiki_root, use forward slashes).
+- Return between 0 and ${maxRun} paths (relative to wiki_root, use forward slashes).
 - Prefer hubs that are missing or stale.
+- The notes library has ${srcCount} markdown files; this digest lists ${digestCount} of them (metadata only). When ${srcCount} is large, prefer returning at least ${minSoft} diverse wiki paths that synthesize or refresh coverage from that corpus—unless you deliberately scope a tiny edit (never exceed ${maxRun}).
 - JSON shape strictly: {"paths":["foo.md","bar/b.md"]}`;
 
   /** @type {string | undefined} */
