@@ -179,6 +179,84 @@ export function createJoplinDataApiClient(cfg, options = {}) {
     return out;
   }
 
+  /**
+   * Joplin GET /folders returns a tree (`children` on nodes). There is no GET /folders/:id/folders.
+   *
+   * @param {unknown[]} nodes
+   */
+  function flattenFolderNodes(nodes) {
+    /** @type {{ id: string, parent_id: string, title?: string }[]} */
+    const out = [];
+    /** @type {Set<string>} */
+    const seen = new Set();
+    /**
+     * @param {unknown} node
+     * @param {string} [defaultParent]
+     */
+    function walk(node, defaultParent) {
+      if (node === null || typeof node !== "object") return;
+      const o = /** @type {Record<string, unknown>} */ (node);
+      const id = o.id;
+      if (typeof id !== "string" || seen.has(id)) return;
+      const del = o.deleted_time;
+      if (typeof del === "number" && del > 0) return;
+      const parentRaw = o.parent_id;
+      const parent_id =
+        typeof parentRaw === "string" ? parentRaw : defaultParent ?? "";
+      seen.add(id);
+      out.push({
+        id,
+        parent_id,
+        title: typeof o.title === "string" ? o.title : undefined,
+      });
+      const ch = o.children;
+      if (Array.isArray(ch)) {
+        for (const c of ch) walk(c, id);
+      }
+    }
+    if (!Array.isArray(nodes)) return out;
+    for (const n of nodes) walk(n, undefined);
+    return out;
+  }
+
+  /** @type {{ flat: { id: string, parent_id: string, title?: string }[] } | null} */
+  let foldersFlatCache = null;
+
+  function invalidateFoldersCache() {
+    foldersFlatCache = null;
+  }
+
+  /**
+   * Paginated GET /folders, flattened (tree children merged). Cached until createFolder mutates.
+   */
+  async function loadFoldersFlat(phase) {
+    if (foldersFlatCache) return foldersFlatCache.flat;
+    /** @type {{ id: string, parent_id: string, title?: string }[]} */
+    const acc = [];
+    let page = 1;
+    while (true) {
+      const data = await requestJson(phase, "GET", "/folders", { page });
+      const items =
+        data && typeof data === "object" && Array.isArray(/** @type {{ items?: unknown }} */ (data).items) ?
+          /** @type {{ items: unknown[] }} */ (data).items
+        : [];
+      acc.push(...flattenFolderNodes(items));
+      const hasMore =
+        data &&
+        typeof data === "object" &&
+        /** @type {{ has_more?: unknown }} */ (data).has_more === true;
+      if (!hasMore || items.length === 0) break;
+      page++;
+      if (page > 10_000) throw writeFail("folder pagination exceeded safety limit");
+    }
+    /** @type {Map<string, { id: string, parent_id: string, title?: string }>} */
+    const byId = new Map();
+    for (const f of acc) byId.set(f.id, f);
+    const flat = [...byId.values()];
+    foldersFlatCache = { flat };
+    return flat;
+  }
+
   return {
     /** @returns {Promise<void>} */
     async pingWithRetries() {
@@ -218,8 +296,8 @@ export function createJoplinDataApiClient(cfg, options = {}) {
      * @returns {Promise<{ id: string, parent_id: string, title?: string }[]>}
      */
     async listRootFolders() {
-      const items = await fetchAllPages("write", "/folders", {});
-      return items.filter(isFolderDto).filter((f) => f.parent_id === "");
+      const flat = await loadFoldersFlat("write");
+      return flat.filter((f) => f.parent_id === "");
     },
 
     /**
@@ -227,12 +305,8 @@ export function createJoplinDataApiClient(cfg, options = {}) {
      * @returns {Promise<{ id: string, parent_id: string, title?: string }[]>}
      */
     async listChildFolders(parentId) {
-      const items = await fetchAllPages(
-        "write",
-        `/folders/${encodeURIComponent(parentId)}/folders`,
-        {},
-      );
-      return items.filter(isFolderDto).filter((f) => f.parent_id === parentId);
+      const flat = await loadFoldersFlat("write");
+      return flat.filter((f) => f.parent_id === parentId);
     },
 
     /**
@@ -244,6 +318,7 @@ export function createJoplinDataApiClient(cfg, options = {}) {
         title,
         parent_id: parentId,
       });
+      invalidateFoldersCache();
     },
 
     /**
@@ -286,20 +361,6 @@ export function createJoplinDataApiClient(cfg, options = {}) {
       );
     },
   };
-}
-
-/**
- * @param {unknown} o
- * @returns {o is { id: string, parent_id: string, title?: string }}
- */
-function isFolderDto(o) {
-  return (
-    o !== null &&
-    typeof o === "object" &&
-    typeof /** @type {{ id?: unknown }} */ (o).id === "string" &&
-    typeof /** @type {{ parent_id?: unknown }} */ (o).parent_id === "string" &&
-    !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0)
-  );
 }
 
 /**

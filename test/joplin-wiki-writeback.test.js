@@ -249,8 +249,7 @@ chroma:
   );
   const cfg = await loadConfig(cfgPath);
   const parentId = "pid1111111111111111111111111111";
-  let rootPass = 0;
-  let childPass = 0;
+  let folderGetCount = 0;
   /** @type {string[]} */
   const posts = [];
 
@@ -265,9 +264,22 @@ chroma:
     }
 
     if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
-      rootPass++;
-      if (rootPass === 1) {
+      folderGetCount++;
+      if (folderGetCount === 1) {
         return jsonOk({ items: [], has_more: false });
+      }
+      if (folderGetCount === 2) {
+        return jsonOk({
+          items: [
+            {
+              id: parentId,
+              parent_id: "",
+              title: "note-wiki",
+              deleted_time: 0,
+            },
+          ],
+          has_more: false,
+        });
       }
       return jsonOk({
         items: [
@@ -275,6 +287,12 @@ chroma:
             id: parentId,
             parent_id: "",
             title: "note-wiki",
+            deleted_time: 0,
+          },
+          {
+            id: "sub1",
+            parent_id: parentId,
+            title: "Networking",
             deleted_time: 0,
           },
         ],
@@ -286,30 +304,6 @@ chroma:
       const b = JSON.parse(String(init?.body ?? "{}"));
       posts.push(`folder:${b.title}:${b.parent_id}`);
       return jsonOk({ id: "new", title: b.title, parent_id: b.parent_id }, 200);
-    }
-
-    if (
-      m === "GET" &&
-      parts.length === 3 &&
-      parts[0] === "folders" &&
-      parts[2] === "folders"
-    ) {
-      assert.strictEqual(parts[1], parentId);
-      childPass++;
-      if (childPass === 1) {
-        return jsonOk({ items: [], has_more: false });
-      }
-      return jsonOk({
-        items: [
-          {
-            id: "sub1",
-            parent_id: parentId,
-            title: "Networking",
-            deleted_time: 0,
-          },
-        ],
-        has_more: false,
-      });
     }
 
     if (
@@ -332,8 +326,7 @@ chroma:
   };
 
   await runWikiWriteback(cfg, wiki, ["p.md"], { fetch: fetchMock });
-  assert.strictEqual(rootPass, 2);
-  assert.strictEqual(childPass, 2);
+  assert.strictEqual(folderGetCount, 3);
   assert.ok(posts.some((p) => p.startsWith("folder:note-wiki:")));
   assert.ok(posts.some((p) => p.startsWith("folder:Networking:")));
   assert.ok(posts.includes("note:create"));
@@ -366,19 +359,6 @@ test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () 
             title: "note-wiki",
             deleted_time: 0,
           },
-        ],
-        has_more: false,
-      });
-    }
-
-    if (
-      m === "GET" &&
-      parts.length === 3 &&
-      parts[0] === "folders" &&
-      parts[2] === "folders"
-    ) {
-      return jsonOk({
-        items: [
           {
             id: "s",
             parent_id: "p",
@@ -467,18 +447,6 @@ test("SCN-JWKB-LF-01 writeback uses loopback fetch only", async () => {
             title: "note-wiki",
             deleted_time: 0,
           },
-        ],
-        has_more: false,
-      });
-    }
-    if (
-      m === "GET" &&
-      parts.length === 3 &&
-      parts[0] === "folders" &&
-      parts[2] === "folders"
-    ) {
-      return jsonOk({
-        items: [
           {
             id: "t",
             parent_id: "p",
