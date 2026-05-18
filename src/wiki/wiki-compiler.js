@@ -37,15 +37,49 @@ function attachCorpusTelemetry(payload, cfg, notesBundle) {
 }
 
 /**
+ * @param {Record<string, unknown>} payload
+ * @param {{
+ *   windowIndex: number,
+ *   maxWindows: number,
+ *   statePath: string,
+ *   windowsExecuted: number,
+ *   truncated?: boolean,
+ *   cycleComplete?: boolean,
+ * } | undefined} sweepContext
+ */
+function attachSweepTelemetry(payload, sweepContext) {
+  if (!sweepContext) return;
+  payload.corpus_sweep = {
+    window_index: sweepContext.windowIndex,
+    max_windows_per_invocation: sweepContext.maxWindows,
+    state_path: sweepContext.statePath,
+    windows_executed: sweepContext.windowsExecuted,
+    truncated: sweepContext.truncated ?? false,
+    cycle_complete: sweepContext.cycleComplete ?? false,
+  };
+}
+
+/**
  * Wiki-compile flow: planner uses **Ollama chat only** for JSON paths (`planWikiPaths`);
  * excerpts may rotate over `notes_root` and optionally call local **`collection_sources`**
  * via embedding + chromadb SDK (see `corpus-chroma-excerpt.js`, design Decision on local-only vectors).
  *
- * @param {{ ctx: { configPath: string, argv: string[], opts: Map<string, string> } }} args
+ * @param {{
+ *   ctx: { configPath: string, argv: string[], opts: Map<string, string> },
+ *   cfg?: import('../config/load-config.js').AppConfig,
+ *   sweepContext?: {
+ *     windowIndex: number,
+ *     maxWindows: number,
+ *     statePath: string,
+ *     windowsExecuted: number,
+ *     truncated?: boolean,
+ *     cycleComplete?: boolean,
+ *   },
+ * }} args
  */
 export async function runWikiCompileFlow(args) {
-  const { ctx } = args;
-  const cfg = await loadConfig(ctx.configPath);
+  const { ctx, cfg: injectedCfg, sweepContext } = args;
+  const cfg = injectedCfg ?? (await loadConfig(ctx.configPath));
   if (!cfg.wiki_root?.trim()) {
     const err = new Error("wiki_root required for wiki-compile");
     /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
@@ -76,16 +110,16 @@ export async function runWikiCompileFlow(args) {
     const hint =
       "no markdown files under notes_root matching notes_glob; add .md files or run joplin-sqlite-sync export before wiki-compile";
     if (dryRun) {
-      console.log(
-        JSON.stringify({
-          dry_run: true,
-          warning: "NO_SOURCE_MARKDOWN",
-          message: hint,
-          paths: [],
-          notes_root: cfg.notes_root,
-          notes_glob: cfg.notes_glob,
-        }),
-      );
+      const noSrc = {
+        dry_run: true,
+        warning: "NO_SOURCE_MARKDOWN",
+        message: hint,
+        paths: [],
+        notes_root: cfg.notes_root,
+        notes_glob: cfg.notes_glob,
+      };
+      attachSweepTelemetry(noSrc, sweepContext);
+      console.log(JSON.stringify(noSrc));
       return { dryRun: true, paths: [], truncated: false };
     }
     const err = new Error(hint);
@@ -192,6 +226,7 @@ export async function runWikiCompileFlow(args) {
       chat_model: cfg.ollama.chat_model,
     };
     attachCorpusTelemetry(emptyPlan, cfg, notesBundle);
+    attachSweepTelemetry(emptyPlan, sweepContext);
     console.log(JSON.stringify(emptyPlan));
     return { dryRun: dryRun === true, paths, truncated };
   }
@@ -204,6 +239,7 @@ export async function runWikiCompileFlow(args) {
       planner_raw: plan.raw?.slice(0, 2000),
     };
     attachCorpusTelemetry(dryPayload, cfg, notesBundle);
+    attachSweepTelemetry(dryPayload, sweepContext);
     if (cfg.joplin_wiki_writeback.enabled) {
       Object.assign(dryPayload, summarizeWikiWritebackDry(cfg, wikiRoot, paths));
     }
@@ -266,6 +302,7 @@ export async function runWikiCompileFlow(args) {
     truncated,
   };
   attachCorpusTelemetry(compileSummary, cfg, notesBundle);
+  attachSweepTelemetry(compileSummary, sweepContext);
   if (cfg.joplin_wiki_writeback.enabled) {
     Object.assign(
       compileSummary,

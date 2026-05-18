@@ -62,7 +62,8 @@ export async function main(argv) {
       code === "FRONTMATTER_INVALID" ||
       code === "WIKI_COMPILE_ABORT" ||
       code === "SQLITE_OPEN_FAILED" ||
-      code === "SQLITE_EXPORT_FAILED"
+      code === "SQLITE_EXPORT_FAILED" ||
+      code === "CORPUS_SWEEP_STATE_IO"
     ) {
       emitErr(code, String(err.message ?? err));
       return 1;
@@ -161,6 +162,24 @@ Examples:
  * @param {string} command
  */
 function printCommandHelp(command) {
+  if (command === "wiki-compile") {
+    console.log(`wiki-compile
+
+Usage:
+  joplin-llm-wiki wiki-compile --config <path> [options]
+
+Options:
+  --dry-run=true|false       Plan without writing wiki_root files (default: false)
+  --corpus-sweep=true|false  Enable wiki_ingest.corpus_auto_sweep for this invocation only (YAML corpus_auto_sweep.enabled=false otherwise applies defaults except activation)
+
+Configuration notes:
+  Corpus sweep chains multiple planner digest windows with persisted offset state under wiki_root (see README).
+
+Run with a valid config file; see config.yaml.example.
+`);
+    return;
+  }
+
   console.log(`${command}
 
 Usage:

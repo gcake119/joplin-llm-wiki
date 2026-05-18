@@ -22,6 +22,14 @@ wiki_ingest:
   # corpus_mode_enabled: false
   corpus_digest_max_files: 500
   corpus_digest_offset: 0
+  # Optional: multi-window digest sweep (single CLI process). Requires corpus_mode_enabled true.
+  # Persists offset under wiki_root/.joplin-llm-wiki/corpus-sweep-state.json unless state_path is set.
+  # corpus_auto_sweep:
+  #   enabled: false
+  #   max_windows_per_invocation: 20
+  #   step_files: 500          # omit to default to corpus_digest_max_files; must be ≤ corpus_digest_max_files
+  #   state_path: ""           # optional absolute or config-relative path
+  #   advance_state_on_dry_run: false
   corpus_writer_excerpt_mode: filesystem_slice
   corpus_chroma_top_k: 8
 

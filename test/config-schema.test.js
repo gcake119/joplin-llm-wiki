@@ -217,6 +217,91 @@ chroma:
   );
 });
 
+test("SCN-WCC-SWEEP-CFG-INVALID sweep enabled with corpus_mode false", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-cfg-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_mode_enabled: false
+  corpus_auto_sweep:
+    enabled: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) =>
+      /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID" &&
+      String(e.message).includes("corpus_auto_sweep.enabled"),
+  );
+});
+
+test("SCN-WCC-SWEEP-STEP step_files exceeds corpus_digest_max_files", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-step-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_digest_max_files: 80
+  corpus_auto_sweep:
+    enabled: true
+    step_files: 100
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadConfig(path.join(tmp, "cfg.yaml")),
+    (e) => /** @type {{ code?: string }} */ (e).code === "CONFIG_INVALID",
+  );
+});
+
+test("SCN-WCC-SWEEP step_files omitted defaults to corpus_digest_max_files", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-step-def-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  corpus_digest_max_files: 120
+  corpus_auto_sweep:
+    enabled: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(path.join(tmp, "cfg.yaml"));
+  assert.strictEqual(cfg.wiki_ingest.corpus_auto_sweep.step_files, 120);
+});
+
 /**
  * @param {string} tmp
  * @param {string} notes

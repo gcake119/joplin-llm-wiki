@@ -14,3 +14,11 @@ test("joplin-llm-wiki --help exits 0", () => {
   });
   assert.match(out, /joplin-llm-wiki/i);
 });
+
+test("wiki-compile --help mentions corpus-sweep", () => {
+  const out = execFileSync(process.execPath, [cli, "wiki-compile", "--help"], {
+    encoding: "utf8",
+    cwd: root,
+  });
+  assert.match(out, /corpus-sweep/i);
+});

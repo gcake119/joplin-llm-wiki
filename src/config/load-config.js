@@ -18,6 +18,13 @@ import YAML from "yaml";
  *     corpus_digest_offset: number,
  *     corpus_writer_excerpt_mode: string,
  *     corpus_chroma_top_k: number,
+ *     corpus_auto_sweep: {
+ *       enabled: boolean,
+ *       max_windows_per_invocation: number,
+ *       step_files: number,
+ *       state_path: string,
+ *       advance_state_on_dry_run: boolean,
+ *     },
  *   },
  *   write_back: { sources_enabled: boolean },
  *   ollama: { base_url: string, embed_model: string, chat_model: string, timeout_ms: number, embed_batch_size: number },
@@ -135,6 +142,11 @@ export async function loadConfig(configPath) {
     throw err;
   }
 
+  const corpus_digest_max_files = wikiIngestInt(ingestNest, "corpus_digest_max_files", 500, {
+    min: 40,
+    max: 1000,
+  });
+
   const wiki_ingest = {
     max_pages_per_run: num(ingestNest, "max_pages_per_run", 15, {
       min: 1,
@@ -149,10 +161,7 @@ export async function loadConfig(configPath) {
       max: 50,
     }),
     corpus_mode_enabled: readCorpusModeEnabled(ingestNest),
-    corpus_digest_max_files: wikiIngestInt(ingestNest, "corpus_digest_max_files", 500, {
-      min: 40,
-      max: 1000,
-    }),
+    corpus_digest_max_files,
     corpus_digest_offset: wikiIngestInt(ingestNest, "corpus_digest_offset", 0, {
       min: 0,
       max: 10_000_000,
@@ -162,6 +171,7 @@ export async function loadConfig(configPath) {
       min: 1,
       max: 50,
     }),
+    corpus_auto_sweep: readCorpusAutoSweep(ingestNest, corpus_digest_max_files, cfgDir),
   };
 
   const write_back = {
@@ -550,6 +560,84 @@ function readCorpusModeEnabled(ingestNest) {
     throw err;
   }
   return v;
+}
+
+/**
+ * @param {Record<string, unknown>} sweepNest
+ * @param {string} key
+ * @param {number} def
+ * @param {{ min: number, max: number }} bounds
+ */
+function wikiSweepInt(sweepNest, key, def, bounds) {
+  if (!Object.prototype.hasOwnProperty.call(sweepNest, key)) return def;
+  const v = sweepNest[key];
+  if (typeof v !== "number" || !Number.isFinite(v) || Math.trunc(v) !== v) {
+    const err = new Error(
+      `wiki_ingest.corpus_auto_sweep.${key} must be an integer`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const iv = Math.trunc(/** @type {number} */ (v));
+  if (iv < bounds.min || iv > bounds.max) {
+    const err = new Error(
+      `wiki_ingest.corpus_auto_sweep.${key} must be between ${bounds.min} and ${bounds.max} inclusive`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return iv;
+}
+
+/**
+ * @param {Record<string, unknown>} ingestNest
+ * @param {number} corpusDigestMaxFiles
+ * @param {string} cfgDir
+ */
+function readCorpusAutoSweep(ingestNest, corpusDigestMaxFiles, cfgDir) {
+  const sn = nest(ingestNest, "corpus_auto_sweep");
+  const enabled = bool(sn, "enabled", false);
+  const max_windows_per_invocation = wikiSweepInt(
+    sn,
+    "max_windows_per_invocation",
+    20,
+    { min: 1, max: 500 },
+  );
+
+  let step_files = corpusDigestMaxFiles;
+  if (Object.prototype.hasOwnProperty.call(sn, "step_files")) {
+    step_files = wikiSweepInt(sn, "step_files", corpusDigestMaxFiles, {
+      min: 1,
+      max: corpusDigestMaxFiles,
+    });
+  }
+
+  const state_path_raw = str(sn, "state_path", "");
+  let state_path = "";
+  if (state_path_raw.trim() !== "") {
+    state_path = path.isAbsolute(state_path_raw)
+      ? state_path_raw
+      : path.resolve(cfgDir, state_path_raw);
+  }
+
+  const advance_state_on_dry_run = bool(sn, "advance_state_on_dry_run", false);
+
+  const corpus_mode_enabled = readCorpusModeEnabled(ingestNest);
+  if (enabled && !corpus_mode_enabled) {
+    const err = new Error(
+      "wiki_ingest.corpus_auto_sweep.enabled requires wiki_ingest.corpus_mode_enabled true",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+
+  return {
+    enabled,
+    max_windows_per_invocation,
+    step_files,
+    state_path,
+    advance_state_on_dry_run,
+  };
 }
 
 /**

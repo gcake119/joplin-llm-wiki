@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { loadConfig } from "../src/config/load-config.js";
 import { runWikiCompileFlow } from "../src/wiki/wiki-compiler.js";
+import { runWikiCompile } from "../src/commands/cmd-wiki-compile.js";
 import { summarizeSourcesForPlanner } from "../src/wiki/wiki-planner.js";
 import { parseWikiMarkdown } from "../src/wiki/frontmatter.js";
 import { installMockOllamaFetch } from "./helpers/mock-ollama-fetch.mjs";
@@ -1193,6 +1194,403 @@ chroma:
     );
   } finally {
     restorePlanner();
+  }
+});
+
+test("SCN-WCC-SWEEP-OFFSET corpus sweep advances effective_offset across windows", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["page.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-sweep-off-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "a.md"), "# a\n", "utf8");
+  fs.writeFileSync(path.join(notes, "b.md"), "# b\n", "utf8");
+  fs.writeFileSync(path.join(notes, "c.md"), "# c\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 5
+  min_pages_per_run: 0
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 3
+    step_files: 1
+    advance_state_on_dry_run: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(
+      typeof msg === "string"
+        ? msg
+        : msg != null ?
+          String(msg)
+        : "",
+    );
+    oe(msg, ...rest);
+  };
+
+  /** @type {string[]} */
+  const stdoutLines = [];
+  const ol = console.log.bind(console);
+  console.log = (ln) => {
+    stdoutLines.push(typeof ln === "string" ? ln : JSON.stringify(ln));
+    ol(ln);
+  };
+
+  try {
+    const code = await runWikiCompile({
+      configPath: cfgPath,
+      argv: [],
+      opts: new Map([["dry-run", "true"]]),
+      flags: { help: false },
+    });
+    assert.strictEqual(code, 0);
+
+    const winMsgs = stderrLines
+      .map((s) => {
+        try {
+          return JSON.parse(s);
+        } catch {
+          return null;
+        }
+      })
+      .filter((o) => o && o.warning === "CORPUS_SWEEP_WINDOW");
+    assert.strictEqual(winMsgs.length, 3);
+    assert.deepStrictEqual(
+      winMsgs.map((w) => w.effective_offset),
+      [0, 1, 2],
+    );
+    assert.strictEqual(winMsgs[0].digest_count, 3);
+
+    const summary = JSON.parse(stdoutLines[stdoutLines.length - 1]);
+    assert.strictEqual(summary.corpus_sweep.windows_executed, 3);
+    assert.strictEqual(summary.corpus_sweep.cycle_complete, true);
+    assert.strictEqual(summary.corpus_sweep.truncated, false);
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WI-SWEEP-DRY-NO-ADVANCE dry-run default runs single sweep window", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["page.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-dry-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "n.md"), "# n\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 5
+  min_pages_per_run: 0
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 10
+    advance_state_on_dry_run: false
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(typeof msg === "string" ? msg : String(msg ?? ""));
+    oe(msg, ...rest);
+  };
+
+  const ol = console.log.bind(console);
+  console.log = () => {};
+
+  try {
+    await runWikiCompile({
+      configPath: cfgPath,
+      argv: [],
+      opts: new Map([["dry-run", "true"]]),
+      flags: { help: false },
+    });
+
+    const wins = stderrLines.filter((s) => s.includes("CORPUS_SWEEP_WINDOW"));
+    assert.strictEqual(wins.length, 1);
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WI-SWEEP-BUDGET max_pages_per_run enforced per sweep window", async () => {
+  const many = Array.from({ length: 20 }, (_, i) => `"x/${i}.md"`).join(",");
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return `{"paths":[${many}]}`;
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-budget-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "y.md"), "# y\n", "utf8");
+  fs.writeFileSync(path.join(notes, "z.md"), "# z\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 3
+  min_pages_per_run: 0
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 2
+    step_files: 1
+    advance_state_on_dry_run: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stdoutLines = [];
+  const ol = console.log.bind(console);
+  console.log = (ln) => {
+    stdoutLines.push(typeof ln === "string" ? ln : JSON.stringify(ln));
+    ol(ln);
+  };
+
+  const oe = console.error.bind(console);
+  console.error = () => {};
+
+  try {
+    await runWikiCompile({
+      configPath: cfgPath,
+      argv: [],
+      opts: new Map([["dry-run", "true"]]),
+      flags: { help: false },
+    });
+
+    const payloads = stdoutLines
+      .slice(0, -1)
+      .map((s) => JSON.parse(s))
+      .filter((p) => p.dry_run === true);
+    assert.strictEqual(payloads.length, 2);
+    assert.strictEqual(payloads[0].paths.length, 3);
+    assert.strictEqual(payloads[1].paths.length, 3);
+    assert.strictEqual(payloads[0].truncated, true);
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WI-SWEEP-FPR fingerprint mismatch resets offset", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["page.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sweep-fpr-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "one.md"), "# 1\n", "utf8");
+  fs.writeFileSync(path.join(notes, "two.md"), "# 2\n", "utf8");
+
+  const stateDir = path.join(wiki, ".joplin-llm-wiki");
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, "corpus-sweep-state.json"),
+    JSON.stringify({
+      schema_version: 1,
+      next_offset: 9,
+      markdown_file_count: 1,
+      step_files: 40,
+      updated_at_ms: 1,
+    }),
+    "utf8",
+  );
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 5
+  min_pages_per_run: 0
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 1
+    advance_state_on_dry_run: false
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(typeof msg === "string" ? msg : String(msg ?? ""));
+    oe(msg, ...rest);
+  };
+
+  const ol = console.log.bind(console);
+  console.log = () => {};
+
+  try {
+    await runWikiCompile({
+      configPath: cfgPath,
+      argv: [],
+      opts: new Map([["dry-run", "true"]]),
+      flags: { help: false },
+    });
+
+    const joined = stderrLines.join("\n");
+    assert.ok(joined.includes("CORPUS_SWEEP_FINGERPRINT_RESET"));
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
   }
 });
 
