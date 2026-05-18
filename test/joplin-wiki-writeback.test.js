@@ -407,7 +407,10 @@ test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () 
       return { stdout: "", stderr: "" };
     },
   });
-  assert.ok(uses.some((u) => u[1] === "note-wiki/Security"));
+  assert.ok(
+    uses.some((u) => u[0] === "use" && u[1] === "s"),
+    "expects use <topic-folder-id> rather than note-wiki/Security title path",
+  );
 });
 
 test("SCN-JWKB-CLI-01 retries then JOPLIN_CLI_WRITE_FAILED", async () => {

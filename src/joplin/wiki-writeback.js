@@ -110,14 +110,20 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
 
   const topicsTouched = [...new Set(entries.map((e) => e.topic))];
   let notebooksCreated = 0;
+  /** @type {Map<string, string>} topic title → notebook id */
+  const topicNotebookIds = new Map();
   for (const topic of topicsTouched) {
-    const created = await ensureTopicFolder(cfg, runCli, parentTitle, parentId, topic);
+    const { id, created } = await ensureTopicFolder(cfg, runCli, parentId, topic);
     if (created) notebooksCreated++;
+    topicNotebookIds.set(topic, id);
   }
 
   let written = 0;
   for (const e of entries) {
-    await upsertNoteInTopic(cfg, runCli, parentTitle, e.topic, e.noteTitle, e.body);
+    const topicId = topicNotebookIds.get(e.topic);
+    if (!topicId)
+      throw writePhaseFail(`internal: missing notebook id for topic: ${e.topic}`);
+    await upsertNoteInTopic(cfg, runCli, topicId, e.noteTitle, e.body);
     written++;
   }
 
@@ -219,6 +225,39 @@ async function joplinRetry(cfg, args, runCli) {
 }
 
 /**
+ * Anchor CLI context to notebook `parentId`, return child notebooks only.
+ *
+ * Joplin `use "<title>"` is unreliable vs `use "<notebookId>"`; `mkbook` creates
+ * under the anchored notebook — wrong anchor ⇒ folders at profile root (`parent_id` "").
+ *
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
+ * @param {string} parentId
+ */
+async function foldersUnderParent(cfg, runCli, parentId) {
+  await joplinRetry(cfg, ["use", parentId], runCli);
+  const { stdout } = await joplinRetry(cfg, ["ls", "-f", "json"], runCli);
+  /** @type {unknown} */
+  let arr;
+  try {
+    arr = JSON.parse(stdout.trim());
+  } catch {
+    throw writePhaseFail("invalid JSON from joplin ls (under parent)");
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.filter(
+    (o) =>
+      o &&
+      typeof o === "object" &&
+      /** @type {{ parent_id?: string, type_?: number, deleted_time?: number }} */ (
+        o
+      ).parent_id === parentId &&
+      /** @type {{ type_?: number }} */ (o).type_ === TYPE_FOLDER &&
+      !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
+  );
+}
+
+/**
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
  */
@@ -245,45 +284,45 @@ async function listRootFolders(cfg, runCli) {
 }
 
 /**
- * @returns {Promise<boolean>} true if mkbook was invoked
+ * @returns {Promise<{ id: string, created: boolean }>}
  */
-async function ensureTopicFolder(cfg, runCli, parentTitle, parentId, topic) {
-  await joplinRetry(cfg, ["use", parentTitle], runCli);
-  const { stdout } = await joplinRetry(cfg, ["ls", "-f", "json"], runCli);
-  /** @type {unknown} */
-  let arr;
-  try {
-    arr = JSON.parse(stdout.trim());
-  } catch {
-    throw writePhaseFail("invalid JSON from joplin ls");
-  }
-  if (!Array.isArray(arr)) return false;
-  const subFolders = arr.filter(
-    (o) =>
-      o &&
-      typeof o === "object" &&
-      /** @type {{ parent_id?: string, type_?: number, deleted_time?: number }} */ (
-        o
-      ).parent_id === parentId &&
-      /** @type {{ type_?: number }} */ (o).type_ === TYPE_FOLDER &&
-      !(/** @type {{ deleted_time?: number }} */ (o).deleted_time > 0),
+async function ensureTopicFolder(cfg, runCli, parentId, topic) {
+  let subFolders = await foldersUnderParent(cfg, runCli, parentId);
+
+  const existed = subFolders.some(
+    (/** @param {any} */ f) => f.title === topic,
   );
-  if (subFolders.some(/** @param {any} */ (f) => f.title === topic)) return false;
-  await joplinRetry(cfg, ["mkbook", topic], runCli);
-  return true;
+  if (!existed) {
+    await joplinRetry(cfg, ["mkbook", topic], runCli);
+    subFolders = await foldersUnderParent(cfg, runCli, parentId);
+  }
+  const found = /** @type {{ title?: string, id?: string } | undefined} */ (
+    subFolders.find((/** @param {any} */ f) => f.title === topic)
+  );
+  const id =
+    found && typeof found.id === "string" && found.id.trim() ?
+      found.id
+    : null;
+  if (!id) throw writePhaseFail(`failed to resolve topic notebook: ${topic}`);
+
+  return { id, created: !existed };
 }
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {(c: import('../config/load-config.js').AppConfig, a: string[]) => Promise<{ stdout: string, stderr: string }>} runCli
- * @param {string} parentTitle
- * @param {string} topic
+ * @param {string} topicNotebookId nested topic folder notebook id (child of configured parent_notebook_title)
  * @param {string} noteTitle
  * @param {string} body
  */
-async function upsertNoteInTopic(cfg, runCli, parentTitle, topic, noteTitle, body) {
-  const usePath = `${parentTitle}/${topic}`;
-  await joplinRetry(cfg, ["use", usePath], runCli);
+async function upsertNoteInTopic(
+  cfg,
+  runCli,
+  topicNotebookId,
+  noteTitle,
+  body,
+) {
+  await joplinRetry(cfg, ["use", topicNotebookId], runCli);
   const { stdout } = await joplinRetry(cfg, ["ls", "-f", "json", "-t", "n"], runCli);
   /** @type {unknown} */
   let arr;
