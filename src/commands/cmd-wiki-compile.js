@@ -84,18 +84,21 @@ export async function runWikiCompile(ctx) {
   const wikiRoot = path.resolve(cfg.wiki_root);
   fs.mkdirSync(wikiRoot, { recursive: true });
 
-  const maxWRaw = cfg.wiki_ingest.corpus_auto_sweep.max_windows_per_invocation;
+  const sweep = cfg.wiki_ingest.corpus_auto_sweep;
+  const maxWRaw = sweep.max_windows_per_invocation;
   const maxW =
-    dryRun && !cfg.wiki_ingest.corpus_auto_sweep.advance_state_on_dry_run ?
-      1
-    : maxWRaw;
+    dryRun && !sweep.advance_state_on_dry_run ? 1 : maxWRaw;
+
+  const runUntil =
+    sweep.run_until_cycle_complete && advanceOk && !dryRun;
+  const maxTotal = sweep.max_total_windows_per_invocation;
 
   const statePath = resolveSweepStatePath(cfg);
   let state =
     readSweepState(statePath) ??
-    initialSweepState(cfg.wiki_ingest.corpus_auto_sweep.step_files);
+    initialSweepState(sweep.step_files);
 
-  const step = cfg.wiki_ingest.corpus_auto_sweep.step_files;
+  const step = sweep.step_files;
   const reconciled = reconcileFingerprint(state, n, step);
   state = reconciled.state;
 
@@ -109,12 +112,95 @@ export async function runWikiCompile(ctx) {
     );
   }
 
-  const initialLoopOffset = state.next_offset;
-  let cycleComplete = false;
-  /** @type {number} */
-  let windowsExecuted = 0;
-
   const modulus = Math.max(n, 1);
+  const invocationStartOffset = state.next_offset;
+  let totalWindowsExecuted = 0;
+  let cycleComplete = false;
+  let truncated = false;
+
+  do {
+    const batch = await runSweepWindowBatch({
+      ctx,
+      cfg,
+      state,
+      statePath,
+      n,
+      modulus,
+      step,
+      maxW,
+      advanceOk,
+      windowIndexBase: totalWindowsExecuted,
+      invocationStartOffset,
+    });
+
+    state = batch.state;
+    totalWindowsExecuted += batch.windowsExecuted;
+    cycleComplete = batch.cycleComplete;
+
+    if (!runUntil) {
+      truncated = batch.truncated;
+      break;
+    }
+    if (cycleComplete) {
+      truncated = false;
+      break;
+    }
+    if (totalWindowsExecuted >= maxTotal) {
+      truncated = true;
+      break;
+    }
+    truncated = true;
+  } while (runUntil);
+
+  console.log(
+    JSON.stringify({
+      corpus_sweep: {
+        windows_executed: totalWindowsExecuted,
+        total_windows_executed: totalWindowsExecuted,
+        state_path: statePath,
+        truncated,
+        cycle_complete: cycleComplete,
+        max_windows_per_invocation: maxWRaw,
+        max_total_windows_per_invocation: maxTotal,
+        run_until_cycle_complete: runUntil,
+      },
+    }),
+  );
+
+  return 0;
+}
+
+/**
+ * @param {{
+ *   ctx: { configPath: string, argv: string[], opts: Map<string, string> },
+ *   cfg: import('../config/load-config.js').AppConfig,
+ *   state: import('../wiki/corpus-sweep-state.js').SweepState,
+ *   statePath: string,
+ *   n: number,
+ *   modulus: number,
+ *   step: number,
+ *   maxW: number,
+ *   advanceOk: boolean,
+ *   windowIndexBase: number,
+ *   invocationStartOffset: number,
+ * }} args
+ */
+async function runSweepWindowBatch(args) {
+  const {
+    ctx,
+    cfg,
+    statePath,
+    n,
+    modulus,
+    step,
+    maxW,
+    advanceOk,
+    windowIndexBase,
+    invocationStartOffset,
+  } = args;
+  let state = args.state;
+  let cycleComplete = false;
+  let windowsExecuted = 0;
 
   for (let w = 0; w < maxW; w++) {
     const effectiveOffset = ((state.next_offset % modulus) + modulus) % modulus;
@@ -122,7 +208,7 @@ export async function runWikiCompile(ctx) {
     console.error(
       JSON.stringify({
         warning: "CORPUS_SWEEP_WINDOW",
-        window_index: w,
+        window_index: windowIndexBase + w,
         effective_offset: effectiveOffset,
         digest_count: Math.min(n, cfg.wiki_ingest.corpus_digest_max_files),
         state_path: statePath,
@@ -141,10 +227,10 @@ export async function runWikiCompile(ctx) {
       ctx,
       cfg: effectiveCfg,
       sweepContext: {
-        windowIndex: w,
+        windowIndex: windowIndexBase + w,
         maxWindows: maxW,
         statePath,
-        windowsExecuted: w + 1,
+        windowsExecuted: windowIndexBase + w + 1,
         truncated: false,
         cycleComplete: false,
       },
@@ -160,7 +246,10 @@ export async function runWikiCompile(ctx) {
     state.updated_at_ms = Date.now();
     writeSweepStateAtomic(statePath, state);
 
-    if (windowsExecuted > 0 && state.next_offset === initialLoopOffset) {
+    if (
+      windowsExecuted > 0 &&
+      state.next_offset === invocationStartOffset
+    ) {
       cycleComplete = true;
       break;
     }
@@ -168,17 +257,5 @@ export async function runWikiCompile(ctx) {
 
   const truncated = !cycleComplete && windowsExecuted >= maxW;
 
-  console.log(
-    JSON.stringify({
-      corpus_sweep: {
-        windows_executed: windowsExecuted,
-        state_path: statePath,
-        truncated,
-        cycle_complete: cycleComplete,
-        max_windows_per_invocation: maxWRaw,
-      },
-    }),
-  );
-
-  return 0;
+  return { state, windowsExecuted, cycleComplete, truncated };
 }

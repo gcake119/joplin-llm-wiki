@@ -12,6 +12,8 @@ import YAML from "yaml";
  *   wiki_ingest: {
  *     max_pages_per_run: number,
  *     min_pages_per_run: number,
+ *     min_topic_pages_per_run: number,
+ *     planner_reject_source_paths: boolean,
  *     max_planner_rounds: number,
  *     corpus_mode_enabled: boolean,
  *     corpus_digest_max_files: number,
@@ -24,6 +26,8 @@ import YAML from "yaml";
  *       step_files: number,
  *       state_path: string,
  *       advance_state_on_dry_run: boolean,
+ *       run_until_cycle_complete: boolean,
+ *       max_total_windows_per_invocation: number,
  *     },
  *   },
  *   write_back: { sources_enabled: boolean },
@@ -147,15 +151,31 @@ export async function loadConfig(configPath) {
     max: 1000,
   });
 
+  const max_pages_per_run = num(ingestNest, "max_pages_per_run", 15, {
+    min: 1,
+    max: 500,
+  });
+
+  let min_topic_pages_per_run = num(ingestNest, "min_topic_pages_per_run", 0, {
+    min: 0,
+    max: 500,
+  });
+  if (min_topic_pages_per_run > max_pages_per_run) {
+    min_topic_pages_per_run = max_pages_per_run;
+  }
+
   const wiki_ingest = {
-    max_pages_per_run: num(ingestNest, "max_pages_per_run", 15, {
-      min: 1,
-      max: 500,
-    }),
+    max_pages_per_run,
     min_pages_per_run: num(ingestNest, "min_pages_per_run", 10, {
       min: 0,
       max: 500,
     }),
+    min_topic_pages_per_run,
+    planner_reject_source_paths: bool(
+      ingestNest,
+      "planner_reject_source_paths",
+      true,
+    ),
     max_planner_rounds: num(ingestNest, "max_planner_rounds", 3, {
       min: 1,
       max: 50,
@@ -621,6 +641,13 @@ function readCorpusAutoSweep(ingestNest, corpusDigestMaxFiles, cfgDir) {
   }
 
   const advance_state_on_dry_run = bool(sn, "advance_state_on_dry_run", false);
+  const run_until_cycle_complete = bool(sn, "run_until_cycle_complete", false);
+  const max_total_windows_per_invocation = wikiSweepInt(
+    sn,
+    "max_total_windows_per_invocation",
+    500,
+    { min: 1, max: 500 },
+  );
 
   const corpus_mode_enabled = readCorpusModeEnabled(ingestNest);
   if (enabled && !corpus_mode_enabled) {
@@ -637,6 +664,8 @@ function readCorpusAutoSweep(ingestNest, corpusDigestMaxFiles, cfgDir) {
     step_files,
     state_path,
     advance_state_on_dry_run,
+    run_until_cycle_complete,
+    max_total_windows_per_invocation,
   };
 }
 

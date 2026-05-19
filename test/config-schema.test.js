@@ -324,6 +324,44 @@ required_hub_pages: []
   return schemaPath;
 }
 
+test("SCN-CFG-TOPIC loads min_topic_pages_per_run and sweep until-cycle keys", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-cfg-topic-"));
+  const notes = path.join(tmp, "notes");
+  const schemaPath = writeMinimalSchema(tmp, notes);
+  fs.writeFileSync(
+    path.join(tmp, "cfg.yaml"),
+    `
+notes_root: ${notes}
+wiki_root: ""
+wiki_schema:
+  path: ${schemaPath}
+wiki_ingest:
+  min_topic_pages_per_run: 4
+  planner_reject_source_paths: false
+  corpus_auto_sweep:
+    enabled: true
+    run_until_cycle_complete: true
+    max_total_windows_per_invocation: 99
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(path.join(tmp, "cfg.yaml"));
+  assert.strictEqual(cfg.wiki_ingest.min_topic_pages_per_run, 4);
+  assert.strictEqual(cfg.wiki_ingest.planner_reject_source_paths, false);
+  assert.strictEqual(
+    cfg.wiki_ingest.corpus_auto_sweep.run_until_cycle_complete,
+    true,
+  );
+  assert.strictEqual(
+    cfg.wiki_ingest.corpus_auto_sweep.max_total_windows_per_invocation,
+    99,
+  );
+});
+
 test("SCN-JDA-CFG writeback enabled rejects non-integer timeout_ms", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-jda-timeout-"));
   const notes = path.join(tmp, "notes");

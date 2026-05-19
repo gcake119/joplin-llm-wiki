@@ -6,7 +6,11 @@ import assert from "node:assert";
 import { loadConfig } from "../src/config/load-config.js";
 import { runWikiCompileFlow } from "../src/wiki/wiki-compiler.js";
 import { runWikiCompile } from "../src/commands/cmd-wiki-compile.js";
-import { summarizeSourcesForPlanner } from "../src/wiki/wiki-planner.js";
+import {
+  summarizeSourcesForPlanner,
+  extractPathsFromModelJson,
+} from "../src/wiki/wiki-planner.js";
+import { heuristicTopicPaths } from "../src/wiki/topic-path-heuristic.js";
 import { parseWikiMarkdown } from "../src/wiki/frontmatter.js";
 import { installMockOllamaFetch } from "./helpers/mock-ollama-fetch.mjs";
 
@@ -1587,6 +1591,291 @@ chroma:
 
     const joined = stderrLines.join("\n");
     assert.ok(joined.includes("CORPUS_SWEEP_FINGERPRINT_RESET"));
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WCC-040 planner accepts JSON alias key items", () => {
+  const { paths, aliasKey } = extractPathsFromModelJson(
+    { items: ["topics/foo.md", "topics/bar.md"] },
+    { rejectSourcePaths: true },
+  );
+  assert.strictEqual(aliasKey, "items");
+  assert.deepStrictEqual(paths, ["topics/foo.md", "topics/bar.md"]);
+});
+
+test("SCN-WCC-041 planner retries hub-only then accepts topics", async () => {
+  let calls = 0;
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        calls++;
+        if (calls === 1) {
+          return '{"paths":["index.md","topics/overview.md"]}';
+        }
+        return '{"paths":["topics/a.md","topics/b.md","topics/c.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-041-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  for (let i = 0; i < 5; i++) {
+    fs.writeFileSync(path.join(notes, `n${i}.md`), `# ${i}\n`, "utf8");
+  }
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages:
+  - index.md
+  - topics/overview.md
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 8
+  min_pages_per_run: 0
+  min_topic_pages_per_run: 3
+  max_planner_rounds: 3
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  const ol = console.log.bind(console);
+  const oe = console.error.bind(console);
+  console.log = () => {};
+  console.error = () => {};
+
+  try {
+    const result = await runWikiCompileFlow({
+      ctx: {
+        configPath: cfgPath,
+        argv: [],
+        opts: new Map([["dry-run", "true"]]),
+        flags: { help: false },
+      },
+    });
+    assert.strictEqual(result.dryRun, true);
+    assert.ok(calls >= 2);
+    const topicPaths = result.paths.filter((p) => p.startsWith("topics/"));
+    assert.ok(
+      topicPaths.length >= 3,
+      `expected >=3 topic paths, got ${topicPaths.join(",")}`,
+    );
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WCC-042 heuristic top-up when planner stays hub-only", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["index.md","topics/overview.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-042-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "aa1111.md"), "# a\n", "utf8");
+  fs.writeFileSync(path.join(notes, "aa2222.md"), "# b\n", "utf8");
+  fs.writeFileSync(path.join(notes, "bb3333.md"), "# c\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages:
+  - index.md
+  - topics/overview.md
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 8
+  min_pages_per_run: 0
+  min_topic_pages_per_run: 3
+  max_planner_rounds: 2
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stderrLines = [];
+  const oe = console.error.bind(console);
+  console.error = (msg, ...rest) => {
+    stderrLines.push(typeof msg === "string" ? msg : String(msg ?? ""));
+    oe(msg, ...rest);
+  };
+  const ol = console.log.bind(console);
+  console.log = () => {};
+
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath: cfgPath,
+        argv: [],
+        opts: new Map([["dry-run", "true"]]),
+        flags: { help: false },
+      },
+    });
+    const joined = stderrLines.join("\n");
+    assert.ok(joined.includes("PLAN_TOPIC_TOPUP_HEURISTIC"));
+    const topUp = heuristicTopicPaths({
+      digestRelPaths: ["aa1111.md", "aa2222.md", "bb3333.md"],
+      effectiveOffset: 0,
+      minTopic: 3,
+      maxTopic: 6,
+    });
+    assert.ok(topUp.length >= 3);
+  } finally {
+    console.log = ol;
+    console.error = oe;
+    restore();
+  }
+});
+
+test("SCN-WCC-043 run_until_cycle_complete finishes small corpus", async () => {
+  const restore = installMockOllamaFetch({
+    embedDim: 8,
+    chatResponses: {
+      /** @ignore */
+      test() {
+        return '{"paths":["topics/win.md"]}';
+      },
+    },
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-wcc-043-"));
+  const notes = path.join(tmp, "notes");
+  const wiki = path.join(tmp, "wiki");
+  fs.mkdirSync(notes, { recursive: true });
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.writeFileSync(path.join(notes, "a.md"), "# a\n", "utf8");
+  fs.writeFileSync(path.join(notes, "b.md"), "# b\n", "utf8");
+  fs.writeFileSync(path.join(notes, "c.md"), "# c\n", "utf8");
+
+  const schemaPath = path.join(tmp, "schema.yaml");
+  fs.writeFileSync(
+    schemaPath,
+    `
+schema_version: "1"
+page_types:
+  - id: t
+    required_frontmatter_keys: []
+    required_outbound_link_patterns: []
+required_hub_pages: []
+`,
+    "utf8",
+  );
+
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ${notes}
+wiki_root: ${wiki}
+wiki_schema:
+  path: ${schemaPath}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 5
+  min_pages_per_run: 0
+  min_topic_pages_per_run: 0
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 2
+    step_files: 1
+    run_until_cycle_complete: true
+    max_total_windows_per_invocation: 50
+    advance_state_on_dry_run: true
+joplin_wiki_writeback:
+  enabled: false
+chroma:
+  persist_path: ${path.join(tmp, "chroma")}
+`,
+    "utf8",
+  );
+
+  /** @type {string[]} */
+  const stdoutLines = [];
+  const ol = console.log.bind(console);
+  console.log = (ln) => {
+    stdoutLines.push(typeof ln === "string" ? ln : JSON.stringify(ln));
+    ol(ln);
+  };
+  const oe = console.error.bind(console);
+  console.error = () => {};
+
+  try {
+    const exitCode = await runWikiCompile({
+      configPath: cfgPath,
+      argv: [],
+      opts: new Map(),
+      flags: { help: false },
+    });
+    assert.strictEqual(exitCode, 0);
+    const summary = JSON.parse(stdoutLines[stdoutLines.length - 1]);
+    assert.strictEqual(summary.corpus_sweep.cycle_complete, true);
+    assert.strictEqual(summary.corpus_sweep.run_until_cycle_complete, true);
+    assert.ok(summary.corpus_sweep.total_windows_executed >= 3);
   } finally {
     console.log = ol;
     console.error = oe;

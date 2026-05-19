@@ -8,6 +8,7 @@ import {
 } from "../schema/schema-validator.js";
 import { OllamaClient } from "../ollama/client.js";
 import { summarizeSourcesForPlanner, planWikiPaths } from "./wiki-planner.js";
+import { isTopicWikiPath } from "./topic-path-heuristic.js";
 import { rotatedSlice } from "./corpus-slice.js";
 import { corpusChromaAugmentFromChroma } from "./corpus-chroma-excerpt.js";
 import {
@@ -138,7 +139,21 @@ export async function runWikiCompileFlow(args) {
   let truncated = false;
   if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
     truncated = true;
-    paths = paths.slice(0, cfg.wiki_ingest.max_pages_per_run);
+    paths = prioritizeTopicsBeforeTruncate(
+      paths,
+      schema,
+      cfg.wiki_ingest.max_pages_per_run,
+    );
+  }
+  if (plan.meta?.heuristicTopUp) {
+    console.error(
+      JSON.stringify({
+        warning: "PLANNER_META",
+        topic_count: plan.meta.topicCount,
+        alias_key: plan.meta.aliasKeyUsed,
+        heuristic_top_up: true,
+      }),
+    );
   }
 
   if (paths.length === 0) {
@@ -196,7 +211,11 @@ export async function runWikiCompileFlow(args) {
     }
     if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
       truncated = true;
-      paths = paths.slice(0, cfg.wiki_ingest.max_pages_per_run);
+      paths = prioritizeTopicsBeforeTruncate(
+        paths,
+        schema,
+        cfg.wiki_ingest.max_pages_per_run,
+      );
     }
   }
 
@@ -350,6 +369,43 @@ function pathsFromRequiredHubPages(schema, maxPages) {
     0,
     Math.max(0, Math.trunc(maxPages)),
   );
+}
+
+/**
+ * @param {import('../schema/schema-validator.js').WikiSchema} schema
+ */
+function hubPathSetFromSchema(schema) {
+  const hubs = schema.required_hub_pages ?? [];
+  return new Set(
+    hubs.map((h) =>
+      String(h).replace(/\\/g, "/").replace(/^\/+/, "").trim(),
+    ),
+  );
+}
+
+/**
+ * When over page budget, keep topics/ paths before hubs and misc.
+ *
+ * @param {string[]} paths
+ * @param {import('../schema/schema-validator.js').WikiSchema} schema
+ * @param {number} maxPages
+ */
+function prioritizeTopicsBeforeTruncate(paths, schema, maxPages) {
+  const hubs = hubPathSetFromSchema(schema);
+  /** @type {string[]} */
+  const topics = [];
+  /** @type {string[]} */
+  const hubPaths = [];
+  /** @type {string[]} */
+  const other = [];
+  for (const p of paths) {
+    const n = p.replace(/\\/g, "/");
+    if (hubs.has(n)) hubPaths.push(p);
+    else if (isTopicWikiPath(n, hubs)) topics.push(p);
+    else other.push(p);
+  }
+  const merged = [...topics, ...other, ...hubPaths];
+  return merged.slice(0, Math.max(0, maxPages));
 }
 
 /** @param {string[]} plannerPaths normalized forward slashes */

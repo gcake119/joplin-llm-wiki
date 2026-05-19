@@ -110,10 +110,14 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 | `wiki_ingest.min_pages_per_run` | `2` | 對齊 `wiki-schema.example.yaml` 兩個 hub，避免無謂 `PLAN_BELOW_MIN` |
 | `corpus_auto_sweep.step_files` | `40` | 與 digest 視窗同寬 |
 | `corpus_auto_sweep.max_windows_per_invocation` | `2` | 可再降到 1 方便除錯 |
+| `wiki_ingest.min_topic_pages_per_run` | `3` | 不足時重試 planner；仍不足則 heuristic 產生 `topics/cluster-*.md` |
+| `corpus_auto_sweep.run_until_cycle_complete` | `false` | 設 `true` 可單次 invocation 掃完整輪（受 `max_total_windows_per_invocation` 限制） |
+
+**主題式建檔**：planner 會容錯 JSON 別名鍵（`items`、`answer` 等），並在 hub-only 時重試；仍不足時以 digest 分桶補 `topics/` 路徑。截斷 `max_pages_per_run` 時**優先保留 topics 路徑**。全庫一輪視窗數約 `ceil(筆記數 / step_files)`（例：3056 檔、step 40 → 約 77 窗；每窗可產 3～6 篇 topic wiki）。
 
 **Ollama context**：本套件 `OllamaClient` 未從 YAML 傳 `options.num_ctx`／`temperature`；請在 **Modelfile 或 `ollama create` 參數** 調整 context。`rag.max_context_chars` 僅影響 `ask`，不影響 wiki-compile。
 
-**驗證 planner**：`pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --dry-run`，stdout 應含 `planner_raw` 且為 `{"paths":[...]}`。若 `paths` 僅為 schema hub（`index.md`、`topics/overview.md`），表示 JSON 契約已通過，但模型尚未依 digest 規劃主題頁（可再調 prompt／few-shot，屬後續改進）。
+**驗證 planner**：`pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --dry-run`，stdout 應含 `paths` 且至少 `min_topic_pages_per_run` 條以 `topics/` 開頭（或 stderr 出現 `PLAN_TOPIC_TOPUP_HEURISTIC`）。
 
 **高配機器**可改回：`corpus_digest_max_files: 500`、`max_pages_per_run: 15`、`min_pages_per_run: 10`、`chat_model: gemma2:2b`（或你本機較大的模型）。
 

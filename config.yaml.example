@@ -21,6 +21,9 @@ wiki_ingest:
   max_pages_per_run: 8
   # 建議 ≤ required_hub_pages 數量或略高（schema 範例為 2 個 hub）；高配可改 10
   min_pages_per_run: 2
+  # 每視窗至少幾個 topics/*.md（0=關閉；小模型建議 3）
+  min_topic_pages_per_run: 3
+  planner_reject_source_paths: true
   max_planner_rounds: 3
   # Omitting corpus_mode_enabled ⇒ true (notebook-wide digest + rotated excerpts).
   # Set explicitly to false if you rely on legacy 40-file planner digest / 5-file writer excerpt.
@@ -38,6 +41,9 @@ wiki_ingest:
     state_path: ""
     # false：--dry-run 只跑 1 個視窗且不推進 offset（預覽 planner 用）
     advance_state_on_dry_run: false
+    # 單次 CLI 內連續 sweep 直到 cycle_complete（非 dry-run）；受 max_total_windows 上限
+    run_until_cycle_complete: false
+    max_total_windows_per_invocation: 500
   corpus_writer_excerpt_mode: filesystem_slice
   corpus_chroma_top_k: 8
 

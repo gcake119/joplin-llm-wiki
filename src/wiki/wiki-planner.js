@@ -8,6 +8,11 @@ import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import path from "node:path";
 import fs from "node:fs";
 import { rotatedSlice } from "./corpus-slice.js";
+import {
+  heuristicTopicPaths,
+  isTopicWikiPath,
+  looksLikeSourceBasename,
+} from "./topic-path-heuristic.js";
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
@@ -26,9 +31,11 @@ export async function summarizeSourcesForPlanner(cfg) {
     digestAbs = rotatedSlice(files, ingest.corpus_digest_offset, maxTake);
   }
 
+  const digestRelPaths = [];
   const lines = [];
   for (const abs of digestAbs) {
     const rel = relativeUnder(root, abs);
+    digestRelPaths.push(rel);
     const st = fs.statSync(abs);
     lines.push(`${rel} mtime_ms=${Math.trunc(st.mtimeMs)}`);
   }
@@ -42,7 +49,138 @@ export async function summarizeSourcesForPlanner(cfg) {
     summary: lines.join("\n"),
     sourceFileCount: files.length,
     digest_paths_in_prompt_count: digestAbs.length,
+    digestRelPaths,
   };
+}
+
+/**
+ * @param {import('../schema/schema-validator.js').WikiSchema} schema
+ */
+function hubPathSet(schema) {
+  const hubs = schema.required_hub_pages ?? [];
+  return new Set(
+    hubs.map((h) =>
+      String(h).replace(/\\/g, "/").replace(/^\/+/, "").trim(),
+    ),
+  );
+}
+
+/**
+ * @param {unknown} obj
+ * @param {{ rejectSourcePaths: boolean }} opts
+ * @returns {{ paths: string[], aliasKey?: string }}
+ */
+export function extractPathsFromModelJson(obj, opts) {
+  if (!obj || typeof obj !== "object") return { paths: [] };
+
+  const record = /** @type {Record<string, unknown>} */ (obj);
+  const candidates = [
+    ["paths", record.paths],
+    ["items", record.items],
+    ["answer", record.answer],
+    ["files", record.files],
+    ["plan", record.plan],
+  ];
+
+  for (const [key, val] of candidates) {
+    const fromArr = pathsFromArray(val, opts);
+    if (fromArr.length > 0) return { paths: fromArr, aliasKey: key };
+  }
+
+  if (Array.isArray(record.json)) {
+    const fromJson = pathsFromObjectArray(record.json, opts);
+    if (fromJson.length > 0) return { paths: fromJson, aliasKey: "json" };
+  }
+
+  return { paths: [] };
+}
+
+/**
+ * @param {unknown} val
+ * @param {{ rejectSourcePaths: boolean }} opts
+ */
+function pathsFromArray(val, opts) {
+  if (!Array.isArray(val)) return [];
+  const out = [];
+  for (const item of val) {
+    if (typeof item === "string") {
+      const n = normalizeOnePath(item, opts);
+      if (n) out.push(n);
+    } else if (item && typeof item === "object" && "path" in item) {
+      const p = /** @type {{ path?: unknown }} */ (item).path;
+      if (typeof p === "string") {
+        const n = normalizeOnePath(p, opts);
+        if (n) out.push(n);
+      }
+    }
+  }
+  return dedupePathsPreserveOrder(out);
+}
+
+/**
+ * @param {unknown} val
+ * @param {{ rejectSourcePaths: boolean }} opts
+ */
+function pathsFromObjectArray(val, opts) {
+  if (!Array.isArray(val)) return [];
+  const out = [];
+  for (const item of val) {
+    if (item && typeof item === "object" && "path" in item) {
+      const p = /** @type {{ path?: unknown }} */ (item).path;
+      if (typeof p === "string") {
+        const n = normalizeOnePath(p, opts);
+        if (n) out.push(n);
+      }
+    }
+  }
+  return dedupePathsPreserveOrder(out);
+}
+
+/**
+ * @param {string} p
+ * @param {{ rejectSourcePaths: boolean }} opts
+ */
+function normalizeOnePath(p, opts) {
+  const norm = p.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!norm || norm.includes("..")) return "";
+  if (opts.rejectSourcePaths && looksLikeSourceBasename(norm)) return "";
+  return norm;
+}
+
+/** @param {string[]} plannerPaths */
+function dedupePathsPreserveOrder(plannerPaths) {
+  const seen = new Set();
+  const out = [];
+  for (const p of plannerPaths) {
+    if (!p || p.includes("..")) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * @param {string[]} paths
+ * @param {Set<string>} hubs
+ */
+function countTopicPaths(paths, hubs) {
+  let n = 0;
+  for (const p of paths) {
+    if (isTopicWikiPath(p, hubs)) n++;
+  }
+  return n;
+}
+
+/**
+ * @param {boolean} hubOnly
+ * @param {number} topicCount
+ * @param {number} minTopic
+ */
+function plannerNeedsRetry(hubOnly, topicCount, minTopic) {
+  if (minTopic <= 0) return false;
+  if (hubOnly) return true;
+  return topicCount < minTopic;
 }
 
 /**
@@ -50,60 +188,215 @@ export async function summarizeSourcesForPlanner(cfg) {
  *   cfg: import('../config/load-config.js').AppConfig,
  *   schema: import('../schema/schema-validator.js').WikiSchema,
  *   ollama: import('../ollama/client.js').OllamaClient,
- *   notesSummary: { summary: string, sourceFileCount: number, digest_paths_in_prompt_count: number },
+ *   notesSummary: {
+ *     summary: string,
+ *     sourceFileCount: number,
+ *     digest_paths_in_prompt_count: number,
+ *     digestRelPaths: string[],
+ *   },
  * }} args
- * @returns {Promise<{ paths: string[], raw: string }>}
+ * @returns {Promise<{
+ *   paths: string[],
+ *   raw: string,
+ *   meta?: {
+ *     aliasKeyUsed?: string,
+ *     hubOnly?: boolean,
+ *     topicCount?: number,
+ *     heuristicTopUp?: boolean,
+ *   },
+ * }>}
  */
 export async function planWikiPaths(args) {
   const { cfg, schema, ollama, notesSummary } = args;
   const maxRun = cfg.wiki_ingest.max_pages_per_run;
-  const minSoft = cfg.wiki_ingest.min_pages_per_run;
+  const minTopic = cfg.wiki_ingest.min_topic_pages_per_run;
+  const maxTopic = Math.max(0, maxRun - 1);
   const srcCount = notesSummary.sourceFileCount;
   const digestCount = notesSummary.digest_paths_in_prompt_count;
+  const hubs = hubPathSet(schema);
+  const rejectSource = cfg.wiki_ingest.planner_reject_source_paths;
+  const effectiveOffset = cfg.wiki_ingest.corpus_digest_offset;
 
   const system =
     "You output ONLY compact JSON with key paths (string array). No prose.";
-  const prompt = `Plan wiki pages to update for Karpathy ingest.
+  const fewShot = `Example valid output:
+{"paths":["topics/note-taking.md","topics/projects.md","topics/reference.md","index.md"]}`;
 
-Required hub pages from schema: ${JSON.stringify(schema.required_hub_pages)}
+  const basePrompt = `Plan wiki pages to update for Karpathy ingest.
+
+Required hub pages (include only if they need refresh): ${JSON.stringify(schema.required_hub_pages)}
 Page type ids: ${schema.page_types.map((p) => p.id).join(", ")}
 
-Sources digest (relative paths + mtimes):
+${fewShot}
+
+Sources digest (relative paths + mtimes from notes_root — do NOT copy these as wiki paths):
 ${notesSummary.summary}
 
 Constraints:
-- Return between 0 and ${maxRun} paths (relative to wiki_root, use forward slashes).
-- Prefer hubs that are missing or stale.
-- The notes library has ${srcCount} markdown files; this digest lists ${digestCount} of them (metadata only). When ${srcCount} is large, prefer returning at least ${minSoft} diverse wiki paths that synthesize or refresh coverage from that corpus—unless you deliberately scope a tiny edit (never exceed ${maxRun}).
-- JSON shape strictly: {"paths":["foo.md","bar/b.md"]}`;
+- Return between 1 and ${maxRun} paths relative to wiki_root (forward slashes only).
+- You MUST return at least ${minTopic} paths under topics/ (e.g. topics/my-slug.md) that group this digest into themes. Do not return only hub pages.
+- Cluster digest files by filename prefix, topic, or mtime; use short kebab slugs in topics/.
+- Never return bare source filenames like "abc123....md" without a topics/ prefix.
+- The notes library has ${srcCount} files; this digest lists ${digestCount} of them (metadata only).
+- JSON shape strictly: {"paths":["topics/foo.md","index.md"]}`;
 
   /** @type {string | undefined} */
-  let text;
+  let text = "";
   let lastErr;
+  let lastPaths = [];
+  let lastAlias;
+  let sawHubOnly = false;
   const rounds = cfg.wiki_ingest.max_planner_rounds;
+
   for (let r = 0; r < rounds; r++) {
     try {
+      let retrySuffix = "";
+      if (r > 0) {
+        const topicN = countTopicPaths(lastPaths, hubs);
+        retrySuffix =
+          `\nPrevious invalid or insufficient output (${lastAlias ?? "parse"}). ` +
+          `Emit valid JSON only with key "paths". Need at least ${minTopic} topics/* paths; ` +
+          `had ${topicN} topic path(s). Do not return hub pages only.`;
+      }
       text = await ollama.chatComplete({
         system,
-        prompt:
-          r === 0
-            ? prompt
-            : `${prompt}\nPrevious invalid output; emit valid JSON only.`,
+        prompt: basePrompt + retrySuffix,
         jsonMode: true,
         timeoutMs: cfg.ollama.timeout_ms,
       });
       const parsed = extractJsonObject(text);
-      const paths = normalizePaths(parsed.paths);
-      return { paths, raw: text };
+      const extracted = extractPathsFromModelJson(parsed, {
+        rejectSourcePaths: rejectSource,
+      });
+      lastPaths = extracted.paths;
+      lastAlias = extracted.aliasKey;
+
+      const topicCount = countTopicPaths(lastPaths, hubs);
+      const nonEmpty = lastPaths.length > 0;
+      const hubOnly =
+        nonEmpty && lastPaths.every((p) => hubs.has(p));
+      if (hubOnly) sawHubOnly = true;
+
+      if (
+        !nonEmpty ||
+        plannerNeedsRetry(hubOnly, topicCount, minTopic)
+      ) {
+        if (r < rounds - 1) continue;
+      } else {
+        return finishPlan({
+          paths: lastPaths,
+          raw: text,
+          hubs,
+          minTopic,
+          maxTopic,
+          digestRelPaths: notesSummary.digestRelPaths,
+          effectiveOffset,
+          aliasKey: lastAlias,
+          sawHubOnly,
+          heuristicTopUp: false,
+        });
+      }
     } catch (e) {
       lastErr = e;
     }
   }
-  const err = new Error(
-    `Wiki planner failed after ${rounds} rounds: ${lastErr?.message ?? lastErr}`,
-  );
-  /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
-  throw err;
+
+  if (lastErr && lastPaths.length === 0 && !text) {
+    const err = new Error(
+      `Wiki planner failed after ${rounds} rounds: ${lastErr?.message ?? lastErr}`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
+    throw err;
+  }
+
+  return finishPlan({
+    paths: lastPaths,
+    raw: text || "{}",
+    hubs,
+    minTopic,
+    maxTopic,
+    digestRelPaths: notesSummary.digestRelPaths,
+    effectiveOffset,
+    aliasKey: lastAlias,
+    sawHubOnly,
+    heuristicTopUp: false,
+    forceHeuristic: true,
+  });
+}
+
+/**
+ * @param {{
+ *   paths: string[],
+ *   raw: string,
+ *   hubs: Set<string>,
+ *   minTopic: number,
+ *   maxTopic: number,
+ *   digestRelPaths: string[],
+ *   effectiveOffset: number,
+ *   aliasKey?: string,
+ *   sawHubOnly: boolean,
+ *   heuristicTopUp: boolean,
+ *   forceHeuristic?: boolean,
+ * }} args
+ */
+function finishPlan(args) {
+  let paths = [...args.paths];
+  const topicCountBefore = countTopicPaths(paths, args.hubs);
+  let heuristicTopUp = args.heuristicTopUp;
+
+  const needsHeuristic =
+    args.minTopic > 0 &&
+    (args.forceHeuristic ||
+      topicCountBefore < args.minTopic);
+
+  if (needsHeuristic) {
+    const topUp = heuristicTopicPaths({
+      digestRelPaths: args.digestRelPaths,
+      effectiveOffset: args.effectiveOffset,
+      minTopic: args.minTopic,
+      maxTopic: args.maxTopic,
+    });
+    const seen = new Set(paths);
+    for (const t of topUp) {
+      if (!seen.has(t)) {
+        seen.add(t);
+        paths.push(t);
+      }
+    }
+    if (topUp.length > 0) {
+      heuristicTopUp = true;
+      console.error(
+        JSON.stringify({
+          warning: "PLAN_TOPIC_TOPUP_HEURISTIC",
+          topic_paths: topUp,
+          effective_offset: args.effectiveOffset,
+          topic_count_before: topicCountBefore,
+        }),
+      );
+    }
+  }
+
+  const topicCount = countTopicPaths(paths, args.hubs);
+  if (args.sawHubOnly && topicCount >= args.minTopic) {
+    console.error(
+      JSON.stringify({
+        warning: "PLAN_HUB_ONLY_RECOVERED",
+        message: "planner returned hub-only in an earlier round; final plan includes topics",
+        topic_count: topicCount,
+      }),
+    );
+  }
+
+  return {
+    paths,
+    raw: args.raw,
+    meta: {
+      aliasKeyUsed: args.aliasKey,
+      hubOnly: topicCount === 0 && paths.length > 0,
+      topicCount,
+      heuristicTopUp,
+    },
+  };
 }
 
 /**
@@ -119,20 +412,4 @@ function extractJsonObject(text) {
     if (start === -1 || end === -1) throw new Error("no json object");
     return JSON.parse(t.slice(start, end + 1));
   }
-}
-
-/**
- * @param {unknown} pathsVal
- * @returns {string[]}
- */
-function normalizePaths(pathsVal) {
-  if (!Array.isArray(pathsVal)) return [];
-  const out = [];
-  for (const p of pathsVal) {
-    if (typeof p !== "string") continue;
-    const norm = p.replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!norm || norm.includes("..")) continue;
-    out.push(norm);
-  }
-  return out;
 }
