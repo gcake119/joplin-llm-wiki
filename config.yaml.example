@@ -1,6 +1,9 @@
 # Example Karpathy-style configuration for `joplin-brain`.
 # Copy to `config.yaml` and adjust paths.
 # Local default: repository-root `notes_root/` (directory is gitignored).
+#
+# 本檔 wiki_ingest／ollama 預設對齊「筆電可跑的較小 chat 模型」（如 gemma4:e4b）實測；
+# 若機器與模型較大，可改回註解中的「高配預設」數值（見 README「本機小模型」）。
 
 notes_root: ./notes_root
 notes_glob: "**/*.md"
@@ -14,22 +17,27 @@ wiki_schema:
   strict: true
 
 wiki_ingest:
-  max_pages_per_run: 15
-  min_pages_per_run: 10
+  # 小模型建議 5–8；高配可改 15
+  max_pages_per_run: 8
+  # 建議 ≤ required_hub_pages 數量或略高（schema 範例為 2 個 hub）；高配可改 10
+  min_pages_per_run: 2
   max_planner_rounds: 3
   # Omitting corpus_mode_enabled ⇒ true (notebook-wide digest + rotated excerpts).
   # Set explicitly to false if you rely on legacy 40-file planner digest / 5-file writer excerpt.
   # corpus_mode_enabled: false
-  corpus_digest_max_files: 500
+  # 小模型 planner 建議 40（與舊版相容 digest 同量級）；高配可改 500（合法 40–1000）
+  corpus_digest_max_files: 40
   corpus_digest_offset: 0
-  # Optional: multi-window digest sweep (single CLI process). Requires corpus_mode_enabled true.
-  # Persists offset under wiki_root/.joplin-llm-wiki/corpus-sweep-state.json unless state_path is set.
-  # corpus_auto_sweep:
-  #   enabled: false
-  #   max_windows_per_invocation: 20
-  #   step_files: 500          # omit to default to corpus_digest_max_files; must be ≤ corpus_digest_max_files
-  #   state_path: ""           # optional absolute or config-relative path
-  #   advance_state_on_dry_run: false
+  # Multi-window digest sweep（單次 CLI 連跑多視窗）。需 corpus_mode_enabled true。
+  # 進度：wiki_root/.joplin-llm-wiki/corpus-sweep-state.json（可用 state_path 覆寫）
+  corpus_auto_sweep:
+    enabled: true
+    # 小模型建議 1–3 視窗／次，避免單次 invocation 過長
+    max_windows_per_invocation: 2
+    step_files: 40          # 省略時預設為 corpus_digest_max_files；必須 ≤ corpus_digest_max_files
+    state_path: ""
+    # false：--dry-run 只跑 1 個視窗且不推進 offset（預覽 planner 用）
+    advance_state_on_dry_run: false
   corpus_writer_excerpt_mode: filesystem_slice
   corpus_chroma_top_k: 8
 
@@ -38,8 +46,9 @@ write_back:
 
 ollama:
   base_url: http://127.0.0.1:11434
-  embed_model: bge-m3
-  chat_model: gemma2:2b
+  embed_model: bge-m3:latest
+  # 本機較小 chat；請在 Ollama Modelfile／模型參數設定 num_ctx（本套件 API 未傳 options.num_ctx）
+  chat_model: gemma4:e4b
   timeout_ms: 120000
   embed_batch_size: 16
 

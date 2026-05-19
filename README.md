@@ -93,9 +93,29 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 
 ### wiki-compile：`wiki_ingest.corpus_*`（主題式全庫上下文）
 
-預設行為對齊 **notebook-wide thematic PKM**：**省略** `wiki_ingest.corpus_mode_enabled` 時視為 **`true`**，`wiki-compile` 會以 **`discoverMarkdown` 字典序**配合 **`corpus_digest_offset`**（環狀位移）將最多 **`corpus_digest_max_files`**（預設 500，合法 40–1000）筆來源路徑＋mtime 送入 planner；撰寫階段對同一視窗組裝 excerpts（仍可受內文明文長度上限切斷）。請留意 **tokens／本機流量**將高於過往兼容路徑。
+預設行為對齊 **notebook-wide thematic PKM**：**省略** `wiki_ingest.corpus_mode_enabled` 時視為 **`true`**，`wiki-compile` 會以 **`discoverMarkdown` 字典序**配合 **`corpus_digest_offset`**（環狀位移）將最多 **`corpus_digest_max_files`**（`load-config` 預設 500，合法 40–1000；**`config.yaml.example` 採 40** 以利小模型）筆來源路徑＋mtime 送入 planner；撰寫階段對同一視窗組裝 excerpts（仍可受內文明文長度上限切斷）。請留意 **tokens／本機流量**將高於過往兼容路徑。
 
-**一輪會編譯幾頁？** 每輪由 **Ollama planner** 產生 **`paths` 清單**，數量 **≤ `wiki_ingest.max_pages_per_run`**（預設 15）；digest 列了上百筆來源路徑 **不代表**本輪會生成上百篇 wiki。若要逐步覆蓋整庫，可多次執行並調整 **`corpus_digest_offset`**（digest 視窗會跟著滑動），或啟用 **`wiki_ingest.corpus_auto_sweep`**（將 `enabled` 設為 **`true`**），由同一 CLI invocation 依 **`max_windows_per_invocation`** 連跑多個視窗並把進度寫入 **`wiki_root/.joplin-llm-wiki/corpus-sweep-state.json`**（可用 **`state_path`** 覆寫）；亦可傳 **`wiki-compile --corpus-sweep=true`** 僅在本次強制開啟 sweep。**`advance_state_on_dry_run`** 預設 **`false`**：`--dry-run` 預設只預覽第一個視窗且不推進 state；digest 視窗掃完仍 **不保證**「每一則筆記對應一篇 wiki」（仍受 planner 與 `max_pages_per_run` 約束）。**`min_pages_per_run`** 為軟門檻：低於時 stderr 會出現 **`PLAN_BELOW_MIN`**；若 schema 有 **`required_hub_pages`**，實作會嘗試合併 hub 路徑並送出 **`PLAN_BELOW_MIN_TOPUP_HUBS`**（仍可能低於 `min_pages_per_run`，例如 hub 只有兩個時）。
+**一輪會編譯幾頁？** 每輪由 **Ollama planner** 產生 **`paths` 清單**（嚴格 JSON：`{"paths":["wiki/relative.md",...]}`，見 `src/wiki/wiki-planner.js`），數量 **≤ `wiki_ingest.max_pages_per_run`**（`load-config` 預設 15；範例檔為 8）；digest 列了上百筆來源路徑 **不代表**本輪會生成上百篇 wiki。若要逐步覆蓋整庫，可多次執行並調整 **`corpus_digest_offset`**（digest 視窗會跟著滑動），或啟用 **`wiki_ingest.corpus_auto_sweep`**（將 `enabled` 設為 **`true`**），由同一 CLI invocation 依 **`max_windows_per_invocation`** 連跑多個視窗並把進度寫入 **`wiki_root/.joplin-llm-wiki/corpus-sweep-state.json`**（可用 **`state_path`** 覆寫）；亦可傳 **`wiki-compile --corpus-sweep=true`** 僅在本次強制開啟 sweep。**`advance_state_on_dry_run`** 預設 **`false`**：`--dry-run` 在該值為 false 時**強制只跑 1 個 sweep 視窗**且不推進 state（末行 `corpus_sweep.truncated: true` 表示整輪掃描尚未 `cycle_complete`，非 planner 失敗）；digest 視窗掃完仍 **不保證**「每一則筆記對應一篇 wiki」（仍受 planner 與 `max_pages_per_run` 約束）。**`min_pages_per_run`** 為軟門檻：低於時 stderr 會出現 **`PLAN_BELOW_MIN`**；若 schema 有 **`required_hub_pages`**，實作會嘗試合併 hub 路徑並送出 **`PLAN_BELOW_MIN_TOPUP_HUBS`**（仍可能低於 `min_pages_per_run`，例如 hub 只有兩個時）。
+
+#### 本機小模型（例如 `gemma4:e4b`）
+
+`config.yaml.example` 已對齊筆電可跑設定，可直接複製後改路徑與 token：
+
+| 設定 | 範例值 | 說明 |
+|------|--------|------|
+| `ollama.chat_model` | `gemma4:e4b` | planner／writer 共用 |
+| `ollama.embed_model` | `bge-m3:latest` | 與 `index` 相同 |
+| `wiki_ingest.corpus_digest_max_files` | `40` | 過大（如 500）時小模型易回錯 JSON 鍵或拒絕規劃 |
+| `wiki_ingest.max_pages_per_run` | `8` | 單視窗規劃頁數上限 |
+| `wiki_ingest.min_pages_per_run` | `2` | 對齊 `wiki-schema.example.yaml` 兩個 hub，避免無謂 `PLAN_BELOW_MIN` |
+| `corpus_auto_sweep.step_files` | `40` | 與 digest 視窗同寬 |
+| `corpus_auto_sweep.max_windows_per_invocation` | `2` | 可再降到 1 方便除錯 |
+
+**Ollama context**：本套件 `OllamaClient` 未從 YAML 傳 `options.num_ctx`／`temperature`；請在 **Modelfile 或 `ollama create` 參數** 調整 context。`rag.max_context_chars` 僅影響 `ask`，不影響 wiki-compile。
+
+**驗證 planner**：`pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --dry-run`，stdout 應含 `planner_raw` 且為 `{"paths":[...]}`。若 `paths` 僅為 schema hub（`index.md`、`topics/overview.md`），表示 JSON 契約已通過，但模型尚未依 digest 規劃主題頁（可再調 prompt／few-shot，屬後續改進）。
+
+**高配機器**可改回：`corpus_digest_max_files: 500`、`max_pages_per_run: 15`、`min_pages_per_run: 10`、`chat_model: gemma2:2b`（或你本機較大的模型）。
 
 - **`corpus_digest_offset`**：整數輪替起點；多輪手動換 offset 可把 digest 視窗環狀移位以覆蓋不同排序區段。
 - **`corpus_writer_excerpt_mode`**：`filesystem_slice`（僅檔案系統）或 `filesystem_plus_chroma`（在成功命中時附加本機 **`collection_sources`** 鄰近 chunk；失效或無命中時自動降級，stderr 會出現單行 JSON：`{"warning":"CORPUS_CHROMA_DEGRADED",...}`）。
