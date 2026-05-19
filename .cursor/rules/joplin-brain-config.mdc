@@ -14,5 +14,6 @@ joplin_wiki_writeback:
 ```
 
   若需測試寫回路徑則設定 **`joplin_data_api.token`**（任意非空字串即可）並對 `runWikiWriteback` 傳入 **`fetch` mock**（見 `test/joplin-wiki-writeback.test.js`）。
-- **`wiki-compile --dry-run`**：不會對 Joplin 發送會變更資料的 HTTP；仍可能輸出 `writeback_would_write` 等乾跑統計（對 planner 路徑若檔案尚未存在，僅依路徑推估 topic）。
-- 參考實作：`src/config/load-config.js`、`src/joplin/wiki-writeback.js`、`src/joplin/data-api-client.js`、`src/wiki/wiki-compiler.js`。
+- **`wiki-compile --dry-run`**：不會對 Joplin 發送會變更資料的 HTTP；仍可能輸出 `writeback_would_write` 等乾跑統計（對 planner 路徑若檔案尚未存在，僅依路徑推估 topic）。`corpus_auto_sweep.advance_state_on_dry_run: false`（預設）時，dry-run **只跑 1 個 sweep 視窗**且不推進 `corpus-sweep-state.json`。
+- **小模型範例**（見 `config.yaml.example`／README）：`chat_model: gemma4:e4b`、`corpus_digest_max_files: 40`、`max_pages_per_run: 8`、`min_pages_per_run: 2`；Ollama `num_ctx` 由 Modelfile 設定，YAML 無對應鍵。
+- 參考實作：`src/config/load-config.js`、`src/joplin/wiki-writeback.js`、`src/joplin/data-api-client.js`、`src/wiki/wiki-compiler.js`、`src/wiki/wiki-planner.js`。

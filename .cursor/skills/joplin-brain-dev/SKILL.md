@@ -5,12 +5,35 @@ description: >-
 license: MIT
 metadata:
   author: project
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 # joplin-llm-wiki 開發慣例
 
 在修改 `wiki-compile`、設定載入、或 **`test/**/*.test.js`** 內嵌 `config.yaml` 時遵守下列規則。
+
+## 本機小模型（`config.yaml.example` 對齊值）
+
+筆電跑 **gemma4:e4b** 時，使用者向範例與 README 採下列 `wiki_ingest`／`ollama`（測試迷你 YAML 若模擬真實規劃可沿用；純單元測試仍可用更小 digest）：
+
+```yaml
+wiki_ingest:
+  max_pages_per_run: 8
+  min_pages_per_run: 2
+  corpus_digest_max_files: 40
+  corpus_auto_sweep:
+    enabled: true
+    max_windows_per_invocation: 2
+    step_files: 40
+    advance_state_on_dry_run: false
+ollama:
+  embed_model: bge-m3:latest
+  chat_model: gemma4:e4b
+```
+
+- Planner 只吃 `{"paths":["..."]}`（`src/wiki/wiki-planner.js`）；錯鍵名會觸發 `PLAN_EMPTY_USING_SCHEMA_HUBS`。
+- `--dry-run` 且 `advance_state_on_dry_run: false` 時，sweep **只跑 1 視窗**（`cmd-wiki-compile.js`）。
+- `num_ctx` 不在 `load-config`；由 Ollama 模型定義。
 
 ## `joplin_wiki_writeback` 與測試
 

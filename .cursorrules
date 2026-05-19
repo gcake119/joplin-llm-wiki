@@ -19,5 +19,6 @@ discuss? → propose → apply ⇄ ingest → archive
 ## joplin-llm-wiki（實作速記）
 
 - `wiki-compile` 可觸發 **`joplin_wiki_writeback`**（預設開啟）；迷你測試用設定請見 `.cursor/rules/joplin-brain-config.mdc`。
+- 本機小模型範例（`gemma4:e4b`、`corpus_digest_max_files: 40` 等）見 **`config.yaml.example`** 與 README「本機小模型」。
 
 <!-- SPECTRA:END -->
