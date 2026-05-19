@@ -305,3 +305,41 @@ tests:
   - test/cli-help.test.js
   - test/wiki-separation.test.js
 -->
+
+---
+### Requirement: REQ-WCC-PLANNER-ALIAS-001 Planner JSON alias extraction
+
+The wiki planner SHALL normalize model JSON by accepting string arrays from keys `paths`, `items`, `answer`, `files`, or `plan`, and objects with a string `path` field, before applying path validation.
+
+#### Scenario: SCN-WCC-PLANNER-ALIAS-01 Items key accepted
+
+- **WHEN** the model returns `{"items":["topics/foo.md"]}`
+- **THEN** the planner treats `topics/foo.md` as a candidate wiki path
+
+
+<!-- @trace
+source: small-model-thematic-planner
+updated: 2026-05-19
+code:
+  - src/wiki/topic-path-heuristic.js
+  - src/wiki/wiki-planner.js
+  - src/wiki/wiki-compiler.js
+  - src/config/load-config.js
+  - src/commands/cmd-wiki-compile.js
+-->
+
+---
+### Requirement: REQ-WCC-PLANNER-SOURCE-001 Reject bare source filenames in planner output
+
+When `wiki_ingest.planner_reject_source_paths` is true, paths that look like bare exported note basenames (no slash, hash-like stem) SHALL NOT be passed to the compile plan unless rewritten under `topics/`.
+
+<!-- @trace
+source: small-model-thematic-planner
+updated: 2026-05-19
+code:
+  - src/wiki/topic-path-heuristic.js
+  - src/wiki/wiki-planner.js
+  - src/wiki/wiki-compiler.js
+  - src/config/load-config.js
+  - src/commands/cmd-wiki-compile.js
+-->

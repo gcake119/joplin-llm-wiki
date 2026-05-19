@@ -20,18 +20,22 @@ metadata:
 wiki_ingest:
   max_pages_per_run: 8
   min_pages_per_run: 2
+  min_topic_pages_per_run: 3
+  planner_reject_source_paths: true
   corpus_digest_max_files: 40
   corpus_auto_sweep:
     enabled: true
     max_windows_per_invocation: 2
     step_files: 40
     advance_state_on_dry_run: false
+    run_until_cycle_complete: false
+    max_total_windows_per_invocation: 500
 ollama:
   embed_model: bge-m3:latest
   chat_model: gemma4:e4b
 ```
 
-- Planner 只吃 `{"paths":["..."]}`（`src/wiki/wiki-planner.js`）；錯鍵名會觸發 `PLAN_EMPTY_USING_SCHEMA_HUBS`。
+- Planner 優先 `{"paths":[...]}`，並容錯 `items`/`answer` 等別名（`extractPathsFromModelJson`）；hub-only 或 topic 不足會重試，仍不足則 `PLAN_TOPIC_TOPUP_HEURISTIC`（`topic-path-heuristic.js`）。
 - `--dry-run` 且 `advance_state_on_dry_run: false` 時，sweep **只跑 1 視窗**（`cmd-wiki-compile.js`）。
 - `num_ctx` 不在 `load-config`；由 Ollama 模型定義。
 
