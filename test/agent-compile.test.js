@@ -42,6 +42,8 @@ test("agent-compile dry-run emits prompt and does not spawn codex", async () => 
     const parsed = JSON.parse(line);
     assert.strictEqual(parsed.agent_compile, "dry_run");
     assert.match(parsed.prompt, /工作-專案A/);
+    assert.match(parsed.prompt, /domain isolation 是硬限制/);
+    assert.match(parsed.prompt, /不得建立跨 notebook 的總結/);
   } finally {
     console.log = origLog;
   }
@@ -85,6 +87,7 @@ test("agent-compile spawns codex exec with workspace-write sandbox", async () =>
     ]);
     assert.match(calls[0].args[7], /請執行 joplin-llm-wiki agent-based compile workflow/);
     assert.match(calls[0].args[7], /不要執行 pnpm exec joplin-llm-wiki agent-compile/);
+    assert.match(calls[0].args[7], /source_refs 必須全部以同一個 <notebook-slug>\/ 開頭/);
     assert.strictEqual(JSON.parse(line).agent_compile, "ok");
   } finally {
     console.log = origLog;

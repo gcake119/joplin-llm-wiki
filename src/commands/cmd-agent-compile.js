@@ -75,10 +75,16 @@ ${notebookLines}
 - 每個 wiki Markdown 檔必須使用繁體中文。
 - 每個 wiki Markdown 檔必須包含 YAML frontmatter：source_refs、compiled_at、compiler_revision、domain、title。
 - source_refs 必須是 notes_root 下存在的相對路徑。
+- domain isolation 是硬限制：每個 wiki_root/<notebook-slug>/ 只能整理 notes_root/<同一 notebook-slug>/ 內的來源。
+- 每個 wiki 檔 frontmatter 的 domain 必須等於所在目錄的 <notebook-slug>。
+- 每個 wiki 檔的 source_refs 必須全部以同一個 <notebook-slug>/ 開頭；不得引用其他 notebook slug 的來源。
+- 不得建立跨 notebook 的總結、比較、合併主題或全庫綜合頁。即使不同 notebook 有相似主題，也要分別寫在各自的 wiki_root/<notebook-slug>/。
+- 寫作時只可根據當前 notebook slug 的來源內容下結論；不可把其他 notebook 的人物、主題、專案、日期或觀點混入。
 
 目標：
-- 為每個 notebook slug 建立或更新 wiki_root/<notebook-slug>/index.md 與必要的 topics/*.md。
+- 逐一處理每個 notebook slug。處理某個 slug 時，先只讀 notes_root/<notebook-slug>/，再只寫 wiki_root/<notebook-slug>/index.md 與必要的 topics/*.md。
 - 保留技術名詞原文；整理成可閱讀的個人知識庫。
+- 若某個 notebook slug 來源不足，請在該 slug 的 index.md 簡短說明不足，不要借用其他 notebook 的材料補內容。
 - 完成後回報寫入檔案清單與任何跳過原因。
 - 如果無法完成或沒有寫入任何 wiki 檔，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
 }
