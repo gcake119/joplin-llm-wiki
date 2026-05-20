@@ -1,7 +1,10 @@
 import path from "node:path";
+import crypto from "node:crypto";
 import { safePathSegment } from "./notebooks.js";
 
 const NOTE_ID_RE = /^[a-f0-9]{32}$/i;
+const MAX_MARKDOWN_FILENAME_BYTES = 240;
+const HASH_BYTES = 8;
 
 /**
  * @param {string} noteId
@@ -59,7 +62,8 @@ export function markdownPathForNotebookTitle(
   const base = safePathSegment(title).replace(/[. ]+$/g, "") || "untitled";
   let n = 1;
   while (true) {
-    const name = n === 1 ? `${base}.md` : `${base}-${n}.md`;
+    const suffix = n === 1 ? "" : `-${n}`;
+    const name = markdownFilename(base, suffix);
     const rel = `${dir}/${name}`;
     if (!usedRelPaths.has(rel)) {
       const abs = path.join(path.resolve(exportRootAbs), dir, name);
@@ -69,4 +73,31 @@ export function markdownPathForNotebookTitle(
     }
     n++;
   }
+}
+
+/**
+ * @param {string} base
+ * @param {string} suffix
+ */
+function markdownFilename(base, suffix) {
+  const ext = ".md";
+  const budget = MAX_MARKDOWN_FILENAME_BYTES - Buffer.byteLength(`${suffix}${ext}`, "utf8");
+  return `${truncateUtf8Segment(base, budget)}${suffix}${ext}`;
+}
+
+/**
+ * @param {string} s
+ * @param {number} maxBytes
+ */
+function truncateUtf8Segment(s, maxBytes) {
+  if (Buffer.byteLength(s, "utf8") <= maxBytes) return s;
+  const hash = crypto.createHash("sha1").update(s).digest("hex").slice(0, HASH_BYTES);
+  const marker = `-${hash}`;
+  const prefixBudget = Math.max(1, maxBytes - Buffer.byteLength(marker, "utf8"));
+  let out = "";
+  for (const ch of s) {
+    if (Buffer.byteLength(out + ch, "utf8") > prefixBudget) break;
+    out += ch;
+  }
+  return `${out.replace(/[. ]+$/g, "") || "untitled"}${marker}`;
 }

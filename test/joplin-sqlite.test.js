@@ -12,6 +12,7 @@ import {
 } from "../src/joplin/sqlite/exporter.js";
 import {
   markdownPathForNote,
+  markdownPathForNotebookTitle,
   assertPathUnderExportRoot,
 } from "../src/joplin/sqlite/paths.js";
 import { runSqliteSync, defaultDeps } from "../src/commands/cmd-sqlite-sync.js";
@@ -231,6 +232,20 @@ test("assertPathUnderExportRoot rejects traversal", () => {
     () => assertPathUnderExportRoot(root, path.join(root, "..", "outside")),
     /refuses path outside export_root/,
   );
+});
+
+test("title filename is truncated with hash before filesystem name limit", () => {
+  const used = new Set();
+  const root = path.resolve(os.tmpdir(), "jb-title-limit");
+  const longTitle =
+    "X 上的 Coinfinity ⚡️：「Have you ever heard of @NickSzabo4's article--Shelling Out - The Origins of Money- “掏錢——金錢的起源” An extraordinary piece of monetary history and its social impact. Let's dive into it in a little thread👇🏻1-11 🧵🪡 https---t.co-YpQFbE5rE0」 - X";
+  const first = markdownPathForNotebookTitle(root, "區塊鏈科普", longTitle, used);
+  const second = markdownPathForNotebookTitle(root, "區塊鏈科普", longTitle, used);
+  assert.ok(first.rel.startsWith("區塊鏈科普/"));
+  assert.match(path.basename(first.abs), /-[a-f0-9]{8}\.md$/);
+  assert.match(path.basename(second.abs), /-[a-f0-9]{8}-2\.md$/);
+  assert.ok(Buffer.byteLength(path.basename(first.abs), "utf8") <= 240);
+  assert.ok(Buffer.byteLength(path.basename(second.abs), "utf8") <= 240);
 });
 
 test("REQ-JSQ-EXPORT-MIRROR: exporter writes notes and mirror deletes stale", async () => {

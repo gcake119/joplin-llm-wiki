@@ -215,7 +215,7 @@ pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
 
 `sqlite-sync --select-notebooks` 會從 Joplin SQLite 的 `folders` table 讀取筆記本樹，提供互動式多選，並把選擇寫回 `config.yaml` 的 `joplin_sqlite_sync.notebook_filter`。後續匯出只會輸出選取筆記本（預設包含子筆記本）內的未刪除筆記。
 
-巢狀筆記本會以 `-` 串接各階層作為單一資料夾名，例如 `工作/專案A/會議` 會匯出到 `notes_root/工作-專案A-會議/`。筆記檔名使用標題；同一資料夾內標題重複時會加 `-2`、`-3` 後綴。每篇匯出 Markdown 會包含 `joplin_note_id`、`joplin_notebook_id`、`joplin_notebook_path`、`joplin_notebook_slug` frontmatter 供追溯。
+巢狀筆記本會以 `-` 串接各階層作為單一資料夾名，例如 `工作/專案A/會議` 會匯出到 `notes_root/工作-專案A-會議/`。筆記檔名使用標題；同一資料夾內標題重複時會加 `-2`、`-3` 後綴。超長標題會保留可讀前綴並加短 hash，以避開檔案系統單一檔名長度限制；穩定追蹤以 frontmatter 的 `joplin_note_id` 為準。每篇匯出 Markdown 會包含 `joplin_note_id`、`joplin_notebook_id`、`joplin_notebook_path`、`joplin_notebook_slug` frontmatter 供追溯。
 
 當來源以筆記本資料夾分層時，`wiki-compile` 會將 wiki 產物寫到對應的 `wiki_root/<notebook-slug>/` 下，例如 `wiki_root/工作-專案A-會議/topics/*.md`。
 
