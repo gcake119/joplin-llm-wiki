@@ -18,6 +18,10 @@ discuss? → propose → apply ⇄ ingest → archive
 
 ## joplin-llm-wiki（實作速記）
 
+- 本 repo 部分採用 **`gatelynch/llm-knowledge-base`** 四層知識流：`raw/` → `notes_root/`，`wiki/` → `wiki_root/`，`brainstorming/`／`artifacts/` 保留為探索與成品區；上游專案不是 runtime dependency。
+- Joplin notebook 匯出使用 **`notes_root/<joined-notebook-slug>/<safe-title>.md`**；巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。compiled wiki 對應 **`wiki_root/<joined-notebook-slug>/`**，`source_refs` 使用 nested source relative path。
+- 人可讀的知識管理輸出使用**繁體中文**。技術名詞、source path、filename 可保留原文。
+- 模型分流：本地預設是 **`wiki-compile` + Ollama**；Codex 月訂閱路線是 **`agent-compile` + 本機 `codex exec`**，不使用 OpenAI API key，也不等同 API 額度。OpenAI API provider 目前未實作。
 - `wiki-compile` 可觸發 **`joplin_wiki_writeback`**（預設開啟）；迷你測試用設定請見 `.cursor/rules/joplin-brain-config.mdc`。
 - 本機小模型範例（`gemma4:e4b`、`corpus_digest_max_files: 40` 等）見 **`config.yaml.example`** 與 README「本機小模型」。
 

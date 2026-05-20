@@ -1,9 +1,14 @@
-# Example Karpathy-style configuration for `joplin-brain`.
+# Example configuration for `joplin-llm-wiki`.
 # Copy to `config.yaml` and adjust paths.
 # Local default: repository-root `notes_root/` (directory is gitignored).
 #
+# Knowledge flow: this repo partially adopts gatelynch/llm-knowledge-base:
+# raw/ -> notes_root/, wiki/ -> wiki_root/, plus brainstorming/ and artifacts/.
+#
 # 本檔 wiki_ingest／ollama 預設對齊「筆電可跑的較小 chat 模型」（如 gemma4:e4b）實測；
 # 若機器與模型較大，可改回註解中的「高配預設」數值（見 README「本機小模型」）。
+# 若要以 Codex 月訂閱編譯 wiki，使用 `agent-compile` + 本機已登入 `codex exec`；
+# 這不是 OpenAI API provider，也不使用 API key。
 
 notes_root: ./notes_root
 notes_glob: "**/*.md"
@@ -118,9 +123,11 @@ joplin_sqlite_sync:
   max_export_attempts: 5
   notebook_filter:
     enabled: false
+    # 可用 `sqlite-sync --select-notebooks` 互動式寫入 ids；也可手動填 Joplin notebook path。
     include_notebook_ids: []
     include_notebook_paths: []
     include_descendants: true
+    # 工作/專案A/會議 -> notes_root/工作-專案A-會議/<safe-title>.md
     notebook_path_style: joined_slug
     notebook_path_separator: "-"
     source_filename: title

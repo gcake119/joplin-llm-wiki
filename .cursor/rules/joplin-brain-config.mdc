@@ -1,10 +1,15 @@
 ---
-description: joplin-llm-wiki 設定與測試中的 joplin_wiki_writeback／load-config 慣例
+description: joplin-llm-wiki 設定與測試中的 knowledge flow／notebook export／agent compile／joplin_wiki_writeback 慣例
 alwaysApply: true
 ---
 
 # joplin-llm-wiki 設定與測試
 
+- **知識流對齊**：本 repo 部分採用 `gatelynch/llm-knowledge-base` 四層概念。`raw/` 對應 `notes_root/`，`wiki/` 對應 `wiki_root/`，`brainstorming/` 與 `artifacts/` 保持為探索與成品區；上游專案不是 runtime dependency。
+- **語言**：人可讀的知識管理輸出使用繁體中文；技術名詞、source path、filename 可保留原文。
+- **Joplin notebook 匯出**：`sqlite-sync --select-notebooks` 寫入 `joplin_sqlite_sync.notebook_filter`。來源路徑使用 `notes_root/<joined-notebook-slug>/<safe-title>.md`；巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。`reconcile_mode: mirror` 僅應清理匯出產生的 stale `.md`，不得刪非 `.md`。
+- **Wiki 分層**：`wiki-compile` 與 `agent-compile` 都應輸出到 `wiki_root/<joined-notebook-slug>/`。`source_refs` 使用 `notes_root` 下的相對路徑，例如 `工作-專案A-會議/my-note.md`；frontmatter `domain` 使用 joined notebook slug。
+- **模型選擇**：本地預設是 `wiki-compile` + Ollama。Codex 月訂閱路線是 `agent-compile` + 本機已登入的 `codex exec`，不使用 OpenAI API key，也不等同 API 額度。OpenAI API provider 目前未實作。
 - **`joplin_wiki_writeback.enabled` 預設為 true**（YAML 省略該鍵時等同開啟）。當寫回視為開啟時，`load-config` 要求 **`joplin_data_api.token`** 非空、**`joplin_data_api.base_url`** 為合法 **http(s)** 且 hostname 僅允許 **`127.0.0.1`／`localhost`／`::1`**，否則拋 **`CONFIG_INVALID`**。
 - 在 **單元／整合測試**裡若只驗證 `wiki-compile`、`index`、`sqlite-sync` 等、**不需要**真的呼叫 Joplin Data API，請在迷你設定中加入：
 
@@ -16,4 +21,4 @@ joplin_wiki_writeback:
   若需測試寫回路徑則設定 **`joplin_data_api.token`**（任意非空字串即可）並對 `runWikiWriteback` 傳入 **`fetch` mock**（見 `test/joplin-wiki-writeback.test.js`）。
 - **`wiki-compile --dry-run`**：不會對 Joplin 發送會變更資料的 HTTP；仍可能輸出 `writeback_would_write` 等乾跑統計（對 planner 路徑若檔案尚未存在，僅依路徑推估 topic）。`corpus_auto_sweep.advance_state_on_dry_run: false`（預設）時，dry-run **只跑 1 個 sweep 視窗**且不推進 `corpus-sweep-state.json`。
 - **小模型範例**（見 `config.yaml.example`／README）：`chat_model: gemma4:e4b`、`corpus_digest_max_files: 40`、`max_pages_per_run: 8`、`min_pages_per_run: 2`、`min_topic_pages_per_run: 3`；`corpus_auto_sweep.run_until_cycle_complete` 可單次掃完整輪；Ollama `num_ctx` 由 Modelfile 設定。
-- 參考實作：`src/config/load-config.js`、`src/joplin/wiki-writeback.js`、`src/joplin/data-api-client.js`、`src/wiki/wiki-compiler.js`、`src/wiki/wiki-planner.js`。
+- 參考實作：`src/config/load-config.js`、`src/joplin/sqlite/exporter.js`、`src/joplin/sqlite/notebooks.js`、`src/joplin/sqlite/paths.js`、`src/joplin/wiki-writeback.js`、`src/joplin/data-api-client.js`、`src/wiki/wiki-compiler.js`、`src/wiki/wiki-planner.js`、`src/commands/cmd-agent-compile.js`。

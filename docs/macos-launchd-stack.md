@@ -8,6 +8,8 @@
 
 設計前提是**全本機**、無對外 HTTP API；監聽僅限本機 loopback（與專案 README 一致）。
 
+此 stack 對齊本地模型路線：`wiki-compile` + Ollama。若你要用 Codex 月訂閱做 wiki 編譯，請改用 `agent-compile` 或 Health GUI 的 Codex Agent 模式；該路線透過本機已登入的 `codex exec`，不使用 OpenAI API key，且不由此三支 LaunchAgent 自動管理。
+
 亦可經 **Health GUI**（Electron）執行相同的 install／uninstall 腳本與設定編輯，詳見根目錄 `README.md` 的 **Health GUI** 章節。
 
 ## 前置條件
@@ -130,6 +132,14 @@ joplin_sqlite_sync:
     run_wiki_compile: true
   schedule:
     every_seconds: 600
+  notebook_filter:
+    enabled: true
+    include_notebook_paths:
+      - 工作/專案A
+    include_descendants: true
+    notebook_path_style: joined_slug
+    notebook_path_separator: "-"
+    source_filename: title
 ```
 
 手動單次驗證管線正常後，再執行 LaunchAgent 安裝較易除錯：

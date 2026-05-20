@@ -1,7 +1,7 @@
 ---
 name: joplin-brain-dev
 description: >-
-  joplin-llm-wiki（npm 套件）本 repo 開發慣例：wiki-compile、Joplin Desktop Data API 寫回、load-config、測試迷你 YAML。
+  joplin-llm-wiki（npm 套件）本 repo 開發慣例：Joplin SQLite 匯出、notebook 分層、wiki-compile、agent-compile、Joplin Desktop Data API 寫回、load-config、測試迷你 YAML。
 license: MIT
 metadata:
   author: project
@@ -10,7 +10,19 @@ metadata:
 
 # joplin-llm-wiki 開發慣例
 
-在修改 `wiki-compile`、設定載入、或 **`test/**/*.test.js`** 內嵌 `config.yaml` 時遵守下列規則。
+在修改 `sqlite-sync`、`wiki-compile`、`agent-compile`、設定載入、或 **`test/**/*.test.js`** 內嵌 `config.yaml` 時遵守下列規則。
+
+## 知識流與模型邊界
+
+- 本 repo 部分採用 `gatelynch/llm-knowledge-base` 的四層知識流：`raw/` 對應 `notes_root/`，`wiki/` 對應 `wiki_root/`，並保留 `brainstorming/` 與 `artifacts/`。
+- `notes_root/` 是 Joplin SQLite mirror/export 產物，預設視為唯讀證據；不要手動放入長期維護內容。
+- Notebook 篩選匯出使用 `notes_root/<joined-notebook-slug>/<safe-title>.md`。巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。
+- 編譯輸出使用 `wiki_root/<joined-notebook-slug>/`，wiki frontmatter 的 `domain` 對應 joined notebook slug，以利 Joplin writeback routing。
+- 人可讀的知識管理輸出使用繁體中文；技術名詞、source path、filename 可保留原文。
+- 模型分流：
+  - 本地預設是 `wiki-compile` + Ollama。
+  - Codex 月訂閱路線是 `agent-compile` + 本機已登入的 `codex exec`，不使用 OpenAI API key，也不等同 API 額度。
+  - OpenAI API provider 目前未實作。
 
 ## 本機小模型（`config.yaml.example` 對齊值）
 
@@ -56,9 +68,12 @@ joplin_wiki_writeback:
 | 行為 | 路徑 |
 |------|------|
 | 設定解析 | `src/config/load-config.js` |
+| Joplin SQLite schema / notebook tree / export | `src/joplin/sqlite/joplin-schema.js`、`src/joplin/sqlite/notebooks.js`、`src/joplin/sqlite/exporter.js` |
+| notebook/title path sanitizing | `src/joplin/sqlite/paths.js` |
 | Data API 傳輸／預檢／分頁 | `src/joplin/data-api-client.js` |
 | 寫回筆記本樹 + upsert | `src/joplin/wiki-writeback.js` |
 | 編譯編排（含寫回觸發） | `src/wiki/wiki-compiler.js`；CLI 薄封裝 `src/commands/cmd-wiki-compile.js` |
+| Codex Agent 編譯 | `src/commands/cmd-agent-compile.js` |
 | 錯誤碼 | `JOPLIN_DATA_API_FAILED`、`JOPLIN_DATA_API_WRITE_FAILED`（`src/cli.js`；仍相容舊字串 `JOPLIN_CLI_*`） |
 
 ## 規格真相來源

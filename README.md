@@ -1,6 +1,70 @@
-# joplin-llm-wiki（Karpathy MVP）
+# joplin-llm-wiki（Joplin LLM Knowledge Base）
 
-本機-first 的 **Sources → Compiled Wiki → Schema** 三層管線：向量分 `collection_sources` / `collection_wiki`，`wiki-compile` 透過本機 Ollama 規劃並撰寫 `wiki_root`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
+## 中文概覽
+
+`joplin-llm-wiki` 是本機優先的 Joplin 個人知識庫管線。它把 Joplin Desktop 的 `database.sqlite` 以唯讀方式匯出成 Markdown，再用本機 Ollama 或本機已登入的 Codex CLI 編譯成 `wiki_root` 內的結構化 wiki。向量索引分為 `collection_sources` / `collection_wiki`，`ask` 支援 `wiki_first` / `sources_only` / `merged`，`lint` 輸出 Karpathy 版健康報告（重複、原件孤立、hub 孤立、矛盾候選、schema 缺口等）。
+
+本專案**部分引用** [`gatelynch/llm-knowledge-base`](https://github.com/gatelynch/llm-knowledge-base) 的知識流架構：採用 `raw/`、`wiki/`、`brainstorming/`、`artifacts/` 的分層思路，但不把上游專案作為套件依賴。此 repo 的對應是：`raw/` → `notes_root/`，`wiki/` → `wiki_root/`，並保留 `brainstorming/` 與 `artifacts/` 作為探索紀錄與成品區。
+
+### 資料流
+
+| 階段 | 指令／路徑 | 說明 |
+|------|------------|------|
+| Joplin source | `database.sqlite` | Joplin Desktop profile 內的 SQLite；本工具只讀取，不直接修改。 |
+| 筆記本篩選匯出 | `sqlite-sync --select-notebooks` / `sqlite-sync --export-only` | 互動式選擇要匯出的筆記本，巢狀筆記本以 `-` 串接成 slug。 |
+| raw/source layer | `notes_root/<notebook-slug>/<safe-title>.md` | 檔名使用標題；同資料夾重名加 `-2`、`-3`；frontmatter 保留 Joplin note/notebook metadata。 |
+| index | `index` | 將 `notes_root` 與 `wiki_root` 寫入 Chroma / memory vector backend。 |
+| local compile | `wiki-compile` | 使用 Ollama planner/writer，輸出到 `wiki_root/<notebook-slug>/`，可選擇寫回 Joplin Data API。 |
+| agent compile | `agent-compile` | 使用本機 `codex exec` 非互動模式整理 selected `notes_root/<notebook-slug>/` 到 `wiki_root/<notebook-slug>/`。 |
+| Joplin writeback | `joplin_wiki_writeback` | 經本機 Joplin Data API upsert 到 `note-wiki` 筆記本樹。 |
+
+### 模型選擇
+
+| 模式 | 預設 | 何時使用 | 注意 |
+|------|------|----------|------|
+| 本地模型 | `wiki-compile` + Ollama（`bge-m3:latest` / `gemma4:e4b`） | 想讓編譯、嵌入、索引都在本機跑。 | 受本機模型 context / JSON 穩定度限制；小模型建議使用範例設定的較小 digest。 |
+| Codex Agent | `agent-compile` + `codex exec` | 想用 ChatGPT/Codex 月訂閱的本機 CLI agent 取代本機 chat model 做 wiki 編譯。 | 不使用 OpenAI API key，也不把月訂閱視為 API 額度；仍需本機已登入 `codex`。 |
+| OpenAI API | 尚未實作 | 目前不支援。 | ChatGPT/Codex 月訂閱與 API billing 是分開產品；本 repo 目前沒有 cloud API provider。 |
+
+### 常用指令
+
+```bash
+pnpm install
+pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --select-notebooks
+pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only
+pnpm exec joplin-llm-wiki index --config ./config.yaml
+pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml
+pnpm exec joplin-llm-wiki ask --config ./config.yaml "你的問題"
+pnpm exec joplin-llm-wiki lint --config ./config.yaml
+```
+
+## English Overview
+
+`joplin-llm-wiki` is a local-first personal knowledge pipeline for Joplin. It reads Joplin Desktop's `database.sqlite` in read-only mode, exports selected notebooks to Markdown, and compiles them into a structured wiki under `wiki_root` with either local Ollama models or a locally authenticated Codex CLI agent.
+
+The project **partially adopts** the workflow architecture from [`gatelynch/llm-knowledge-base`](https://github.com/gatelynch/llm-knowledge-base): `raw/`, `wiki/`, `brainstorming/`, and `artifacts/`. In this repo, `raw/` maps to `notes_root/`, `wiki/` maps to `wiki_root/`, while `brainstorming/` and `artifacts/` remain explicit areas for exploration logs and finished work products. The upstream project is a workflow reference, not a runtime dependency.
+
+### Data Flow
+
+| Stage | Command / Path | Description |
+| --- | --- | --- |
+| Joplin source | `database.sqlite` | Read-only source from the Joplin Desktop profile. |
+| Notebook selection export | `sqlite-sync --select-notebooks` / `sqlite-sync --export-only` | Select notebooks interactively; nested notebook paths are joined into one slug with `-`. |
+| Raw/source layer | `notes_root/<notebook-slug>/<safe-title>.md` | Filenames use note titles; duplicate titles become `-2`, `-3`; frontmatter keeps Joplin note/notebook metadata. |
+| Index | `index` | Indexes `notes_root` and `wiki_root` into Chroma or the memory vector backend. |
+| Local compile | `wiki-compile` | Uses Ollama planner/writer and writes `wiki_root/<notebook-slug>/`; can optionally write back through Joplin Data API. |
+| Agent compile | `agent-compile` | Uses non-interactive local `codex exec` to compile selected `notes_root/<notebook-slug>/` into `wiki_root/<notebook-slug>/`. |
+| Joplin writeback | `joplin_wiki_writeback` | Upserts compiled wiki pages into the `note-wiki` notebook tree through the local Joplin Data API. |
+
+### Model Selection
+
+| Mode | Default | Use when | Notes |
+| --- | --- | --- | --- |
+| Local model | `wiki-compile` + Ollama (`bge-m3:latest` / `gemma4:e4b`) | You want embedding, indexing, planning, and writing to run locally. | Constrained by local model context and JSON stability; the example config uses a smaller digest for laptop models. |
+| Codex Agent | `agent-compile` + `codex exec` | You want to use a ChatGPT/Codex monthly subscription through the local CLI agent instead of a local chat model for compilation. | No OpenAI API key is used; the subscription is not treated as API quota. Local `codex` must already be logged in. |
+| OpenAI API | Not implemented | Currently unsupported. | ChatGPT/Codex subscriptions and OpenAI API billing are separate products; this repo has no cloud API provider yet. |
 
 規劃中的產品路線見下方 **[Roadmap（規劃中）](#readme-roadmap)**；完整表格與細節以 [`openspec/ROADMAP.md`](openspec/ROADMAP.md) 為準。
 
@@ -40,6 +104,7 @@
 - Node **≥ 20**
 - **pnpm**
 - 本機 **[Ollama](https://ollama.com/)**（embed + chat）
+- 可選：本機 **Codex CLI**（若使用 `agent-compile`，需已登入；不需 OpenAI API key）
 - **Chroma**：安裝套件後使用 CLI 啟動持久化伺服器（與 `chromadb` npm client 搭配）：
 
 ```bash
@@ -57,6 +122,8 @@ pnpm exec joplin-llm-wiki index --config ./my.config.yaml
 pnpm exec joplin-llm-wiki watch --config ./my.config.yaml
 pnpm exec joplin-llm-wiki wiki-compile --config ./my.config.yaml
 pnpm exec joplin-llm-wiki wiki-compile --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml
 pnpm exec joplin-llm-wiki ask --config ./my.config.yaml "你的問題"
 pnpm exec joplin-llm-wiki lint --config ./my.config.yaml
 ```
