@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown } from "../fs/note-discovery.js";
+import { runWikiWriteback } from "../joplin/wiki-writeback.js";
 
 /**
  * @param {{
@@ -11,14 +12,16 @@ import { discoverMarkdown } from "../fs/note-discovery.js";
  *   argv: string[],
  *   opts: Map<string, string>,
  * }} ctx
- * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown }} [deps]
+ * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown, runWikiWriteback?: typeof runWikiWriteback }} [deps]
  */
 export async function runAgentCompile(ctx, deps = {}) {
   const load = deps.loadConfig ?? loadConfig;
   const discover = deps.discoverMarkdown ?? discoverMarkdown;
   const spawnImpl = deps.spawn ?? spawn;
+  const writeback = deps.runWikiWriteback ?? runWikiWriteback;
   const cfg = await load(ctx.configPath);
-  const prompt = await buildAgentCompilePrompt(cfg, ctx.configPath, discover);
+  const task = await buildAgentCompileTask(cfg, ctx.configPath, discover);
+  const { prompt, slugs } = task;
   if (ctx.opts.get("dry-run") === "true") {
     console.log(JSON.stringify({ agent_compile: "dry_run", adapter: "codex-cli", prompt }));
     return 0;
@@ -37,6 +40,7 @@ export async function runAgentCompile(ctx, deps = {}) {
     /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
     throw err;
   }
+  const writebackSummary = await runAgentCompileWriteback(cfg, discover, writeback, slugs);
   console.log(
     JSON.stringify({
       agent_compile: "ok",
@@ -44,6 +48,7 @@ export async function runAgentCompile(ctx, deps = {}) {
       notebook_count: prompt.match(/^- /gm)?.length ?? 0,
       stdout_tail: res.stdoutTail,
       final_tail: res.finalMessage.slice(-512),
+      ...writebackSummary,
     }),
   );
   return 0;
@@ -53,13 +58,14 @@ export async function runAgentCompile(ctx, deps = {}) {
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} configPath
  * @param {typeof discoverMarkdown} discover
+ * @returns {Promise<{ prompt: string, slugs: string[] }>}
  */
-async function buildAgentCompilePrompt(cfg, configPath, discover) {
+async function buildAgentCompileTask(cfg, configPath, discover) {
   const notesRoot = path.resolve(cfg.notes_root);
   const files = await discover(notesRoot, cfg.notes_glob);
   const slugs = [...new Set(files.map((abs) => path.relative(notesRoot, abs).split(path.sep)[0]).filter(Boolean))].sort();
   const notebookLines = slugs.map((s) => `- ${s}`).join("\n") || "- (none)";
-  return `請執行 joplin-llm-wiki agent-based compile workflow。
+  const prompt = `請執行 joplin-llm-wiki agent-based compile workflow。
 
 限制：
 - 不要執行 pnpm exec joplin-llm-wiki agent-compile。
@@ -88,6 +94,30 @@ ${notebookLines}
 - 若某個 notebook slug 來源不足，請在該 slug 的 index.md 簡短說明不足，不要借用其他 notebook 的材料補內容。
 - 完成後回報寫入檔案清單與任何跳過原因。
 - 如果無法完成或沒有寫入任何 wiki 檔，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
+  return { prompt, slugs };
+}
+
+/**
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {typeof discoverMarkdown} discover
+ * @param {typeof runWikiWriteback} writeback
+ * @param {string[]} slugs
+ */
+async function runAgentCompileWriteback(cfg, discover, writeback, slugs) {
+  if (cfg.joplin_wiki_writeback?.enabled !== true) {
+    return {};
+  }
+  const wikiRoot = path.resolve(cfg.wiki_root);
+  const slugSet = new Set(slugs);
+  const wikiFiles = await discover(wikiRoot, "**/*.md");
+  const relPaths = wikiFiles
+    .map((abs) => path.relative(wikiRoot, abs).replace(/\\/g, "/"))
+    .filter((rel) => {
+      const first = rel.split("/").filter(Boolean)[0];
+      return first && slugSet.has(first);
+    })
+    .sort();
+  return writeback(cfg, wikiRoot, relPaths, { dryRun: false });
 }
 
 /**

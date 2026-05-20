@@ -1,6 +1,6 @@
 ## Cron / launchd 範例：`wiki-compile` / `agent-compile` + `lint`
 
-> **Joplin 寫回**：若設定中 `joplin_wiki_writeback` 為開啟（預設），`wiki-compile`（非 `--dry-run`）會經 **本機 Joplin Data API** 寫入；須設定 **`joplin_data_api.token`**（Web Clipper 授權權杖）且 Desktop **Clipper 服務**在跑、與 **`database.sqlite`／profile** 一致。無頭排程機若無法滿足此前提，請設 `joplin_wiki_writeback.enabled: false` 或改用僅 `--dry-run`。詳見 README「Joplin：Desktop、Data API 與 Wiki 寫回」。
+> **Joplin 寫回**：若設定中 `joplin_wiki_writeback` 為開啟（預設），`wiki-compile` 與成功的 `agent-compile`（非 `--dry-run`）都會經 **本機 Joplin Data API** 寫入；須設定 **`joplin_data_api.token`**（Web Clipper 授權權杖）且 Desktop **Clipper 服務**在跑、與 **`database.sqlite`／profile** 一致。無頭排程機若無法滿足此前提，請設 `joplin_wiki_writeback.enabled: false` 或改用僅 `--dry-run`。詳見 README「Joplin：Desktop、Data API 與 Wiki 寫回」。
 
 > **模型選擇**：`wiki-compile` 是本地 Ollama 路線；`agent-compile` 是本機已登入 `codex exec` 的 Codex Agent 路線，不使用 OpenAI API key，也不等同 API 額度。兩者都應維持 `notes_root/<joined-notebook-slug>/` → `wiki_root/<joined-notebook-slug>/` 的資料流。
 

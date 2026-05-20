@@ -96,6 +96,67 @@ test("agent-compile spawns codex exec with workspace-write sandbox", async () =>
   }
 });
 
+test("agent-compile writes generated wiki pages back to Joplin Data API when enabled", async () => {
+  const calls = [];
+  let writebackCall = null;
+  let line = "";
+  const origLog = console.log;
+  console.log = (x) => {
+    line = String(x);
+  };
+  try {
+    const code = await runAgentCompile(
+      { configPath: path.resolve("cfg.yaml"), argv: [], opts: new Map() },
+      {
+        spawn: (cmd, args, opts) => {
+          calls.push({ cmd, args, cwd: opts.cwd });
+          const c = makeChild();
+          queueMicrotask(() => c.emit("close", 0));
+          return c;
+        },
+        loadConfig: async () =>
+          /** @type {any} */ ({
+            notes_root: "/notes",
+            notes_glob: "**/*.md",
+            wiki_root: "/wiki",
+            joplin_wiki_writeback: { enabled: true },
+          }),
+        discoverMarkdown: async (root) => {
+          if (root === "/notes") return ["/notes/nb/a.md"];
+          if (root === "/wiki") {
+            return [
+              "/wiki/nb/index.md",
+              "/wiki/nb/topics/a.md",
+              "/wiki/other/index.md",
+            ];
+          }
+          return [];
+        },
+        runWikiWriteback: async (_cfg, wikiRoot, relPaths, options) => {
+          writebackCall = { wikiRoot, relPaths, options };
+          return {
+            writeback_written: relPaths.length,
+            writeback_skipped: 0,
+            writeback_notebooks_ensured: 1,
+            writeback_collision_count: 0,
+          };
+        },
+      },
+    );
+    assert.strictEqual(code, 0);
+    assert.deepStrictEqual(writebackCall, {
+      wikiRoot: "/wiki",
+      relPaths: ["nb/index.md", "nb/topics/a.md"],
+      options: { dryRun: false },
+    });
+    const parsed = JSON.parse(line);
+    assert.strictEqual(parsed.agent_compile, "ok");
+    assert.strictEqual(parsed.writeback_written, 2);
+  } finally {
+    console.log = origLog;
+  }
+});
+
 test("agent-compile fails when codex final message reports no writes", async () => {
   await assert.rejects(
     () =>

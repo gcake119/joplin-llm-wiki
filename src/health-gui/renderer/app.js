@@ -631,11 +631,11 @@ async function init() {
     /** @type {HTMLSelectElement} */ (el("compile-mode")).value === "agent" ? "agent" : "local";
   const initConfirmText = (mode) =>
     mode === "agent"
-      ? "初始化管線：若 notes_root 無 .md，先執行 sqlite-sync --export-only（僅匯出，不接續 config 內 pipeline），再由 Codex Agent 執行 agent-compile，讀取 notes_root 並寫入 wiki_root。此模式需要本機已登入的 codex exec，不使用 OpenAI API；不會在此步驟執行 index 或 wiki-compile。確定執行？"
+      ? "初始化管線：若 notes_root 無 .md，先執行 sqlite-sync --export-only（僅匯出，不接續 config 內 pipeline），再由 Codex Agent 執行 agent-compile，讀取 notes_root 並寫入 wiki_root。此模式需要本機已登入的 codex exec，不使用 OpenAI API；不會在此步驟執行 index 或 wiki-compile。若設定啟用 Joplin wiki 寫回，agent-compile 成功後會經本機 Data API 更新 note-wiki 樹下同名筆記。確定執行？"
       : "初始化管線：若 notes_root 無 .md，先執行 sqlite-sync --export-only（僅匯出，不接續 config 內 pipeline），再執行 index 與 wiki-compile（需 Ollama／Chroma）。寫回若啟用可能影響 Joplin。確定執行？";
   const corpusConfirmText = (mode) =>
     mode === "agent"
-      ? "將執行 agent-compile（不會自動匯出 SQLite；可能耗時數分鐘）。此模式需要本機已登入的 codex exec，會讀取 notes_root 並寫入 wiki_root，不使用 OpenAI API。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。確定執行？"
+      ? "將執行 agent-compile（不會自動匯出 SQLite；可能耗時數分鐘）。此模式需要本機已登入的 codex exec，會讀取 notes_root 並寫入 wiki_root，不使用 OpenAI API。若設定啟用 Joplin wiki 寫回，成功後會經本機 Data API 更新 note-wiki 樹下同名筆記。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。確定執行？"
       : "將依序執行「pnpm exec joplin-llm-wiki index」與「wiki-compile」（不會自動匯出 SQLite；可能耗時數分鐘）。若 notes_root 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。若設定啟用 Joplin wiki 寫回，wiki-compile 會經本機 Data API 更新 note-wiki 樹下同名筆記（須 Desktop Clipper 服務可用）。確定執行？";
   const runInit = createSingleFlight(() =>
     jb.runInitPipeline({ confirmed: true, compileMode: selectedCompileMode() }),
