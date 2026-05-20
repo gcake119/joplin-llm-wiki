@@ -274,7 +274,6 @@ function listNotebooksViaCli(root, config) {
     );
     child.stdout?.on("data", (c) => {
       stdout += String(c);
-      if (stdout.length > 12000) stdout = stdout.slice(-12000);
     });
     child.stderr?.on("data", (c) => {
       stderr += String(c);
