@@ -77,6 +77,78 @@ chroma:
   );
 });
 
+test("sqlite-sync --list-notebooks-json prints notebook payload without exporting", async () => {
+  const lines = [];
+  const origLog = console.log;
+  const db = { closed: false, close() { this.closed = true; } };
+  try {
+    console.log = (msg) => lines.push(String(msg));
+    const code = await runSqliteSync(
+      {
+        configPath: "cfg.yaml",
+        argv: [],
+        opts: new Map([["list-notebooks-json", "true"]]),
+      },
+      {
+        ...defaultDeps,
+        loadConfig: async () => ({
+          notes_root: "/tmp/notes",
+          notes_glob: "**/*.md",
+          wiki_root: "/tmp/wiki",
+          wiki: { glob: "**/*.md" },
+          wiki_schema: { path: "", strict: false, schema: { page_types: [] } },
+          wiki_ingest: {},
+          write_back: { sources_enabled: false },
+          ollama: {},
+          chroma: {},
+          chunk: {},
+          watch: {},
+          rag: {},
+          lint: {},
+          joplin_cli: {},
+          joplin_data_api: {},
+          joplin_wiki_writeback: {},
+          joplin_sqlite_sync: {
+            enabled: true,
+            database_path: "/tmp/joplin.sqlite",
+            export_root: "/tmp/notes",
+            reconcile_mode: "mirror",
+            busy_timeout_ms: 1,
+            max_export_attempts: 1,
+            notebook_filter: {
+              enabled: true,
+              include_notebook_ids: ["child"],
+              include_notebook_paths: [],
+              include_descendants: true,
+              notebook_path_style: "joined_slug",
+              notebook_path_separator: "-",
+              source_filename: "title",
+            },
+            pipeline: { run_index: false, run_wiki_compile: false },
+            schedule: { every_seconds: null },
+          },
+        }),
+        openReadonlyDatabase: async () => db,
+        listNotebooksFromSqlite: () => [
+          { id: "root", parent_id: "", title: "工作", path: "工作", slug: "工作", depth: 0 },
+          { id: "child", parent_id: "root", title: "會議", path: "工作/會議", slug: "工作-會議", depth: 1 },
+        ],
+        exportNotesFromSqlite: async () => {
+          throw new Error("should not export");
+        },
+      },
+    );
+    assert.strictEqual(code, 0);
+    assert.strictEqual(db.closed, true);
+    const payload = JSON.parse(lines.at(-1));
+    assert.deepStrictEqual(payload.selectedIds, ["child"]);
+    assert.strictEqual(payload.enabled, true);
+    assert.strictEqual(payload.notebooks[1].slug, "工作-會議");
+  } finally {
+    console.log = origLog;
+  }
+});
+
 test("markdownPathForNote rejects path escape via id", () => {
   const root = path.join(os.tmpdir(), "jb-root");
   assert.throws(

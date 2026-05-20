@@ -37,6 +37,11 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
   let sync = cfg.joplin_sqlite_sync;
   const exportOnlyCli = ctx.opts.get("export-only") === "true";
   const selectNotebooks = ctx.opts.get("select-notebooks") === "true";
+  const listNotebooksJson = ctx.opts.get("list-notebooks-json") === "true";
+  if (listNotebooksJson) {
+    await printNotebooksJson(cfg, deps);
+    return 0;
+  }
   if (selectNotebooks) {
     await runNotebookSelection(ctx.configPath, cfg, deps);
     if (ctx.opts.get("run") !== "true") {
@@ -143,6 +148,37 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
 }
 
 export { defaultDeps };
+
+/**
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {typeof defaultDeps} deps
+ */
+async function printNotebooksJson(cfg, deps) {
+  if (!cfg.joplin_sqlite_sync.enabled || !cfg.joplin_sqlite_sync.database_path) {
+    const err = new Error("joplin_sqlite_sync must be enabled");
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const db = await deps.openReadonlyDatabase(
+    cfg.joplin_sqlite_sync.database_path,
+    cfg.joplin_sqlite_sync.busy_timeout_ms,
+    cfg.joplin_sqlite_sync.max_export_attempts,
+  );
+  try {
+    const notebooks = deps.listNotebooksFromSqlite(db, {
+      separator: cfg.joplin_sqlite_sync.notebook_filter.notebook_path_separator,
+    });
+    console.log(
+      JSON.stringify({
+        notebooks,
+        selectedIds: cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids,
+        enabled: cfg.joplin_sqlite_sync.notebook_filter.enabled,
+      }),
+    );
+  } finally {
+    db.close();
+  }
+}
 
 /**
  * @param {string} configPath

@@ -11,8 +11,6 @@ import {
   saveConfigValidated,
 } from "./config/config-coordinator.js";
 import { loadConfig } from "../config/load-config.js";
-import { openReadonlyDatabase } from "../joplin/sqlite/exporter.js";
-import { listNotebooksFromSqlite } from "../joplin/sqlite/notebooks.js";
 import { buildHealthSnapshot } from "./health-snapshot.js";
 import { findRepoRoot } from "./lib/repo-root.js";
 import { startLocalDependency } from "./deps/dependency-starter.js";
@@ -136,33 +134,7 @@ function wireIpc() {
   });
 
   ipcMain.handle("list-notebooks", async () => {
-    try {
-      const cfg = await loadConfig(configPath);
-      if (!cfg.joplin_sqlite_sync.enabled || !cfg.joplin_sqlite_sync.database_path) {
-        return { ok: false, code: "CONFIG_INVALID", message: "joplin_sqlite_sync must be enabled" };
-      }
-      const db = await openReadonlyDatabase(
-        cfg.joplin_sqlite_sync.database_path,
-        cfg.joplin_sqlite_sync.busy_timeout_ms,
-        cfg.joplin_sqlite_sync.max_export_attempts,
-      );
-      try {
-        const notebooks = listNotebooksFromSqlite(db, {
-          separator: cfg.joplin_sqlite_sync.notebook_filter.notebook_path_separator,
-        });
-        return {
-          ok: true,
-          notebooks,
-          selectedIds: cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids,
-          enabled: cfg.joplin_sqlite_sync.notebook_filter.enabled,
-        };
-      } finally {
-        db.close();
-      }
-    } catch (e) {
-      const code = /** @type {Error & { code?: string }} */ (e).code;
-      return { ok: false, code: code ?? "SQLITE_OPEN_FAILED", message: String(/** @type {Error} */ (e).message ?? e) };
-    }
+    return listNotebooksViaCli(repoRoot, configPath);
   });
 
   ipcMain.handle("save-notebook-filter", async (_evt, payload) => {
@@ -274,6 +246,105 @@ function wireIpc() {
     }
     return startLocalDependency(repoRoot, configPath, /** @type {*} */ (payload));
   });
+}
+
+/**
+ * Keep better-sqlite3 out of the Electron main process. Electron 33 uses its
+ * own native module ABI, while the CLI uses the user's Node runtime.
+ *
+ * @param {string} root
+ * @param {string} config
+ * @returns {Promise<{ ok: boolean, code?: string, message?: string, notebooks?: unknown[], selectedIds?: string[], enabled?: boolean }>}
+ */
+function listNotebooksViaCli(root, config) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(
+      "pnpm",
+      [
+        "exec",
+        "joplin-llm-wiki",
+        "sqlite-sync",
+        "--config",
+        config,
+        "--list-notebooks-json=true",
+      ],
+      { cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    child.stdout?.on("data", (c) => {
+      stdout += String(c);
+      if (stdout.length > 12000) stdout = stdout.slice(-12000);
+    });
+    child.stderr?.on("data", (c) => {
+      stderr += String(c);
+      if (stderr.length > 12000) stderr = stderr.slice(-12000);
+    });
+    child.on("error", (e) => {
+      resolve({
+        ok: false,
+        code: "SQLITE_OPEN_FAILED",
+        message: String(/** @type {Error} */ (e).message ?? e),
+      });
+    });
+    child.on("close", (exitCode) => {
+      if (exitCode !== 0) {
+        const line = stderr
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .at(-1);
+        const parsed = parseJsonObject(line);
+        resolve({
+          ok: false,
+          code: typeof parsed?.error === "string" ? parsed.error : "SQLITE_OPEN_FAILED",
+          message:
+            typeof parsed?.message === "string"
+              ? parsed.message
+              : stderr.slice(-1000) || `sqlite-sync exited ${exitCode}`,
+        });
+        return;
+      }
+      const line = stdout
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .at(-1);
+      const parsed = parseJsonObject(line);
+      if (!parsed || !Array.isArray(parsed.notebooks)) {
+        resolve({
+          ok: false,
+          code: "SQLITE_OPEN_FAILED",
+          message: "sqlite-sync did not return notebook JSON",
+        });
+        return;
+      }
+      resolve({
+        ok: true,
+        notebooks: parsed.notebooks,
+        selectedIds: Array.isArray(parsed.selectedIds)
+          ? parsed.selectedIds.filter((x) => typeof x === "string")
+          : [],
+        enabled: parsed.enabled === true,
+      });
+    });
+  });
+}
+
+/**
+ * @param {string | undefined} line
+ * @returns {Record<string, unknown> | null}
+ */
+function parseJsonObject(line) {
+  if (!line) return null;
+  try {
+    const parsed = JSON.parse(line);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? /** @type {Record<string, unknown>} */ (parsed)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function createWindow() {
