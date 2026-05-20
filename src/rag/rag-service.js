@@ -98,7 +98,7 @@ export function buildGroundedPrompt(args, maxChars) {
     parts.push(block);
     used += block.length;
   }
-  return `Answer using ONLY the context excerpts below. If insufficient, say you cannot find it.
+  return `Answer in Traditional Chinese using ONLY the context excerpts below. Keep technical proper nouns in their original language when clearer. If insufficient, say in Traditional Chinese that you cannot find enough evidence in the provided context.
 
 CONTEXT:
 ${parts.join("\n")}

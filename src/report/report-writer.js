@@ -17,7 +17,7 @@ export function writeLintReports(args) {
   const jsonPath = path.join(outDir, `${base}.json`);
   const mdPath = path.join(outDir, `${base}.md`);
   fs.writeFileSync(jsonPath, JSON.stringify(args.payload, null, 2), "utf8");
-  const md = `# Lint report ${stamp}\n\n\`\`\`json\n${JSON.stringify(args.payload, null, 2)}\n\`\`\`\n`;
+  const md = `# 知識庫檢查報告 ${stamp}\n\n\`\`\`json\n${JSON.stringify(args.payload, null, 2)}\n\`\`\`\n`;
   fs.writeFileSync(mdPath, md, "utf8");
   return { jsonPath, mdPath };
 }
