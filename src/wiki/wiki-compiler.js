@@ -580,9 +580,12 @@ Language: Traditional Chinese.
 Write all human-readable content in Traditional Chinese. Keep technical proper nouns
 and source filenames in their original language when clearer.
 
-Use Traditional Chinese headings and bullet points where helpful. Prefer these
-section headings when relevant: 核心結論, 關鍵證據, 疑點, 術語, 我的主張,
-實踐經驗, 我的實踐, 外部觀點, 張力與缺口.
+Use Traditional Chinese headings and bullet points where helpful. Choose the
+section structure based on the actual topic and source evidence; do not force a
+universal template. Useful optional headings include: 核心結論, 關鍵證據, 背景,
+方法, 步驟, 決策紀錄, 實踐經驗, 我的實踐, 外部觀點, 疑點, 待追蹤, 術語,
+張力與缺口. Omit sections such as 術語 or 張力與缺口 when they are not useful
+for this topic.
 Do NOT include YAML frontmatter.
 
 Sources digest:

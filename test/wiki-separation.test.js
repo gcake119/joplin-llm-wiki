@@ -522,6 +522,10 @@ chroma:
   assert.ok(prompts.length >= 2);
   const writerPrompt = prompts[prompts.length - 1] ?? "";
   assert.ok(writerPrompt.includes("CORPUS_ELEVEN_TOKEN_XYZabc"));
+  assert.ok(
+    prompts.some((prompt) => /Choose the\s+section structure based on the actual topic/.test(prompt)),
+  );
+  assert.ok(prompts.some((prompt) => prompt.includes("Omit sections such as 術語 or 張力與缺口")));
 
   const parsed = JSON.parse(stdoutSummary);
   assert.strictEqual(parsed.wiki_compile, "ok");
@@ -1882,4 +1886,3 @@ chroma:
     restore();
   }
 });
-

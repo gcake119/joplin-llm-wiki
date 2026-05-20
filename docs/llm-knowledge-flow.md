@@ -39,8 +39,11 @@ artifacts/
 - Knowledge-management outputs should use Traditional Chinese for human-readable
   content. Keep technical proper nouns, source paths, and filenames in their
   original language when clearer.
-- Prefer these compiled-wiki section headings when relevant: 核心結論, 關鍵證據,
-  疑點, 術語, 我的主張, 實踐經驗, 我的實踐, 外部觀點, 張力與缺口.
+- Choose compiled-wiki section headings per topic and source evidence; do not
+  force a universal template. Useful optional headings include 核心結論,
+  關鍵證據, 背景, 方法, 步驟, 決策紀錄, 實踐經驗, 我的實踐, 外部觀點,
+  疑點, 待追蹤, 術語, 張力與缺口. Omit sections such as 術語 or 張力與缺口
+  when they are not useful for the topic.
 - Do not edit existing files under `notes_root/` by hand; they are Joplin export output when `joplin_sqlite_sync.reconcile_mode: mirror` is enabled.
 - Notebook-filtered exports use joined notebook slugs. For a nested notebook
   path such as `工作/專案A/會議`, write source files under

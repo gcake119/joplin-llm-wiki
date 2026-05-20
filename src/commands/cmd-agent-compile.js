@@ -75,6 +75,7 @@ ${notebookLines}
 - 每個 wiki Markdown 檔必須使用繁體中文。
 - 每個 wiki Markdown 檔必須包含 YAML frontmatter：source_refs、compiled_at、compiler_revision、domain、title。
 - source_refs 必須是 notes_root 下存在的相對路徑。
+- 段落標題需依主題與來源證據選擇；不要套用固定模板。可選用核心結論、關鍵證據、背景、方法、步驟、決策紀錄、實踐經驗、我的實踐、外部觀點、疑點、待追蹤、術語、張力與缺口等標題，但沒有價值或沒有證據的段落必須省略。
 - domain isolation 是硬限制：每個 wiki_root/<notebook-slug>/ 只能整理 notes_root/<同一 notebook-slug>/ 內的來源。
 - 每個 wiki 檔 frontmatter 的 domain 必須等於所在目錄的 <notebook-slug>。
 - 每個 wiki 檔的 source_refs 必須全部以同一個 <notebook-slug>/ 開頭；不得引用其他 notebook slug 的來源。

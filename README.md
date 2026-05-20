@@ -18,6 +18,8 @@
 | agent compile | `agent-compile` | 使用本機 `codex exec` 非互動模式整理 selected `notes_root/<notebook-slug>/` 到 `wiki_root/<notebook-slug>/`。 |
 | Joplin writeback | `joplin_wiki_writeback` | 經本機 Joplin Data API upsert 到 `note-wiki` 筆記本樹。 |
 
+編譯後的 wiki 會依主題與來源證據選擇段落結構，不強制所有頁面都抽出「術語」或「張力與缺口」。常見可選段落包含「核心結論」、「關鍵證據」、「背景」、「方法」、「步驟」、「決策紀錄」、「實踐經驗」、「疑點」、「待追蹤」等；模型應省略對該主題沒有價值或沒有證據的段落。
+
 ### 模型選擇
 
 | 模式 | 預設 | 何時使用 | 注意 |
@@ -57,6 +59,8 @@ The project **partially adopts** the workflow architecture from [`gatelynch/llm-
 | Local compile | `wiki-compile` | Uses Ollama planner/writer and writes `wiki_root/<notebook-slug>/`; can optionally write back through Joplin Data API. |
 | Agent compile | `agent-compile` | Uses non-interactive local `codex exec` to compile selected `notes_root/<notebook-slug>/` into `wiki_root/<notebook-slug>/`. |
 | Joplin writeback | `joplin_wiki_writeback` | Upserts compiled wiki pages into the `note-wiki` notebook tree through the local Joplin Data API. |
+
+Compiled wiki pages choose their section structure by topic and source evidence. The compiler should not force every page to include sections such as "術語" or "張力與缺口"; optional sections include "核心結論", "關鍵證據", "背景", "方法", "步驟", "決策紀錄", "實踐經驗", "疑點", and "待追蹤" when they are actually useful.
 
 ### Model Selection
 
