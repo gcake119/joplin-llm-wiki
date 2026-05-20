@@ -178,6 +178,16 @@
     </section>
 
     <section>
+      <h2>Joplin 筆記本篩選</h2>
+      <div class="row">
+        <button type="button" id="btn-load-notebooks">載入筆記本</button>
+        <button type="button" class="primary" id="btn-save-notebooks">儲存篩選</button>
+        <span class="muted" id="notebook-filter-status"></span>
+      </div>
+      <div id="notebook-list"></div>
+    </section>
+
+    <section>
       <h2>全庫索引與 Wiki</h2>
       <p class="muted">
         <strong>初始化管線</strong>在需匯出時會執行 <code>sqlite-sync --export-only</code>（僅寫入
@@ -188,6 +198,14 @@
         <strong>僅索引＋Wiki</strong>不會觸發匯出，適合來源檔已就緒後重跑。長時程作業需本機 Ollama／Chroma；若啟用
         wiki 寫回會呼叫 Joplin CLI。
       </p>
+      <div class="row">
+        <label>編譯模式
+          <select id="compile-mode">
+            <option value="local">本地模型：wiki-compile + Ollama</option>
+            <option value="agent">Codex Agent：agent-compile + codex exec</option>
+          </select>
+        </label>
+      </div>
       <div class="row">
         <button type="button" class="primary" id="btn-run-init">
           初始化（匯出→索引＋Wiki）

@@ -11,6 +11,8 @@ import {
   saveConfigValidated,
 } from "./config/config-coordinator.js";
 import { loadConfig } from "../config/load-config.js";
+import { openReadonlyDatabase } from "../joplin/sqlite/exporter.js";
+import { listNotebooksFromSqlite } from "../joplin/sqlite/notebooks.js";
 import { buildHealthSnapshot } from "./health-snapshot.js";
 import { findRepoRoot } from "./lib/repo-root.js";
 import { startLocalDependency } from "./deps/dependency-starter.js";
@@ -131,6 +133,69 @@ function wireIpc() {
       chroma_persist_path: /** @type {string} */ (chroma_persist_path),
     });
     return saveConfigValidated(configPath, yamlText);
+  });
+
+  ipcMain.handle("list-notebooks", async () => {
+    try {
+      const cfg = await loadConfig(configPath);
+      if (!cfg.joplin_sqlite_sync.enabled || !cfg.joplin_sqlite_sync.database_path) {
+        return { ok: false, code: "CONFIG_INVALID", message: "joplin_sqlite_sync must be enabled" };
+      }
+      const db = await openReadonlyDatabase(
+        cfg.joplin_sqlite_sync.database_path,
+        cfg.joplin_sqlite_sync.busy_timeout_ms,
+        cfg.joplin_sqlite_sync.max_export_attempts,
+      );
+      try {
+        const notebooks = listNotebooksFromSqlite(db, {
+          separator: cfg.joplin_sqlite_sync.notebook_filter.notebook_path_separator,
+        });
+        return {
+          ok: true,
+          notebooks,
+          selectedIds: cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids,
+          enabled: cfg.joplin_sqlite_sync.notebook_filter.enabled,
+        };
+      } finally {
+        db.close();
+      }
+    } catch (e) {
+      const code = /** @type {Error & { code?: string }} */ (e).code;
+      return { ok: false, code: code ?? "SQLITE_OPEN_FAILED", message: String(/** @type {Error} */ (e).message ?? e) };
+    }
+  });
+
+  ipcMain.handle("save-notebook-filter", async (_evt, payload) => {
+    if (!payload || typeof payload !== "object" || !Array.isArray(payload.ids)) {
+      return { ok: false, code: "BAD_REQUEST", message: "ids array required" };
+    }
+    const cur = readConfigFileUtf8(configPath);
+    if (!cur.ok) return cur;
+    let doc;
+    try {
+      doc = YAML.parse(cur.yamlText) ?? {};
+    } catch (e) {
+      return { ok: false, code: "CONFIG_INVALID", message: String(/** @type {Error} */ (e).message) };
+    }
+    const root = /** @type {Record<string, unknown>} */ (doc);
+    const sync =
+      typeof root.joplin_sqlite_sync === "object" && root.joplin_sqlite_sync !== null
+        ? /** @type {Record<string, unknown>} */ (root.joplin_sqlite_sync)
+        : {};
+    sync.notebook_filter = {
+      ...(typeof sync.notebook_filter === "object" && sync.notebook_filter !== null
+        ? /** @type {Record<string, unknown>} */ (sync.notebook_filter)
+        : {}),
+      enabled: true,
+      include_notebook_ids: payload.ids.filter((x) => typeof x === "string"),
+      include_notebook_paths: [],
+      include_descendants: true,
+      notebook_path_style: "joined_slug",
+      notebook_path_separator: "-",
+      source_filename: "title",
+    };
+    root.joplin_sqlite_sync = sync;
+    return saveConfigValidated(configPath, YAML.stringify(root));
   });
 
   ipcMain.handle("run-stack-script", async (_evt, payload) => {

@@ -138,9 +138,28 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 ```bash
 pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml
 pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki sqlite-sync --config ./my.config.yaml --select-notebooks
+pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
 ```
 
 定時執行建議使用系統 cron 或 macOS `launchd` 呼叫上述命令；亦可於設定中設定 `joplin_sqlite_sync.schedule.every_seconds` 或使用 `--every <秒數>` 由單一行程輪詢（收到 SIGINT 時停止）。
+
+### 筆記本篩選與分層匯出
+
+`sqlite-sync --select-notebooks` 會從 Joplin SQLite 的 `folders` table 讀取筆記本樹，提供互動式多選，並把選擇寫回 `config.yaml` 的 `joplin_sqlite_sync.notebook_filter`。後續匯出只會輸出選取筆記本（預設包含子筆記本）內的未刪除筆記。
+
+巢狀筆記本會以 `-` 串接各階層作為單一資料夾名，例如 `工作/專案A/會議` 會匯出到 `notes_root/工作-專案A-會議/`。筆記檔名使用標題；同一資料夾內標題重複時會加 `-2`、`-3` 後綴。每篇匯出 Markdown 會包含 `joplin_note_id`、`joplin_notebook_id`、`joplin_notebook_path`、`joplin_notebook_slug` frontmatter 供追溯。
+
+當來源以筆記本資料夾分層時，`wiki-compile` 會將 wiki 產物寫到對應的 `wiki_root/<notebook-slug>/` 下，例如 `wiki_root/工作-專案A-會議/topics/*.md`。
+
+### Codex Agent 編譯
+
+`agent-compile` 是獨立於本機 Ollama `wiki-compile` 的 agent workflow。它會產生一份 Codex 任務提示，預設使用本機已登入的 `codex exec` 執行，讓 Codex 月訂閱以 agent 方式讀取 `notes_root/<notebook-slug>/` 並寫入對應 `wiki_root/<notebook-slug>/`。它不使用 OpenAI API key，也不把 ChatGPT/Codex 訂閱視為 API 額度。
+
+```bash
+pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml
+```
 
 **macOS 一鍵常駐（Ollama + Chroma + `sqlite-sync`）**：若要以登入後三支 LaunchAgent 全堆疊背景執行（含就緒等待與日誌路徑），見 **[`docs/macos-launchd-stack.md`](docs/macos-launchd-stack.md)**。
 

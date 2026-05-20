@@ -40,17 +40,26 @@ function bindPipelineProgressUi(jbApi, mode) {
   live.textContent = "";
   list.innerHTML = "";
   if (hint) hint.textContent = "執行進度（即時輸出）";
+  const compileMode =
+    /** @type {HTMLSelectElement | null} */ (document.getElementById("compile-mode"))?.value === "agent"
+      ? "agent"
+      : "local";
+  const compileText = compileMode === "agent" ? "agent-compile（Codex）" : "wiki-compile";
 
   const steps =
     mode === "init"
       ? [
           { id: "sqlite", text: "SQLite 匯出（若需要）" },
-          { id: "index", text: "index（向量索引）" },
-          { id: "wiki", text: "wiki-compile" },
+          ...(compileMode === "agent"
+            ? []
+            : [{ id: "index", text: "index（向量索引）" }]),
+          { id: "wiki", text: compileText },
         ]
       : [
-          { id: "index", text: "index（向量索引）" },
-          { id: "wiki", text: "wiki-compile" },
+          ...(compileMode === "agent"
+            ? []
+            : [{ id: "index", text: "index（向量索引）" }]),
+          { id: "wiki", text: compileText },
         ];
 
   /** @type {Record<string, HTMLLIElement>} */
@@ -73,6 +82,7 @@ function bindPipelineProgressUi(jbApi, mode) {
     if (phase === "sqlite-sync") return "sqlite";
     if (phase === "index") return "index";
     if (phase === "wiki-compile") return "wiki";
+    if (phase === "agent-compile") return "wiki";
     return null;
   }
 
@@ -311,6 +321,47 @@ async function init() {
     }
   });
 
+  async function loadNotebooks() {
+    const box = el("notebook-list");
+    const st = el("notebook-filter-status");
+    st.textContent = "載入中…";
+    const res = await jb.listNotebooks();
+    if (!res.ok) {
+      st.textContent = `載入失敗：${res.message ?? res.code}`;
+      return;
+    }
+    const selected = new Set(res.selectedIds ?? []);
+    box.innerHTML = "";
+    for (const nb of res.notebooks ?? []) {
+      const label = document.createElement("label");
+      label.style.display = "block";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = nb.id;
+      input.checked = selected.has(nb.id);
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(` ${nb.path} → ${nb.slug}`));
+      box.appendChild(label);
+    }
+    st.textContent = `已載入 ${(res.notebooks ?? []).length} 個筆記本`;
+  }
+
+  el("btn-load-notebooks").addEventListener("click", () => {
+    loadNotebooks().catch((e) => {
+      el("notebook-filter-status").textContent = String(e);
+    });
+  });
+
+  el("btn-save-notebooks").addEventListener("click", async () => {
+    const ids = [...document.querySelectorAll("#notebook-list input[type=checkbox]:checked")].map(
+      (x) => /** @type {HTMLInputElement} */ (x).value,
+    );
+    const res = await jb.saveNotebookFilter({ ids });
+    el("notebook-filter-status").textContent = res.ok
+      ? `已儲存 ${ids.length} 個筆記本`
+      : `儲存失敗：${res.message ?? res.code}`;
+  });
+
   function appendStackLog(title, res) {
     const pre = el("stack-log");
     const chunk = `\n--- ${title} ---\nexit=${res.exitCode} ok=${res.ok} code=${res.code}\nstdout (tail):\n${res.stdoutTail || ""}\nstderr (tail):\n${res.stderrTail || ""}\n`;
@@ -459,8 +510,14 @@ async function init() {
     /** @type {HTMLButtonElement} */ (el("btn-run-corpus")).disabled = disabled;
   }
 
-  const runInit = createSingleFlight(() => jb.runInitPipeline({ confirmed: true }));
-  const runCorpus = createSingleFlight(() => jb.runCorpusPipeline({ confirmed: true }));
+  const selectedCompileMode = () =>
+    /** @type {HTMLSelectElement} */ (el("compile-mode")).value === "agent" ? "agent" : "local";
+  const runInit = createSingleFlight(() =>
+    jb.runInitPipeline({ confirmed: true, compileMode: selectedCompileMode() }),
+  );
+  const runCorpus = createSingleFlight(() =>
+    jb.runCorpusPipeline({ confirmed: true, compileMode: selectedCompileMode() }),
+  );
 
   el("btn-run-init").addEventListener("click", async () => {
     if (

@@ -78,6 +78,31 @@ test("SCN-HGUI-CORPUS-03 index non-zero skips wiki-compile spawn", async () => {
   assert.strictEqual(r.wikiCompile.exitCode, null);
 });
 
+test("SCN-HGUI-CORPUS-agent mode spawns agent-compile only", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runCorpusPipeline(
+    repoRoot,
+    cfgAbs,
+    { confirmed: true, compileMode: "agent" },
+    spawnImpl,
+  );
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "agent-compile",
+    "--config",
+    path.resolve(cfgAbs),
+  ]);
+});
+
 test("SCN-HGUI-CORPUS-04 overlapping request returns PIPELINE_IN_FLIGHT", async () => {
   /** @type {import('node:events').EventEmitter[]} */
   const children = [];

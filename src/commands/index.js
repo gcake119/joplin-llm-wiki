@@ -34,6 +34,10 @@ export async function runCommand(command, ctx) {
       const { runSqliteSync } = await import("./cmd-sqlite-sync.js");
       return runSqliteSync(ctx);
     }
+    case "agent-compile": {
+      const { runAgentCompile } = await import("./cmd-agent-compile.js");
+      return runAgentCompile(ctx);
+    }
     default:
       return 1;
   }

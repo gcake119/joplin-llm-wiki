@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("jbHealth", {
   loadConfigFields: () => ipcRenderer.invoke("load-config-fields"),
   saveConfig: (yamlText) => ipcRenderer.invoke("save-config", yamlText),
   saveConfigFields: (fields) => ipcRenderer.invoke("save-config-fields", fields),
+  listNotebooks: () => ipcRenderer.invoke("list-notebooks"),
+  saveNotebookFilter: (payload) => ipcRenderer.invoke("save-notebook-filter", payload),
   runStackScript: (payload) => ipcRenderer.invoke("run-stack-script", payload),
   runInitPipeline: (payload) => ipcRenderer.invoke("run-init-pipeline", payload),
   runCorpusPipeline: (payload) => ipcRenderer.invoke("run-corpus-pipeline", payload),

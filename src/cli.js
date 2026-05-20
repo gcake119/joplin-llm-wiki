@@ -29,6 +29,7 @@ export async function main(argv) {
     "ask",
     "lint",
     "sqlite-sync",
+    "agent-compile",
   ]);
 
   if (!known.has(command)) {
@@ -63,6 +64,7 @@ export async function main(argv) {
       code === "WIKI_COMPILE_ABORT" ||
       code === "SQLITE_OPEN_FAILED" ||
       code === "SQLITE_EXPORT_FAILED" ||
+      code === "CODEX_CLI_UNAVAILABLE" ||
       code === "CORPUS_SWEEP_STATE_IO"
     ) {
       emitErr(code, String(err.message ?? err));
@@ -145,6 +147,7 @@ Commands:
   ask            Retrieval-augmented Q&A
   lint           Karpathy lint (duplicates, orphans, contradictions, schema gaps)
   sqlite-sync    Export Joplin SQLite to notes_root; optional index + wiki-compile (--export-only: export only)
+  agent-compile  Compile wiki via local Codex CLI agent workflow
 
 Global:
   --help, -h               Show help
@@ -174,6 +177,38 @@ Options:
 
 Configuration notes:
   Corpus sweep chains multiple planner digest windows with persisted offset state under wiki_root (see README).
+
+Run with a valid config file; see config.yaml.example.
+`);
+    return;
+  }
+
+  if (command === "agent-compile") {
+    console.log(`agent-compile
+
+Usage:
+  joplin-llm-wiki agent-compile --config <path> [options]
+
+Options:
+  --dry-run=true|false       Print the Codex task prompt without running codex exec
+
+Runs local Codex CLI non-interactively. Requires Codex CLI installed and logged in.
+`);
+    return;
+  }
+
+  if (command === "sqlite-sync") {
+    console.log(`sqlite-sync
+
+Usage:
+  joplin-llm-wiki sqlite-sync --config <path> [options]
+
+Options:
+  --dry-run=true|false          Count exportable notes without writing files
+  --export-only=true|false      Export only; skip configured index/wiki pipeline
+  --every <seconds>             Run repeatedly at the given interval
+  --select-notebooks=true       Interactive notebook picker; writes notebook_filter to config
+  --run=true                    With --select-notebooks, run export after saving selection
 
 Run with a valid config file; see config.yaml.example.
 `);

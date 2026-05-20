@@ -17,16 +17,16 @@ let pipelineBusy = false;
  *   message: string,
  * } | {
  *   kind: "phase_start",
- *   phase: "sqlite-sync" | "index" | "wiki-compile",
+ *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
  *   label: string,
  * } | {
  *   kind: "phase_stream",
- *   phase: "sqlite-sync" | "index" | "wiki-compile",
+ *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
  *   channel: "stdout" | "stderr",
  *   text: string,
  * } | {
  *   kind: "phase_end",
- *   phase: "sqlite-sync" | "index" | "wiki-compile",
+ *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
  *   exitCode: number | null,
  *   spawnFailed: boolean,
  * }} PipelineProgressEvent
@@ -68,7 +68,7 @@ function lineSplitter(onLine) {
  * @param {typeof spawn} spawnImpl
  * @param {string} root
  * @param {string} configAbs
- * @param {"index" | "wiki-compile" | "sqlite-sync"} subcommand
+ * @param {"index" | "wiki-compile" | "sqlite-sync" | "agent-compile"} subcommand
  * @param {string[]} [extraArgv]
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
@@ -76,6 +76,8 @@ function runPhase(spawnImpl, root, configAbs, subcommand, extraArgv = [], progre
   const label =
     subcommand === "sqlite-sync"
       ? "sqlite-sync --export-only"
+      : subcommand === "agent-compile"
+        ? "joplin-llm-wiki agent-compile"
       : `joplin-llm-wiki ${subcommand}`;
   return new Promise((resolve) => {
     let out = "";
@@ -158,9 +160,17 @@ function assignPhase(target, res) {
  * @param {string} configAbs
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
-async function runIndexThenWiki(spawnImpl, root, configAbs, progress = null) {
+async function runIndexThenWiki(spawnImpl, root, configAbs, progress = null, compileMode = "local") {
   const index = emptyPhase();
   const wikiCompile = emptyPhase();
+
+  if (compileMode === "agent") {
+    const agentRes = await runPhase(spawnImpl, root, configAbs, "agent-compile", [], progress);
+    assignPhase(wikiCompile, agentRes);
+    if (agentRes.spawnFailed) return { ok: false, code: "SPAWN_ERROR", index, wikiCompile };
+    if (agentRes.exitCode !== 0) return { ok: false, code: "AGENT_COMPILE_FAILED", index, wikiCompile };
+    return { ok: true, code: "OK", index, wikiCompile };
+  }
 
   const idxRes = await runPhase(spawnImpl, root, configAbs, "index", [], progress);
   assignPhase(index, idxRes);
@@ -190,7 +200,7 @@ async function runIndexThenWiki(spawnImpl, root, configAbs, progress = null) {
  *
  * @param {string} repoRoot
  * @param {string} configPathAbs
- * @param {{ confirmed?: boolean }} payload
+ * @param {{ confirmed?: boolean, compileMode?: string }} payload
  * @param {typeof spawn} [spawnImpl]
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
@@ -218,7 +228,13 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
   const configAbs = path.resolve(configPathAbs);
 
   try {
-    return await runIndexThenWiki(spawnImpl, root, configAbs, progress);
+    return await runIndexThenWiki(
+      spawnImpl,
+      root,
+      configAbs,
+      progress,
+      payload.compileMode === "agent" ? "agent" : "local",
+    );
   } finally {
     pipelineBusy = false;
   }
@@ -230,7 +246,7 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
  *
  * @param {string} repoRoot
  * @param {string} configPathAbs
- * @param {{ confirmed?: boolean }} payload
+ * @param {{ confirmed?: boolean, compileMode?: string }} payload
  * @param {typeof spawn} [spawnImpl]
  * @param {{ loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown }} [deps]
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
@@ -339,7 +355,13 @@ export async function runInitPipeline(
       });
     }
 
-    const tail = await runIndexThenWiki(spawnImpl, root, configAbs, progress);
+    const tail = await runIndexThenWiki(
+      spawnImpl,
+      root,
+      configAbs,
+      progress,
+      payload.compileMode === "agent" ? "agent" : "local",
+    );
     return {
       ok: tail.ok,
       code: tail.code,
