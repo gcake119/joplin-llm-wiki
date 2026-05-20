@@ -74,15 +74,14 @@ test("agent-compile spawns codex exec with workspace-write sandbox", async () =>
     );
     assert.strictEqual(code, 0);
     assert.strictEqual(calls[0].cmd, "codex");
-    assert.deepStrictEqual(calls[0].args.slice(0, 7), [
+    assert.deepStrictEqual(calls[0].args.slice(0, 5), [
       "exec",
       "--cd",
       process.cwd(),
       "--sandbox",
       "workspace-write",
-      "--ask-for-approval",
-      "never",
     ]);
+    assert.match(calls[0].args[5], /請執行 joplin-llm-wiki agent-based compile workflow/);
     assert.strictEqual(JSON.parse(line).agent_compile, "ok");
   } finally {
     console.log = origLog;

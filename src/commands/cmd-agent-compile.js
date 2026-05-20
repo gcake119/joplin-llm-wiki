@@ -82,7 +82,7 @@ function runCodexExec(spawnImpl, repoRoot, prompt) {
     let err = "";
     const child = spawnImpl(
       "codex",
-      ["exec", "--cd", repoRoot, "--sandbox", "workspace-write", "--ask-for-approval", "never", prompt],
+      ["exec", "--cd", repoRoot, "--sandbox", "workspace-write", prompt],
       { cwd: repoRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
     child.stdout?.on("data", (c) => {
