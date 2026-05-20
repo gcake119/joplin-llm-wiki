@@ -140,6 +140,7 @@ export async function runWikiCompileFlow(args) {
     notesBundle.notebookSlugs ?? [],
     cfg.wiki_ingest.max_pages_per_run,
   );
+  paths = filterStandaloneIndexPaths(paths);
   let truncated = false;
   if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
     truncated = true;
@@ -369,7 +370,7 @@ function pathsFromRequiredHubPages(schema, maxPages) {
       String(h).replace(/\\/g, "/").replace(/^\/+/, "").trim(),
     )
     .filter((p) => p && !p.includes(".."));
-  return dedupePathsPreserveOrder(norm).slice(
+  return filterStandaloneIndexPaths(dedupePathsPreserveOrder(norm)).slice(
     0,
     Math.max(0, Math.trunc(maxPages)),
   );
@@ -388,7 +389,7 @@ function hubPathSetFromSchema(schema) {
 }
 
 /**
- * When over page budget, keep topics/ paths before hubs and misc.
+ * When over page budget, keep topic note paths before hubs and misc.
  *
  * @param {string[]} paths
  * @param {import('../schema/schema-validator.js').WikiSchema} schema
@@ -410,6 +411,14 @@ function prioritizeTopicsBeforeTruncate(paths, schema, maxPages) {
   }
   const merged = [...topics, ...other, ...hubPaths];
   return merged.slice(0, Math.max(0, maxPages));
+}
+
+/** @param {string[]} paths */
+function filterStandaloneIndexPaths(paths) {
+  return paths.filter((p) => {
+    const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+    return parts[parts.length - 1] !== "index.md";
+  });
 }
 
 /** @param {string[]} plannerPaths normalized forward slashes */

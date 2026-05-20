@@ -181,14 +181,14 @@ Health GUI 行程退出碼：**0** 關閉視窗；**1** 缺少 `--config` 或啟
 | `wiki_ingest.min_pages_per_run` | `2` | 對齊 `wiki-schema.example.yaml` 兩個 hub，避免無謂 `PLAN_BELOW_MIN` |
 | `corpus_auto_sweep.step_files` | `40` | 與 digest 視窗同寬 |
 | `corpus_auto_sweep.max_windows_per_invocation` | `2` | 可再降到 1 方便除錯 |
-| `wiki_ingest.min_topic_pages_per_run` | `3` | 不足時重試 planner；仍不足則 heuristic 產生 `topics/cluster-*.md` |
+| `wiki_ingest.min_topic_pages_per_run` | `3` | 不足時重試 planner；仍不足則 heuristic 產生 `<主題群>/<內容主題>.md` |
 | `corpus_auto_sweep.run_until_cycle_complete` | `false` | 設 `true` 可單次 invocation 掃完整輪（受 `max_total_windows_per_invocation` 限制） |
 
-**主題式建檔**：planner 會容錯 JSON 別名鍵（`items`、`answer` 等），並在 hub-only 時重試；仍不足時以 digest 分桶補 `topics/` 路徑。截斷 `max_pages_per_run` 時**優先保留 topics 路徑**。全庫一輪視窗數約 `ceil(筆記數 / step_files)`（例：3056 檔、step 40 → 約 77 窗；每窗可產 3～6 篇 topic wiki）。
+**主題式建檔**：planner 會容錯 JSON 別名鍵（`items`、`answer` 等），並在 hub-only 或只回 `index.md` 時重試；仍不足時以 digest 分桶補 `<主題群>/<內容主題>.md` 路徑。wiki 檔名應依內容主題命名，相近主題放在同一個可讀的主題子資料夾；不再主動建立獨立 `index.md`，總覽／導讀內容放入相關主題筆記內文。截斷 `max_pages_per_run` 時**優先保留主題知識頁**。全庫一輪視窗數約 `ceil(筆記數 / step_files)`（例：3056 檔、step 40 → 約 77 窗；每窗可產 3～6 篇 topic wiki）。
 
 **Ollama context**：本套件 `OllamaClient` 未從 YAML 傳 `options.num_ctx`／`temperature`；請在 **Modelfile 或 `ollama create` 參數** 調整 context。`rag.max_context_chars` 僅影響 `ask`，不影響 wiki-compile。
 
-**驗證 planner**：`pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --dry-run`，stdout 應含 `paths` 且至少 `min_topic_pages_per_run` 條以 `topics/` 開頭（或 stderr 出現 `PLAN_TOPIC_TOPUP_HEURISTIC`）。
+**驗證 planner**：`pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --dry-run`，stdout 應含 `paths` 且至少 `min_topic_pages_per_run` 條非 `index.md` 的主題知識頁（或 stderr 出現 `PLAN_TOPIC_TOPUP_HEURISTIC`）。
 
 **高配機器**可改回：`corpus_digest_max_files: 500`、`max_pages_per_run: 15`、`min_pages_per_run: 10`、`chat_model: gemma2:2b`（或你本機較大的模型）。
 
@@ -221,7 +221,7 @@ pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
 
 巢狀筆記本會以 `-` 串接各階層作為單一資料夾名，例如 `工作/專案A/會議` 會匯出到 `notes_root/工作-專案A-會議/`。筆記檔名使用標題；同一資料夾內標題重複時會加 `-2`、`-3` 後綴。超長標題會保留可讀前綴並加短 hash，以避開檔案系統單一檔名長度限制；穩定追蹤以 frontmatter 的 `joplin_note_id` 為準。每篇匯出 Markdown 會包含 `joplin_note_id`、`joplin_notebook_id`、`joplin_notebook_path`、`joplin_notebook_slug` frontmatter 供追溯。
 
-當來源以筆記本資料夾分層時，`wiki-compile` 會將 wiki 產物寫到對應的 `wiki_root/<notebook-slug>/` 下，例如 `wiki_root/工作-專案A-會議/topics/*.md`。
+當來源以筆記本資料夾分層時，`wiki-compile` 會將 wiki 產物寫到對應的 `wiki_root/<notebook-slug>/` 下，例如 `wiki_root/工作-專案A-會議/<主題群>/<內容主題>.md`。
 
 ### Codex Agent 編譯
 

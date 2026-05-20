@@ -745,7 +745,7 @@ chroma:
   assert.ok(Array.isArray(payload.paths));
   assert.deepStrictEqual(
     [...payload.paths].sort(),
-    ["index.md", "topics/hub-overview.md"].sort(),
+    ["topics/hub-overview.md"].sort(),
   );
 });
 
@@ -853,7 +853,7 @@ chroma:
   assert.strictEqual(payload.dry_run, true);
   assert.deepStrictEqual(
     [...payload.paths].sort(),
-    ["index.md", "solo.md", "topics/hub-overview.md"].sort(),
+    ["solo.md", "topics/hub-overview.md"].sort(),
   );
 });
 
@@ -1604,11 +1604,11 @@ chroma:
 
 test("SCN-WCC-040 planner accepts JSON alias key items", () => {
   const { paths, aliasKey } = extractPathsFromModelJson(
-    { items: ["topics/foo.md", "topics/bar.md"] },
+    { items: ["知識管理/筆記方法.md", "軟體開發/前端狀態.md"] },
     { rejectSourcePaths: true },
   );
   assert.strictEqual(aliasKey, "items");
-  assert.deepStrictEqual(paths, ["topics/foo.md", "topics/bar.md"]);
+  assert.deepStrictEqual(paths, ["知識管理/筆記方法.md", "軟體開發/前端狀態.md"]);
 });
 
 test("SCN-WCC-041 planner retries hub-only then accepts topics", async () => {
@@ -1620,9 +1620,9 @@ test("SCN-WCC-041 planner retries hub-only then accepts topics", async () => {
       test() {
         calls++;
         if (calls === 1) {
-          return '{"paths":["index.md","topics/overview.md"]}';
+          return '{"paths":["index.md"]}';
         }
-        return '{"paths":["topics/a.md","topics/b.md","topics/c.md"]}';
+        return '{"paths":["主題A/a.md","主題B/b.md","主題C/c.md"]}';
       },
     },
   });
@@ -1690,7 +1690,7 @@ chroma:
     });
     assert.strictEqual(result.dryRun, true);
     assert.ok(calls >= 2);
-    const topicPaths = result.paths.filter((p) => p.startsWith("topics/"));
+    const topicPaths = result.paths.filter((p) => p.endsWith(".md") && !p.endsWith("index.md"));
     assert.ok(
       topicPaths.length >= 3,
       `expected >=3 topic paths, got ${topicPaths.join(",")}`,
@@ -1708,7 +1708,7 @@ test("SCN-WCC-042 heuristic top-up when planner stays hub-only", async () => {
     chatResponses: {
       /** @ignore */
       test() {
-        return '{"paths":["index.md","topics/overview.md"]}';
+        return '{"paths":["index.md"]}';
       },
     },
   });

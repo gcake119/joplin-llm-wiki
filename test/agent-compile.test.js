@@ -46,6 +46,8 @@ test("agent-compile dry-run emits prompt and does not spawn codex", async () => 
     assert.match(parsed.prompt, /不得建立跨 notebook 的總結/);
     assert.match(parsed.prompt, /段落標題需依主題與來源證據選擇/);
     assert.match(parsed.prompt, /沒有價值或沒有證據的段落必須省略/);
+    assert.match(parsed.prompt, /wiki 檔名必須依內容主題命名/);
+    assert.match(parsed.prompt, /不要建立獨立 index\.md/);
   } finally {
     console.log = origLog;
   }

@@ -89,9 +89,12 @@ ${notebookLines}
 - 寫作時只可根據當前 notebook slug 的來源內容下結論；不可把其他 notebook 的人物、主題、專案、日期或觀點混入。
 
 目標：
-- 逐一處理每個 notebook slug。處理某個 slug 時，先只讀 notes_root/<notebook-slug>/，再只寫 wiki_root/<notebook-slug>/index.md 與必要的 topics/*.md。
+- 逐一處理每個 notebook slug。處理某個 slug 時，先只讀 notes_root/<notebook-slug>/，再只寫 wiki_root/<notebook-slug>/ 下的主題知識筆記。
+- wiki 檔名必須依內容主題命名，不要使用來源檔名、流水號或不透明 cluster id。
+- 相近主題要放進同一個可讀的主題子資料夾，例如 wiki_root/<notebook-slug>/<主題群>/<內容主題>.md；不要建立零散的同義子資料夾。
+- 不要建立獨立 index.md。總覽、索引、導讀內容請寫進最相關的主題筆記內文。
 - 保留技術名詞原文；整理成可閱讀的個人知識庫。
-- 若某個 notebook slug 來源不足，請在該 slug 的 index.md 簡短說明不足，不要借用其他 notebook 的材料補內容。
+- 若某個 notebook slug 來源不足，請在相關主題筆記內簡短說明不足，不要借用其他 notebook 的材料補內容。
 - 完成後回報寫入檔案清單與任何跳過原因。
 - 如果無法完成或沒有寫入任何 wiki 檔，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
   return { prompt, slugs };

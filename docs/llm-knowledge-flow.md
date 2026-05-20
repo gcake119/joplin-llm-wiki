@@ -21,8 +21,8 @@ notes_root/                 # existing source/raw layer; gitignored
     <safe-title>.md
 wiki_root/                  # existing compiled wiki layer; gitignored
   <notebook-slug>/
-    index.md
-    topics/
+    <topic-group>/
+      <content-topic>.md
   summaries/                # compatibility target for source-level summaries
   concepts/                 # compatibility target for cross-source concepts
   indexes/                  # compatibility target for All-Sources / All-Concepts

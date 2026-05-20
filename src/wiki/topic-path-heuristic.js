@@ -16,10 +16,11 @@ function basenameOf(rel) {
  */
 function slugify(s) {
   return s
+    .normalize("NFC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+    .slice(0, 64);
 }
 
 /**
@@ -39,13 +40,11 @@ export function heuristicTopicPaths(args) {
   if (n === 0 || maxTopic <= 0) return [];
 
   const want = Math.max(0, Math.min(maxTopic, Math.max(minTopic, 1)));
-  const prefixLen = 4;
-
   /** @type {Map<string, string[]>} */
   const buckets = new Map();
   for (const rel of digestRelPaths) {
     const base = basenameOf(rel).replace(/\.md$/i, "");
-    const key = base.slice(0, Math.min(prefixLen, base.length)) || "misc";
+    const key = topicKeyFromBasename(base);
     const arr = buckets.get(key) ?? [];
     arr.push(rel);
     buckets.set(key, arr);
@@ -65,11 +64,29 @@ export function heuristicTopicPaths(args) {
   const off = Math.trunc(effectiveOffset);
   const out = [];
   for (let i = 0; i < keys.length && out.length < want; i++) {
-    const slug = slugify(`cluster-${off}-${i}-${keys[i]}`);
-    out.push(`topics/${slug}.md`);
+    const group = slugify(keys[i]) || `topic-${off}-${i}`;
+    const file = slugify(`${keys[i]}-知識筆記`) || `topic-note-${off}-${i}`;
+    out.push(`${group}/${file}.md`);
   }
 
   return dedupePaths(out).slice(0, want);
+}
+
+/**
+ * @param {string} base
+ */
+function topicKeyFromBasename(base) {
+  const cleaned = base
+    .normalize("NFC")
+    .replace(/[_()[\]{}]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "綜合整理";
+  const parts = cleaned.split(/[-:：|｜]/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts.slice(0, 2).join("-");
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return words.slice(0, 3).join("-");
+  return cleaned.slice(0, 32);
 }
 
 /** @param {string[]} paths */
@@ -90,7 +107,7 @@ function dedupePaths(paths) {
  * @param {Set<string>} hubSet normalized hubs
  */
 export function isTopicWikiPath(norm, hubSet) {
-  if (!norm.startsWith("topics/")) return false;
+  if (!/\.md$/i.test(norm)) return false;
   return !hubSet.has(norm);
 }
 

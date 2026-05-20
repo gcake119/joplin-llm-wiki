@@ -226,7 +226,7 @@ export async function planWikiPaths(args) {
   const system =
     "You output ONLY compact JSON with key paths (string array). No prose.";
   const fewShot = `Example valid output:
-{"paths":["topics/note-taking.md","topics/projects.md","topics/reference.md","index.md"]}`;
+{"paths":["knowledge-management/note-taking.md","software-development/frontend-state.md","personal-finance/asset-allocation.md"]}`;
 
   const basePrompt = `Plan wiki pages to update for Karpathy ingest.
 
@@ -240,13 +240,16 @@ ${notesSummary.summary}
 
 Constraints:
 - Return between 1 and ${maxRun} paths relative to wiki_root (forward slashes only).
-- When source paths begin with a notebook directory, prefix wiki paths with that same notebook directory, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/topics/example.md` : "notebook-slug/topics/example.md"}.
+- Name wiki Markdown files by the actual content topic, not by source filename or opaque cluster id.
+- Group related topics into one shared topic-folder, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/knowledge-management/note-taking.md` : "notebook-slug/topic-folder/content-topic.md"}.
+- When source paths begin with a notebook directory, prefix wiki paths with that same notebook directory, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/topic-folder/content-topic.md` : "notebook-slug/topic-folder/content-topic.md"}.
 - Notebook directories in this digest: ${notebookSlugs.length ? notebookSlugs.join(", ") : "(none)"}.
-- You MUST return at least ${minTopic} paths under topics/ (e.g. topics/my-slug.md) that group this digest into themes. Do not return only hub pages.
-- Cluster digest files by filename prefix, topic, or mtime; use short kebab slugs in topics/.
-- Never return bare source filenames like "abc123....md" without a topics/ prefix.
+- You MUST return at least ${minTopic} topic note paths (e.g. topic-folder/content-topic.md) that group this digest into themes. Do not return only hub pages.
+- Do not create a standalone index.md. Put overview/index material inside the most relevant topic note body.
+- Cluster digest files by semantic topic first, then filename prefix or mtime; use short readable slugs.
+- Never return bare source filenames like "abc123....md" as wiki paths.
 - The notes library has ${srcCount} files; this digest lists ${digestCount} of them (metadata only).
-- JSON shape strictly: {"paths":["topics/foo.md","index.md"]}`;
+- JSON shape strictly: {"paths":["topic-folder/content-topic.md"]}`;
 
   /** @type {string | undefined} */
   let text = "";
@@ -263,8 +266,8 @@ Constraints:
         const topicN = countTopicPaths(lastPaths, hubs);
         retrySuffix =
           `\nPrevious invalid or insufficient output (${lastAlias ?? "parse"}). ` +
-          `Emit valid JSON only with key "paths". Need at least ${minTopic} topics/* paths; ` +
-          `had ${topicN} topic path(s). Do not return hub pages only.`;
+          `Emit valid JSON only with key "paths". Need at least ${minTopic} content-topic wiki paths; ` +
+          `had ${topicN} topic path(s). Do not return hub pages or index.md only.`;
       }
       text = await ollama.chatComplete({
         system,
