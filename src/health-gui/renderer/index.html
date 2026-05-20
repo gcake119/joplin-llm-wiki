@@ -241,12 +241,12 @@
       <h2>全庫索引與 Wiki</h2>
       <p class="muted">
         <strong>初始化管線</strong>在需匯出時會執行 <code>sqlite-sync --export-only</code>（僅寫入
-        <code>notes_root</code>，不在此步驟跑 index／wiki；後續仍由本管線依序執行 index 與 wiki-compile，請先讓
-        Ollama／Chroma 就緒）。
+        <code>notes_root</code>，不接續 config 內 pipeline）。本地模型模式會接著執行 index 與 wiki-compile；Codex Agent
+        模式會執行 agent-compile。
       </p>
       <p class="muted">
-        <strong>僅索引＋Wiki</strong>不會觸發匯出，適合來源檔已就緒後重跑。長時程作業需本機 Ollama／Chroma；若啟用
-        wiki 寫回會呼叫 Joplin CLI。
+        <strong>僅索引＋Wiki</strong>不會觸發匯出，適合來源檔已就緒後重跑。本地模型模式需 Ollama／Chroma；Codex Agent
+        模式需本機已登入的 <code>codex exec</code>。
       </p>
       <div class="row">
         <label>編譯模式
