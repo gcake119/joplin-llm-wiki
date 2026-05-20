@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
@@ -74,18 +75,52 @@ test("agent-compile spawns codex exec with workspace-write sandbox", async () =>
     );
     assert.strictEqual(code, 0);
     assert.strictEqual(calls[0].cmd, "codex");
-    assert.deepStrictEqual(calls[0].args.slice(0, 5), [
+    assert.deepStrictEqual(calls[0].args.slice(0, 6), [
       "exec",
       "--cd",
       process.cwd(),
       "--sandbox",
       "workspace-write",
+      "--output-last-message",
     ]);
-    assert.match(calls[0].args[5], /請執行 joplin-llm-wiki agent-based compile workflow/);
+    assert.match(calls[0].args[7], /請執行 joplin-llm-wiki agent-based compile workflow/);
+    assert.match(calls[0].args[7], /不要執行 pnpm exec joplin-llm-wiki agent-compile/);
     assert.strictEqual(JSON.parse(line).agent_compile, "ok");
   } finally {
     console.log = origLog;
   }
+});
+
+test("agent-compile fails when codex final message reports no writes", async () => {
+  await assert.rejects(
+    () =>
+      runAgentCompile(
+        { configPath: "cfg.yaml", argv: [], opts: new Map() },
+        {
+          spawn: (_cmd, args) => {
+            const c = makeChild();
+            const outPath = args[args.indexOf("--output-last-message") + 1];
+            queueMicrotask(() => {
+              fs.writeFileSync(
+                outPath,
+                "結果未完成。\n寫入檔案清單：無。\nCODEX_CLI_UNAVAILABLE",
+                "utf8",
+              );
+              c.emit("close", 0);
+            });
+            return c;
+          },
+          loadConfig: async () =>
+            /** @type {any} */ ({
+              notes_root: "/notes",
+              notes_glob: "**/*.md",
+              wiki_root: "/wiki",
+            }),
+          discoverMarkdown: async () => ["/notes/nb/a.md"],
+        },
+      ),
+    (e) => /** @type {{ code?: string }} */ (e).code === "AGENT_COMPILE_FAILED",
+  );
 });
 
 test("agent-compile maps codex spawn failure to CODEX_CLI_UNAVAILABLE", async () => {

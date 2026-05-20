@@ -65,6 +65,7 @@ export async function main(argv) {
       code === "SQLITE_OPEN_FAILED" ||
       code === "SQLITE_EXPORT_FAILED" ||
       code === "CODEX_CLI_UNAVAILABLE" ||
+      code === "AGENT_COMPILE_FAILED" ||
       code === "CORPUS_SWEEP_STATE_IO"
     ) {
       emitErr(code, String(err.message ?? err));

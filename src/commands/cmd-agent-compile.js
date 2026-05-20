@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown } from "../fs/note-discovery.js";
@@ -30,12 +32,18 @@ export async function runAgentCompile(ctx, deps = {}) {
     /** @type {Error & { code?: string }} */ (err).code = "CODEX_CLI_UNAVAILABLE";
     throw err;
   }
+  if (agentReportedFailure(res.finalMessage)) {
+    const err = new Error(`codex agent reported incomplete compile: ${res.finalMessage.slice(-1000)}`);
+    /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
+    throw err;
+  }
   console.log(
     JSON.stringify({
       agent_compile: "ok",
       adapter: "codex-cli",
       notebook_count: prompt.match(/^- /gm)?.length ?? 0,
       stdout_tail: res.stdoutTail,
+      final_tail: res.finalMessage.slice(-512),
     }),
   );
   return 0;
@@ -54,7 +62,11 @@ async function buildAgentCompilePrompt(cfg, configPath, discover) {
   return `請執行 joplin-llm-wiki agent-based compile workflow。
 
 限制：
+- 不要執行 pnpm exec joplin-llm-wiki agent-compile。
 - 不要執行 pnpm exec joplin-llm-wiki wiki-compile。
+- 不要執行 pnpm exec joplin-llm-wiki index。
+- 不要執行 pnpm exec joplin-llm-wiki sqlite-sync。
+- 你就是本輪編譯 agent；請直接讀取 notes_root 來源檔並直接寫入 wiki_root。
 - 不要修改 notes_root。
 - 讀取 AGENTS.md、docs/llm-knowledge-flow.md、${path.relative(process.cwd(), configPath)}。
 - 只讀 notes_root 內下列 notebook 目錄：
@@ -67,22 +79,36 @@ ${notebookLines}
 目標：
 - 為每個 notebook slug 建立或更新 wiki_root/<notebook-slug>/index.md 與必要的 topics/*.md。
 - 保留技術名詞原文；整理成可閱讀的個人知識庫。
-- 完成後回報寫入檔案清單與任何跳過原因。`;
+- 完成後回報寫入檔案清單與任何跳過原因。
+- 如果無法完成或沒有寫入任何 wiki 檔，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
 }
 
 /**
  * @param {typeof spawn} spawnImpl
  * @param {string} repoRoot
  * @param {string} prompt
- * @returns {Promise<{ exitCode: number | null, stdoutTail: string, stderrTail: string, spawnFailed: boolean }>}
+ * @returns {Promise<{ exitCode: number | null, stdoutTail: string, stderrTail: string, finalMessage: string, spawnFailed: boolean }>}
  */
 function runCodexExec(spawnImpl, repoRoot, prompt) {
   return new Promise((resolve) => {
     let out = "";
     let err = "";
+    const finalPath = path.join(
+      os.tmpdir(),
+      `joplin-llm-wiki-agent-final-${process.pid}-${Date.now()}.txt`,
+    );
     const child = spawnImpl(
       "codex",
-      ["exec", "--cd", repoRoot, "--sandbox", "workspace-write", prompt],
+      [
+        "exec",
+        "--cd",
+        repoRoot,
+        "--sandbox",
+        "workspace-write",
+        "--output-last-message",
+        finalPath,
+        prompt,
+      ],
       { cwd: repoRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
     child.stdout?.on("data", (c) => {
@@ -93,21 +119,63 @@ function runCodexExec(spawnImpl, repoRoot, prompt) {
       err += String(c);
       if (err.length > 12000) err = err.slice(-12000);
     });
-    child.on("error", (e) =>
+    child.on("error", (e) => {
+      cleanupFile(finalPath);
       resolve({
         exitCode: null,
         stdoutTail: out.slice(-512),
         stderrTail: `${err}${/** @type {Error} */ (e).message}`.slice(-512),
+        finalMessage: "",
         spawnFailed: true,
-      }),
-    );
-    child.on("close", (exitCode) =>
+      });
+    });
+    child.on("close", (exitCode) => {
+      const finalMessage = readTextFileBestEffort(finalPath);
+      cleanupFile(finalPath);
       resolve({
         exitCode,
         stdoutTail: out.slice(-512),
         stderrTail: err.slice(-512),
+        finalMessage,
         spawnFailed: false,
-      }),
-    );
+      });
+    });
   });
+}
+
+/**
+ * @param {string} finalMessage
+ */
+function agentReportedFailure(finalMessage) {
+  return (
+    /AGENT_COMPILE_FAILED/.test(finalMessage) ||
+    /CODEX_CLI_UNAVAILABLE/.test(finalMessage) ||
+    /結果未完成/.test(finalMessage) ||
+    /寫入檔案清單[：:]\s*無/.test(finalMessage) ||
+    /沒有寫入\s*wiki_root/.test(finalMessage) ||
+    /沒有寫入任何\s*wiki/.test(finalMessage) ||
+    /failed to initialize in-process app-server client/i.test(finalMessage)
+  );
+}
+
+/**
+ * @param {string} file
+ */
+function readTextFileBestEffort(file) {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * @param {string} file
+ */
+function cleanupFile(file) {
+  try {
+    fs.unlinkSync(file);
+  } catch {
+    /* ignore */
+  }
 }
