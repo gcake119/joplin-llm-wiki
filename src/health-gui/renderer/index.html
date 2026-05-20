@@ -134,6 +134,50 @@
         margin-top: 6px;
         font-size: 0.72rem;
       }
+      .notebook-actions {
+        margin-top: 8px;
+      }
+      .notebook-tree {
+        margin-top: 10px;
+        max-height: 360px;
+        overflow: auto;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        background: #fafbfc;
+        padding: 8px;
+      }
+      .notebook-tree ul {
+        list-style: none;
+        margin: 0 0 0 18px;
+        padding: 0;
+      }
+      .notebook-tree > ul {
+        margin-left: 0;
+      }
+      .notebook-tree li {
+        margin: 2px 0;
+      }
+      .notebook-tree details {
+        margin: 2px 0;
+      }
+      .notebook-tree summary {
+        cursor: pointer;
+        min-height: 26px;
+      }
+      .notebook-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        font-size: 0.82rem;
+      }
+      .notebook-row input {
+        margin: 0;
+      }
+      .notebook-slug {
+        color: #57606a;
+        font-size: 0.75rem;
+      }
     </style>
   </head>
   <body>
@@ -184,7 +228,13 @@
         <button type="button" class="primary" id="btn-save-notebooks">儲存篩選</button>
         <span class="muted" id="notebook-filter-status"></span>
       </div>
-      <div id="notebook-list"></div>
+      <div class="row notebook-actions">
+        <button type="button" id="btn-check-all-notebooks">全選</button>
+        <button type="button" id="btn-clear-notebooks">清除</button>
+        <button type="button" id="btn-expand-notebooks">展開</button>
+        <button type="button" id="btn-collapse-notebooks">收合</button>
+      </div>
+      <div id="notebook-list" class="notebook-tree"></div>
     </section>
 
     <section>

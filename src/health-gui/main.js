@@ -304,17 +304,12 @@ function listNotebooksViaCli(root, config) {
         });
         return;
       }
-      const line = stdout
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .at(-1);
-      const parsed = parseJsonObject(line);
+      const parsed = parseNotebookPayload(stdout);
       if (!parsed || !Array.isArray(parsed.notebooks)) {
         resolve({
           ok: false,
           code: "SQLITE_OPEN_FAILED",
-          message: "sqlite-sync did not return notebook JSON",
+          message: `sqlite-sync did not return notebook JSON; stdout tail: ${stdout.slice(-500)}`,
         });
         return;
       }
@@ -344,6 +339,22 @@ function parseJsonObject(line) {
   } catch {
     return null;
   }
+}
+
+/**
+ * @param {string} stdout
+ * @returns {Record<string, unknown> | null}
+ */
+function parseNotebookPayload(stdout) {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parsed = parseJsonObject(lines[i]);
+    if (parsed && Array.isArray(parsed.notebooks)) return parsed;
+  }
+  return null;
 }
 
 function createWindow() {

@@ -325,24 +325,14 @@ async function init() {
     const box = el("notebook-list");
     const st = el("notebook-filter-status");
     st.textContent = "載入中…";
+    box.innerHTML = "";
     const res = await jb.listNotebooks();
     if (!res.ok) {
       st.textContent = `載入失敗：${res.message ?? res.code}`;
       return;
     }
     const selected = new Set(res.selectedIds ?? []);
-    box.innerHTML = "";
-    for (const nb of res.notebooks ?? []) {
-      const label = document.createElement("label");
-      label.style.display = "block";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.value = nb.id;
-      input.checked = selected.has(nb.id);
-      label.appendChild(input);
-      label.appendChild(document.createTextNode(` ${nb.path} → ${nb.slug}`));
-      box.appendChild(label);
-    }
+    renderNotebookTree(box, res.notebooks ?? [], selected);
     st.textContent = `已載入 ${(res.notebooks ?? []).length} 個筆記本`;
   }
 
@@ -361,6 +351,133 @@ async function init() {
       ? `已儲存 ${ids.length} 個筆記本`
       : `儲存失敗：${res.message ?? res.code}`;
   });
+
+  el("btn-check-all-notebooks").addEventListener("click", () => {
+    setAllNotebookChecks(true);
+  });
+
+  el("btn-clear-notebooks").addEventListener("click", () => {
+    setAllNotebookChecks(false);
+  });
+
+  el("btn-expand-notebooks").addEventListener("click", () => {
+    document.querySelectorAll("#notebook-list details").forEach((d) => {
+      /** @type {HTMLDetailsElement} */ (d).open = true;
+    });
+  });
+
+  el("btn-collapse-notebooks").addEventListener("click", () => {
+    document.querySelectorAll("#notebook-list details").forEach((d) => {
+      /** @type {HTMLDetailsElement} */ (d).open = false;
+    });
+  });
+
+  /**
+   * @param {HTMLElement} root
+   * @param {Array<{ id: string, parent_id?: string, title?: string, path?: string, slug?: string }>} notebooks
+   * @param {Set<string>} selected
+   */
+  function renderNotebookTree(root, notebooks, selected) {
+    const byParent = new Map();
+    const byId = new Set(notebooks.map((n) => n.id));
+    for (const nb of notebooks) {
+      const parent = nb.parent_id && byId.has(nb.parent_id) ? nb.parent_id : "";
+      const arr = byParent.get(parent) ?? [];
+      arr.push(nb);
+      byParent.set(parent, arr);
+    }
+    for (const arr of byParent.values()) {
+      arr.sort((a, b) => String(a.path ?? a.title ?? "").localeCompare(String(b.path ?? b.title ?? ""), "zh-Hant"));
+    }
+    const tree = document.createElement("ul");
+    for (const nb of byParent.get("") ?? []) tree.appendChild(renderNotebookNode(nb, byParent, selected));
+    root.appendChild(tree);
+    root.onchange = (ev) => {
+      const input = ev.target;
+      if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") return;
+      const li = input.closest("li");
+      if (li) {
+        li.querySelectorAll("input[type=checkbox]").forEach((child) => {
+          /** @type {HTMLInputElement} */ (child).checked = input.checked;
+          /** @type {HTMLInputElement} */ (child).indeterminate = false;
+        });
+      }
+      updateNotebookIndeterminate(root);
+    };
+    updateNotebookIndeterminate(root);
+  }
+
+  /**
+   * @param {{ id: string, title?: string, path?: string, slug?: string }} nb
+   * @param {Map<string, Array<{ id: string, title?: string, path?: string, slug?: string }>>} byParent
+   * @param {Set<string>} selected
+   */
+  function renderNotebookNode(nb, byParent, selected) {
+    const li = document.createElement("li");
+    const children = byParent.get(nb.id) ?? [];
+    const row = notebookRow(nb, selected);
+    if (children.length > 0) {
+      const details = document.createElement("details");
+      details.open = true;
+      const summary = document.createElement("summary");
+      summary.appendChild(row);
+      details.appendChild(summary);
+      const ul = document.createElement("ul");
+      for (const child of children) ul.appendChild(renderNotebookNode(child, byParent, selected));
+      details.appendChild(ul);
+      li.appendChild(details);
+    } else {
+      li.appendChild(row);
+    }
+    return li;
+  }
+
+  /**
+   * @param {{ id: string, title?: string, path?: string, slug?: string }} nb
+   * @param {Set<string>} selected
+   */
+  function notebookRow(nb, selected) {
+    const label = document.createElement("label");
+    label.className = "notebook-row";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = nb.id;
+    input.checked = selected.has(nb.id);
+    input.addEventListener("click", (ev) => ev.stopPropagation());
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(String(nb.title ?? nb.path ?? nb.id)));
+    const slug = document.createElement("span");
+    slug.className = "notebook-slug";
+    slug.textContent = String(nb.slug ?? "");
+    label.appendChild(slug);
+    label.title = String(nb.path ?? nb.title ?? nb.id);
+    return label;
+  }
+
+  /**
+   * @param {HTMLElement} root
+   */
+  function updateNotebookIndeterminate(root) {
+    const items = [...root.querySelectorAll("li")].reverse();
+    for (const li of items) {
+      const own = li.querySelector(":scope > details > summary input[type=checkbox], :scope > label input[type=checkbox]");
+      if (!(own instanceof HTMLInputElement)) continue;
+      const childInputs = [...li.querySelectorAll(":scope ul input[type=checkbox]")].filter(
+        (x) => x instanceof HTMLInputElement,
+      );
+      if (childInputs.length === 0) continue;
+      const checked = childInputs.filter((x) => /** @type {HTMLInputElement} */ (x).checked).length;
+      own.indeterminate = checked > 0 && checked < childInputs.length;
+      own.checked = checked === childInputs.length;
+    }
+  }
+
+  function setAllNotebookChecks(checked) {
+    document.querySelectorAll("#notebook-list input[type=checkbox]").forEach((input) => {
+      /** @type {HTMLInputElement} */ (input).checked = checked;
+      /** @type {HTMLInputElement} */ (input).indeterminate = false;
+    });
+  }
 
   function appendStackLog(title, res) {
     const pre = el("stack-log");
