@@ -493,3 +493,39 @@ chroma:
   const cfg = await loadConfig(path.join(tmp, "cfg.yaml"));
   assert.strictEqual(cfg.joplin_data_api.base_url, "http://192.168.1.10:41184");
 });
+
+test("notebook_filter defaults and configured values load", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-cfg-nbf-"));
+  const notes = path.join(tmp, "notes");
+  fs.mkdirSync(notes);
+  const cfgPath = path.join(tmp, "cfg.yaml");
+  fs.writeFileSync(
+    cfgPath,
+    `
+notes_root: ./notes
+wiki_root: ./wiki
+joplin_wiki_writeback:
+  enabled: false
+joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  notebook_filter:
+    enabled: true
+    include_notebook_ids: ["abc"]
+    include_notebook_paths: ["工作/專案A"]
+    include_descendants: true
+    notebook_path_style: joined_slug
+    notebook_path_separator: "-"
+    source_filename: title
+chroma:
+  persist_path: ./chroma
+`,
+    "utf8",
+  );
+  const cfg = await loadConfig(cfgPath);
+  assert.strictEqual(cfg.joplin_sqlite_sync.notebook_filter.enabled, true);
+  assert.deepStrictEqual(cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids, ["abc"]);
+  assert.deepStrictEqual(cfg.joplin_sqlite_sync.notebook_filter.include_notebook_paths, ["工作/專案A"]);
+  assert.strictEqual(cfg.joplin_sqlite_sync.notebook_filter.notebook_path_style, "joined_slug");
+  assert.strictEqual(cfg.joplin_sqlite_sync.notebook_filter.source_filename, "title");
+});

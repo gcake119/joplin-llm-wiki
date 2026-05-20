@@ -136,7 +136,72 @@ test("REQ-JSQ-EXPORT-MIRROR: exporter writes notes and mirror deletes stale", as
   });
   assert.strictEqual(summary.written_files, 3);
   assert.ok(!fs.existsSync(stale));
-  assert.ok(fs.existsSync(path.join(outDir, `${id1}.md`)));
+  assert.ok(fs.existsSync(path.join(outDir, "_uncategorized", "One.md")));
+});
+
+test("notebook filter exports selected nested notebooks with title filenames", async () => {
+  const Database = (await import("better-sqlite3")).default;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-nb-filter-"));
+  const dbFile = path.join(tmp, "db.sqlite");
+  const outDir = path.join(tmp, "out");
+  fs.mkdirSync(outDir);
+
+  const db = new Database(dbFile);
+  db.exec(`
+    CREATE TABLE folders (
+      id TEXT NOT NULL PRIMARY KEY,
+      parent_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      deleted_time INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE notes (
+      id TEXT NOT NULL PRIMARY KEY,
+      parent_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      created_time INTEGER NOT NULL DEFAULT 0,
+      updated_time INTEGER NOT NULL DEFAULT 0,
+      deleted_time INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  db.prepare("INSERT INTO folders (id, parent_id, title) VALUES (?, ?, ?)").run("p", "", "工作");
+  db.prepare("INSERT INTO folders (id, parent_id, title) VALUES (?, ?, ?)").run("c", "p", "專案A");
+  db.prepare("INSERT INTO folders (id, parent_id, title) VALUES (?, ?, ?)").run("x", "", "私人");
+  const ins = db.prepare("INSERT INTO notes (id, parent_id, title, body) VALUES (?, ?, ?, ?)");
+  ins.run("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "c", "會議", "A");
+  ins.run("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c", "會議", "B");
+  ins.run("cccccccccccccccccccccccccccccccc", "x", "秘密", "C");
+  db.close();
+
+  const stale = path.join(outDir, "工作-專案A", "old.md");
+  fs.mkdirSync(path.dirname(stale), { recursive: true });
+  fs.writeFileSync(stale, "stale", "utf8");
+
+  const summary = await exportNotesFromSqlite({
+    databasePath: dbFile,
+    exportRootAbs: outDir,
+    reconcileMode: "mirror",
+    busyTimeoutMs: 5000,
+    maxExportAttempts: 3,
+    dryRun: false,
+    notebookFilter: {
+      enabled: true,
+      include_notebook_ids: ["p"],
+      include_notebook_paths: [],
+      include_descendants: true,
+      notebook_path_style: "joined_slug",
+      notebook_path_separator: "-",
+      source_filename: "title",
+    },
+  });
+
+  assert.strictEqual(summary.written_files, 2);
+  assert.ok(fs.existsSync(path.join(outDir, "工作-專案A", "會議.md")));
+  assert.ok(fs.existsSync(path.join(outDir, "工作-專案A", "會議-2.md")));
+  assert.ok(!fs.existsSync(path.join(outDir, "私人", "秘密.md")));
+  assert.ok(!fs.existsSync(stale));
+  const text = fs.readFileSync(path.join(outDir, "工作-專案A", "會議.md"), "utf8");
+  assert.match(text, /joplin_notebook_path: "工作\/專案A"/);
 });
 
 test("REQ-JSQ-LOCAL-FIRST Local execution and network boundary: no fetch when pipelines off", async () => {

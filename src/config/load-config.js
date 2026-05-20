@@ -59,6 +59,15 @@ import YAML from "yaml";
  *     reconcile_mode: string,
  *     busy_timeout_ms: number,
  *     max_export_attempts: number,
+ *     notebook_filter: {
+ *       enabled: boolean,
+ *       include_notebook_ids: string[],
+ *       include_notebook_paths: string[],
+ *       include_descendants: boolean,
+ *       notebook_path_style: string,
+ *       notebook_path_separator: string,
+ *       source_filename: string,
+ *     },
  *     pipeline: { run_index: boolean, run_wiki_compile: boolean },
  *     schedule: { every_seconds: number | null },
  *   },
@@ -387,6 +396,8 @@ export async function loadConfig(configPath) {
     max: 100,
   });
 
+  const notebook_filter = readNotebookFilter(syncNest);
+
   const pipeNest = nest(doc, "joplin_sqlite_sync", "pipeline");
   const pipeline = {
     run_index: bool(pipeNest, "run_index", true),
@@ -420,6 +431,7 @@ export async function loadConfig(configPath) {
     reconcile_mode,
     busy_timeout_ms,
     max_export_attempts,
+    notebook_filter,
     pipeline,
     schedule: { every_seconds },
   };
@@ -442,6 +454,44 @@ export async function loadConfig(configPath) {
     joplin_data_api,
     joplin_wiki_writeback,
     joplin_sqlite_sync,
+  };
+}
+
+/** @param {Record<string, unknown>} syncNest */
+function readNotebookFilter(syncNest) {
+  const nf = nest(syncNest, "notebook_filter");
+  const notebook_path_style = str(nf, "notebook_path_style", "joined_slug");
+  if (notebook_path_style !== "joined_slug") {
+    const err = new Error(
+      'joplin_sqlite_sync.notebook_filter.notebook_path_style must be "joined_slug"',
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const source_filename = str(nf, "source_filename", "title");
+  if (source_filename !== "title") {
+    const err = new Error(
+      'joplin_sqlite_sync.notebook_filter.source_filename must be "title"',
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  const sep = str(nf, "notebook_path_separator", "-");
+  if (!sep || sep.includes("/") || sep.includes("\\") || sep.length > 8) {
+    const err = new Error(
+      "joplin_sqlite_sync.notebook_filter.notebook_path_separator must be 1-8 chars without path separators",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return {
+    enabled: bool(nf, "enabled", false),
+    include_notebook_ids: strArr(nf, "include_notebook_ids", []),
+    include_notebook_paths: strArr(nf, "include_notebook_paths", []),
+    include_descendants: bool(nf, "include_descendants", true),
+    notebook_path_style,
+    notebook_path_separator: sep,
+    source_filename,
   };
 }
 

@@ -1,13 +1,22 @@
 import path from "node:path";
+import fs from "node:fs";
+import readline from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import YAML from "yaml";
 import { loadConfig } from "../config/load-config.js";
-import { exportNotesFromSqlite } from "../joplin/sqlite/exporter.js";
+import {
+  exportNotesFromSqlite,
+  openReadonlyDatabase,
+} from "../joplin/sqlite/exporter.js";
+import { listNotebooksFromSqlite } from "../joplin/sqlite/notebooks.js";
 import { runIndex } from "./cmd-index.js";
 import { runWikiCompile } from "./cmd-wiki-compile.js";
 
 const defaultDeps = {
   loadConfig,
   exportNotesFromSqlite,
+  openReadonlyDatabase,
+  listNotebooksFromSqlite,
   /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
   runIndex: (ctx) => runIndex(ctx),
   /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
@@ -24,9 +33,19 @@ const defaultDeps = {
  * @returns {Promise<number>}
  */
 export async function runSqliteSync(ctx, deps = defaultDeps) {
-  const cfg = await deps.loadConfig(ctx.configPath);
-  const sync = cfg.joplin_sqlite_sync;
+  let cfg = await deps.loadConfig(ctx.configPath);
+  let sync = cfg.joplin_sqlite_sync;
   const exportOnlyCli = ctx.opts.get("export-only") === "true";
+  const selectNotebooks = ctx.opts.get("select-notebooks") === "true";
+  if (selectNotebooks) {
+    await runNotebookSelection(ctx.configPath, cfg, deps);
+    if (ctx.opts.get("run") !== "true") {
+      console.log(JSON.stringify({ notebook_filter: "updated" }));
+      return 0;
+    }
+    cfg = await deps.loadConfig(ctx.configPath);
+    sync = cfg.joplin_sqlite_sync;
+  }
   if (!sync.enabled) {
     console.log(
       JSON.stringify({
@@ -106,6 +125,7 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     busyTimeoutMs: sync.busy_timeout_ms,
     maxExportAttempts: sync.max_export_attempts,
     dryRun,
+    notebookFilter: sync.notebook_filter,
   });
   if (dryRun) {
     return { ...summary, dry_run: true };
@@ -123,3 +143,86 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
 }
 
 export { defaultDeps };
+
+/**
+ * @param {string} configPath
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {typeof defaultDeps} deps
+ */
+async function runNotebookSelection(configPath, cfg, deps) {
+  const db = await deps.openReadonlyDatabase(
+    cfg.joplin_sqlite_sync.database_path,
+    cfg.joplin_sqlite_sync.busy_timeout_ms,
+    cfg.joplin_sqlite_sync.max_export_attempts,
+  );
+  try {
+    const notebooks = deps.listNotebooksFromSqlite(db, {
+      separator: cfg.joplin_sqlite_sync.notebook_filter.notebook_path_separator,
+    });
+    if (notebooks.length === 0) {
+      const err = new Error("no Joplin notebooks found in database");
+      /** @type {Error & { code?: string }} */ (err).code = "SQLITE_EXPORT_FAILED";
+      throw err;
+    }
+    for (let i = 0; i < notebooks.length; i++) {
+      const nb = notebooks[i];
+      console.log(`${i + 1}. ${nb.path} (${nb.id})`);
+    }
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    let answer = "";
+    try {
+      answer = await rl.question(
+        "Select notebooks to export (comma-separated numbers, or 'all'): ",
+      );
+    } finally {
+      rl.close();
+    }
+    const selected =
+      answer.trim().toLowerCase() === "all"
+        ? notebooks
+        : answer
+            .split(",")
+            .map((s) => Number.parseInt(s.trim(), 10))
+            .filter((n) => Number.isInteger(n) && n >= 1 && n <= notebooks.length)
+            .map((n) => notebooks[n - 1]);
+    if (selected.length === 0) {
+      const err = new Error("no notebooks selected");
+      /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+      throw err;
+    }
+    writeNotebookFilterToConfig(configPath, selected.map((n) => n.id));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * @param {string} configPath
+ * @param {string[]} ids
+ */
+function writeNotebookFilterToConfig(configPath, ids) {
+  const abs = path.resolve(configPath);
+  const doc = YAML.parse(fs.readFileSync(abs, "utf8")) ?? {};
+  const root = typeof doc === "object" && doc !== null ? doc : {};
+  const sync =
+    typeof root.joplin_sqlite_sync === "object" && root.joplin_sqlite_sync !== null
+      ? root.joplin_sqlite_sync
+      : {};
+  sync.notebook_filter = {
+    ...(typeof sync.notebook_filter === "object" && sync.notebook_filter !== null
+      ? sync.notebook_filter
+      : {}),
+    enabled: true,
+    include_notebook_ids: ids,
+    include_notebook_paths: [],
+    include_descendants: true,
+    notebook_path_style: "joined_slug",
+    notebook_path_separator: "-",
+    source_filename: "title",
+  };
+  root.joplin_sqlite_sync = sync;
+  fs.writeFileSync(abs, YAML.stringify(root), "utf8");
+}

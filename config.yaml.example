@@ -116,6 +116,14 @@ joplin_sqlite_sync:
   reconcile_mode: mirror
   busy_timeout_ms: 5000
   max_export_attempts: 5
+  notebook_filter:
+    enabled: false
+    include_notebook_ids: []
+    include_notebook_paths: []
+    include_descendants: true
+    notebook_path_style: joined_slug
+    notebook_path_separator: "-"
+    source_filename: title
   pipeline:
     run_index: true
     run_wiki_compile: true

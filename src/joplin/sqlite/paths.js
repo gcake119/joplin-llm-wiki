@@ -1,4 +1,5 @@
 import path from "node:path";
+import { safePathSegment } from "./notebooks.js";
 
 const NOTE_ID_RE = /^[a-f0-9]{32}$/i;
 
@@ -39,4 +40,33 @@ export function markdownPathForNote(exportRootAbs, noteId) {
   const out = path.join(path.resolve(exportRootAbs), `${noteId}.md`);
   assertPathUnderExportRoot(exportRootAbs, out);
   return out;
+}
+
+/**
+ * @param {string} exportRootAbs
+ * @param {string} notebookSlug
+ * @param {string} title
+ * @param {Set<string>} usedRelPaths
+ * @returns {{ abs: string, rel: string }}
+ */
+export function markdownPathForNotebookTitle(
+  exportRootAbs,
+  notebookSlug,
+  title,
+  usedRelPaths,
+) {
+  const dir = safePathSegment(notebookSlug);
+  const base = safePathSegment(title).replace(/[. ]+$/g, "") || "untitled";
+  let n = 1;
+  while (true) {
+    const name = n === 1 ? `${base}.md` : `${base}-${n}.md`;
+    const rel = `${dir}/${name}`;
+    if (!usedRelPaths.has(rel)) {
+      const abs = path.join(path.resolve(exportRootAbs), dir, name);
+      assertPathUnderExportRoot(exportRootAbs, abs);
+      usedRelPaths.add(rel);
+      return { abs, rel };
+    }
+    n++;
+  }
 }

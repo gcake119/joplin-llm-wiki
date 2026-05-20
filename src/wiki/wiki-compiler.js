@@ -135,7 +135,11 @@ export async function runWikiCompileFlow(args) {
     notesSummary: notesBundle,
   });
 
-  let paths = dedupePathsPreserveOrder(plan.paths.map((p) => p.replace(/\\/g, "/")));
+  let paths = normalizePlannedPathsForNotebookSlugs(
+    plan.paths.map((p) => p.replace(/\\/g, "/")),
+    notesBundle.notebookSlugs ?? [],
+    cfg.wiki_ingest.max_pages_per_run,
+  );
   let truncated = false;
   if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
     truncated = true;
@@ -422,6 +426,36 @@ function dedupePathsPreserveOrder(plannerPaths) {
 }
 
 /**
+ * @param {string[]} plannerPaths
+ * @param {string[]} notebookSlugs
+ * @param {number} maxPages
+ */
+function normalizePlannedPathsForNotebookSlugs(plannerPaths, notebookSlugs, maxPages) {
+  const slugs = new Set(notebookSlugs);
+  if (slugs.size === 0) return dedupePathsPreserveOrder(plannerPaths);
+  /** @type {string[]} */
+  const out = [];
+  for (const p of plannerPaths) {
+    const n = p.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!n || n.includes("..")) continue;
+    const first = n.split("/")[0];
+    if (slugs.has(first)) {
+      out.push(n);
+      continue;
+    }
+    if (notebookSlugs.length === 1) {
+      out.push(`${notebookSlugs[0]}/${n}`);
+      continue;
+    }
+    for (const slug of notebookSlugs) {
+      if (out.length >= maxPages) break;
+      out.push(`${slug}/${n}`);
+    }
+  }
+  return dedupePathsPreserveOrder(out);
+}
+
+/**
  * Sorted note paths that feed the trimmed writer excerpt for `wikiRelNorm`.
  *
  * - Non-corpus: rotating window (`max 5`) over all markdown.
@@ -433,20 +467,26 @@ function dedupePathsPreserveOrder(plannerPaths) {
  * @param {string[]} noteFilesAbsSorted
  */
 function writerNoteSliceForPage(cfg, wikiRelNorm, noteFilesAbsSorted) {
-  const n = noteFilesAbsSorted.length;
+  const notesRoot = path.resolve(cfg.notes_root);
+  const first = wikiRelNorm.split("/")[0];
+  const notebookScoped = noteFilesAbsSorted.filter((abs) =>
+    relativeUnder(notesRoot, abs).startsWith(`${first}/`),
+  );
+  const candidates = notebookScoped.length > 0 ? notebookScoped : noteFilesAbsSorted;
+  const n = candidates.length;
   if (n === 0) return [];
   const ingest = cfg.wiki_ingest;
 
   if (!ingest.corpus_mode_enabled) {
     const maxSlice = Math.min(n, 5);
     const off = digestOffsetFromRel(wikiRelNorm, n);
-    return rotatedSlice(noteFilesAbsSorted, off, maxSlice);
+    return rotatedSlice(candidates, off, maxSlice);
   }
 
   const maxTake = Math.min(n, ingest.corpus_digest_max_files);
 
   if (ingest.corpus_writer_excerpt_mode === "filesystem_slice") {
-    return rotatedSlice(noteFilesAbsSorted, ingest.corpus_digest_offset, maxTake);
+    return rotatedSlice(candidates, ingest.corpus_digest_offset, maxTake);
   }
 
   const bumped = bumpedCorpusSliceStart(
@@ -454,7 +494,7 @@ function writerNoteSliceForPage(cfg, wikiRelNorm, noteFilesAbsSorted) {
     wikiRelNorm,
     n,
   );
-  return rotatedSlice(noteFilesAbsSorted, bumped, maxTake);
+  return rotatedSlice(candidates, bumped, maxTake);
 }
 
 /**
@@ -536,7 +576,14 @@ async function writeWikiPageBody(args) {
 
 Schema hubs: ${schema.required_hub_pages.join(", ")}
 
-Use headings and bullet points where helpful. Do NOT include YAML frontmatter.
+Language: Traditional Chinese.
+Write all human-readable content in Traditional Chinese. Keep technical proper nouns
+and source filenames in their original language when clearer.
+
+Use Traditional Chinese headings and bullet points where helpful. Prefer these
+section headings when relevant: 核心結論, 關鍵證據, 疑點, 術語, 我的主張,
+實踐經驗, 我的實踐, 外部觀點, 張力與缺口.
+Do NOT include YAML frontmatter.
 
 Sources digest:
 ${notesSummary}

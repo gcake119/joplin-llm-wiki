@@ -32,10 +32,13 @@ export async function summarizeSourcesForPlanner(cfg) {
   }
 
   const digestRelPaths = [];
+  const notebookSlugs = new Set();
   const lines = [];
   for (const abs of digestAbs) {
     const rel = relativeUnder(root, abs);
     digestRelPaths.push(rel);
+    const first = rel.split("/")[0];
+    if (rel.includes("/") && first) notebookSlugs.add(first);
     const st = fs.statSync(abs);
     lines.push(`${rel} mtime_ms=${Math.trunc(st.mtimeMs)}`);
   }
@@ -50,6 +53,7 @@ export async function summarizeSourcesForPlanner(cfg) {
     sourceFileCount: files.length,
     digest_paths_in_prompt_count: digestAbs.length,
     digestRelPaths,
+    notebookSlugs: [...notebookSlugs].sort(),
   };
 }
 
@@ -193,6 +197,7 @@ function plannerNeedsRetry(hubOnly, topicCount, minTopic) {
  *     sourceFileCount: number,
  *     digest_paths_in_prompt_count: number,
  *     digestRelPaths: string[],
+ *     notebookSlugs?: string[],
  *   },
  * }} args
  * @returns {Promise<{
@@ -213,6 +218,7 @@ export async function planWikiPaths(args) {
   const maxTopic = Math.max(0, maxRun - 1);
   const srcCount = notesSummary.sourceFileCount;
   const digestCount = notesSummary.digest_paths_in_prompt_count;
+  const notebookSlugs = notesSummary.notebookSlugs ?? [];
   const hubs = hubPathSet(schema);
   const rejectSource = cfg.wiki_ingest.planner_reject_source_paths;
   const effectiveOffset = cfg.wiki_ingest.corpus_digest_offset;
@@ -234,6 +240,8 @@ ${notesSummary.summary}
 
 Constraints:
 - Return between 1 and ${maxRun} paths relative to wiki_root (forward slashes only).
+- When source paths begin with a notebook directory, prefix wiki paths with that same notebook directory, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/topics/example.md` : "notebook-slug/topics/example.md"}.
+- Notebook directories in this digest: ${notebookSlugs.length ? notebookSlugs.join(", ") : "(none)"}.
 - You MUST return at least ${minTopic} paths under topics/ (e.g. topics/my-slug.md) that group this digest into themes. Do not return only hub pages.
 - Cluster digest files by filename prefix, topic, or mtime; use short kebab slugs in topics/.
 - Never return bare source filenames like "abc123....md" without a topics/ prefix.
