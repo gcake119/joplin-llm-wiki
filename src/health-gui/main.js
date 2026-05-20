@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -260,6 +262,10 @@ function listNotebooksViaCli(root, config) {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
+    const outPath = path.join(
+      os.tmpdir(),
+      `joplin-llm-wiki-notebooks-${process.pid}-${Date.now()}.json`,
+    );
     const child = spawn(
       "pnpm",
       [
@@ -269,6 +275,8 @@ function listNotebooksViaCli(root, config) {
         "--config",
         config,
         "--list-notebooks-json=true",
+        "--list-notebooks-json-out",
+        outPath,
       ],
       { cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
@@ -280,6 +288,11 @@ function listNotebooksViaCli(root, config) {
       if (stderr.length > 12000) stderr = stderr.slice(-12000);
     });
     child.on("error", (e) => {
+      try {
+        fs.unlinkSync(outPath);
+      } catch {
+        /* ignore */
+      }
       resolve({
         ok: false,
         code: "SQLITE_OPEN_FAILED",
@@ -288,6 +301,11 @@ function listNotebooksViaCli(root, config) {
     });
     child.on("close", (exitCode) => {
       if (exitCode !== 0) {
+        try {
+          fs.unlinkSync(outPath);
+        } catch {
+          /* ignore */
+        }
         const line = stderr
           .split(/\r?\n/)
           .map((s) => s.trim())
@@ -304,12 +322,31 @@ function listNotebooksViaCli(root, config) {
         });
         return;
       }
-      const parsed = parseNotebookPayload(stdout);
+      let fileText = "";
+      try {
+        fileText = fs.readFileSync(outPath, "utf8");
+      } catch (e) {
+        resolve({
+          ok: false,
+          code: "SQLITE_OPEN_FAILED",
+          message: `sqlite-sync did not write notebook JSON file: ${String(
+            /** @type {Error} */ (e).message ?? e,
+          )}; stdout tail: ${stdout.slice(-500)}`,
+        });
+        return;
+      } finally {
+        try {
+          fs.unlinkSync(outPath);
+        } catch {
+          /* ignore */
+        }
+      }
+      const parsed = parseJsonObject(fileText) ?? parseNotebookPayload(stdout);
       if (!parsed || !Array.isArray(parsed.notebooks)) {
         resolve({
           ok: false,
           code: "SQLITE_OPEN_FAILED",
-          message: `sqlite-sync did not return notebook JSON; stdout tail: ${stdout.slice(-500)}`,
+          message: `sqlite-sync notebook JSON was invalid; file bytes=${fileText.length}; stdout tail: ${stdout.slice(-500)}`,
         });
         return;
       }

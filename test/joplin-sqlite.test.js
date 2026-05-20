@@ -149,6 +149,74 @@ test("sqlite-sync --list-notebooks-json prints notebook payload without exportin
   }
 });
 
+test("sqlite-sync --list-notebooks-json-out writes notebook payload to file", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jb-sql-nb-json-"));
+  const outPath = path.join(tmp, "notebooks.json");
+  const db = { closed: false, close() { this.closed = true; } };
+  const code = await runSqliteSync(
+    {
+      configPath: "cfg.yaml",
+      argv: [],
+      opts: new Map([
+        ["list-notebooks-json", "true"],
+        ["list-notebooks-json-out", outPath],
+      ]),
+    },
+    {
+      ...defaultDeps,
+      loadConfig: async () => ({
+        notes_root: "/tmp/notes",
+        notes_glob: "**/*.md",
+        wiki_root: "/tmp/wiki",
+        wiki: { glob: "**/*.md" },
+        wiki_schema: { path: "", strict: false, schema: { page_types: [] } },
+        wiki_ingest: {},
+        write_back: { sources_enabled: false },
+        ollama: {},
+        chroma: {},
+        chunk: {},
+        watch: {},
+        rag: {},
+        lint: {},
+        joplin_cli: {},
+        joplin_data_api: {},
+        joplin_wiki_writeback: {},
+        joplin_sqlite_sync: {
+          enabled: true,
+          database_path: "/tmp/joplin.sqlite",
+          export_root: "/tmp/notes",
+          reconcile_mode: "mirror",
+          busy_timeout_ms: 1,
+          max_export_attempts: 1,
+          notebook_filter: {
+            enabled: false,
+            include_notebook_ids: [],
+            include_notebook_paths: [],
+            include_descendants: true,
+            notebook_path_style: "joined_slug",
+            notebook_path_separator: "-",
+            source_filename: "title",
+          },
+          pipeline: { run_index: false, run_wiki_compile: false },
+          schedule: { every_seconds: null },
+        },
+      }),
+      openReadonlyDatabase: async () => db,
+      listNotebooksFromSqlite: () => [
+        { id: "root", parent_id: "", title: "工作", path: "工作", slug: "工作", depth: 0 },
+      ],
+      exportNotesFromSqlite: async () => {
+        throw new Error("should not export");
+      },
+    },
+  );
+  assert.strictEqual(code, 0);
+  assert.strictEqual(db.closed, true);
+  const payload = JSON.parse(fs.readFileSync(outPath, "utf8"));
+  assert.strictEqual(payload.notebooks[0].id, "root");
+  assert.deepStrictEqual(payload.selectedIds, []);
+});
+
 test("markdownPathForNote rejects path escape via id", () => {
   const root = path.join(os.tmpdir(), "jb-root");
   assert.throws(

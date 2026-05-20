@@ -39,7 +39,7 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
   const selectNotebooks = ctx.opts.get("select-notebooks") === "true";
   const listNotebooksJson = ctx.opts.get("list-notebooks-json") === "true";
   if (listNotebooksJson) {
-    await printNotebooksJson(cfg, deps);
+    await printNotebooksJson(cfg, deps, ctx.opts.get("list-notebooks-json-out"));
     return 0;
   }
   if (selectNotebooks) {
@@ -153,7 +153,7 @@ export { defaultDeps };
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {typeof defaultDeps} deps
  */
-async function printNotebooksJson(cfg, deps) {
+async function printNotebooksJson(cfg, deps, outPath) {
   if (!cfg.joplin_sqlite_sync.enabled || !cfg.joplin_sqlite_sync.database_path) {
     const err = new Error("joplin_sqlite_sync must be enabled");
     /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
@@ -168,13 +168,16 @@ async function printNotebooksJson(cfg, deps) {
     const notebooks = deps.listNotebooksFromSqlite(db, {
       separator: cfg.joplin_sqlite_sync.notebook_filter.notebook_path_separator,
     });
-    console.log(
-      JSON.stringify({
-        notebooks,
-        selectedIds: cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids,
-        enabled: cfg.joplin_sqlite_sync.notebook_filter.enabled,
-      }),
-    );
+    const payload = JSON.stringify({
+      notebooks,
+      selectedIds: cfg.joplin_sqlite_sync.notebook_filter.include_notebook_ids,
+      enabled: cfg.joplin_sqlite_sync.notebook_filter.enabled,
+    });
+    if (outPath) {
+      fs.writeFileSync(path.resolve(outPath), payload, "utf8");
+    } else {
+      console.log(payload);
+    }
   } finally {
     db.close();
   }

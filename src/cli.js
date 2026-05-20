@@ -210,6 +210,8 @@ Options:
   --select-notebooks=true       Interactive notebook picker; writes notebook_filter to config
   --run=true                    With --select-notebooks, run export after saving selection
   --list-notebooks-json=true    Print notebook tree JSON for GUI integration
+  --list-notebooks-json-out <path>
+                                With --list-notebooks-json, write JSON to a file instead of stdout
 
 Run with a valid config file; see config.yaml.example.
 `);
