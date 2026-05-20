@@ -149,7 +149,7 @@ test("agent-compile writes generated wiki pages back to Joplin Data API when ena
     assert.deepStrictEqual(writebackCall, {
       wikiRoot: "/wiki",
       relPaths: ["nb/index.md", "nb/topics/a.md"],
-      options: { dryRun: false },
+      options: { dryRun: false, workflowRoot: process.cwd() },
     });
     const parsed = JSON.parse(line);
     assert.strictEqual(parsed.agent_compile, "ok");

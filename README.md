@@ -16,7 +16,7 @@
 | index | `index` | 將 `notes_root` 與 `wiki_root` 寫入 Chroma / memory vector backend。 |
 | local compile | `wiki-compile` | 使用 Ollama planner/writer，輸出到 `wiki_root/<notebook-slug>/`，可選擇寫回 Joplin Data API。 |
 | agent compile | `agent-compile` | 使用本機 `codex exec` 非互動模式整理 selected `notes_root/<notebook-slug>/` 到 `wiki_root/<notebook-slug>/`；成功後若啟用寫回，會經 Joplin Data API upsert 本輪 selected notebook slug 對應的 wiki 頁。 |
-| Joplin writeback | `joplin_wiki_writeback` | 經本機 Joplin Data API upsert 到 `note-wiki` 筆記本樹。 |
+| Joplin writeback | `joplin_wiki_writeback` | 經本機 Joplin Data API upsert 到 `@llm-wiki` 筆記本樹，下分 `wiki`、`brainstorming`、`artifacts`。 |
 
 編譯後的 wiki 會依主題與來源證據選擇段落結構，不強制所有頁面都抽出「術語」或「張力與缺口」。常見可選段落包含「核心結論」、「關鍵證據」、「背景」、「方法」、「步驟」、「決策紀錄」、「實踐經驗」、「疑點」、「待追蹤」等；模型應省略對該主題沒有價值或沒有證據的段落。
 
@@ -58,7 +58,7 @@ The project **partially adopts** the workflow architecture from [`gatelynch/llm-
 | Index | `index` | Indexes `notes_root` and `wiki_root` into Chroma or the memory vector backend. |
 | Local compile | `wiki-compile` | Uses Ollama planner/writer and writes `wiki_root/<notebook-slug>/`; can optionally write back through Joplin Data API. |
 | Agent compile | `agent-compile` | Uses non-interactive local `codex exec` to compile selected `notes_root/<notebook-slug>/` into `wiki_root/<notebook-slug>/`; when writeback is enabled, successful runs upsert the selected notebook slug wiki pages through the Joplin Data API. |
-| Joplin writeback | `joplin_wiki_writeback` | Upserts compiled wiki pages into the `note-wiki` notebook tree through the local Joplin Data API. |
+| Joplin writeback | `joplin_wiki_writeback` | Upserts workflow Markdown into the `@llm-wiki` notebook tree through the local Joplin Data API, under `wiki`, `brainstorming`, and `artifacts`. |
 
 Compiled wiki pages choose their section structure by topic and source evidence. The compiler should not force every page to include sections such as "術語" or "張力與缺口"; optional sections include "核心結論", "關鍵證據", "背景", "方法", "步驟", "決策紀錄", "實踐經驗", "疑點", and "待追蹤" when they are actually useful.
 
@@ -225,7 +225,7 @@ pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
 
 ### Codex Agent 編譯
 
-`agent-compile` 是獨立於本機 Ollama `wiki-compile` 的 agent workflow。它會產生一份 Codex 任務提示，預設使用本機已登入的 `codex exec` 執行，讓 Codex 月訂閱以 agent 方式讀取 `notes_root/<notebook-slug>/` 並寫入對應 `wiki_root/<notebook-slug>/`。它不使用 OpenAI API key，也不把 ChatGPT/Codex 訂閱視為 API 額度。若 `joplin_wiki_writeback.enabled: true`，Codex agent 成功產生 wiki 後，CLI 會掃描本輪 selected notebook slug 底下的 `wiki_root/<slug>/**/*.md`，並沿用同一套 Joplin Data API upsert 流程寫回 `note-wiki`。
+`agent-compile` 是獨立於本機 Ollama `wiki-compile` 的 agent workflow。它會產生一份 Codex 任務提示，預設使用本機已登入的 `codex exec` 執行，讓 Codex 月訂閱以 agent 方式讀取 `notes_root/<notebook-slug>/` 並寫入對應 `wiki_root/<notebook-slug>/`。它不使用 OpenAI API key，也不把 ChatGPT/Codex 訂閱視為 API 額度。若 `joplin_wiki_writeback.enabled: true`，Codex agent 成功產生 wiki 後，CLI 會掃描本輪 selected notebook slug 底下的 `wiki_root/<slug>/**/*.md`，並沿用同一套 Joplin Data API upsert 流程寫回 `@llm-wiki/wiki`；同時也會把 `brainstorming/` 與 `artifacts/` 的 Markdown 依資料夾階層寫回 `@llm-wiki/brainstorming` 與 `@llm-wiki/artifacts`。
 
 ```bash
 pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml --dry-run
@@ -237,7 +237,7 @@ pnpm exec joplin-llm-wiki agent-compile --config ./my.config.yaml
 ## Joplin：Desktop、Data API 與 Wiki 寫回（`joplin_wiki_writeback`）
 
 - **Joplin Desktop（或官方行動／桌面客戶端）**：用來**瀏覽與手動管理**完整筆記庫（同步、搜尋、編輯）。請與本工具使用**同一個 Joplin Profile**，這樣 `joplin_sqlite_sync` 所讀的 `database.sqlite` 路徑、以及寫回目標筆記本樹才會一致。
-- **Joplin Data API（Clipper）**：在 Desktop **設定 → 網頁剪輯器**啟用 **Web Clipper 服務**，複製 **授權權杖（token）**，並確認 **埠號**（預設常見為 `41184`）。`wiki-compile` 或 `agent-compile` 成功寫入 `wiki_root` 後，當 `joplin_wiki_writeback` 啟用且非 `--dry-run` 時，會透過 **`joplin_data_api`**（僅允許 **本機 loopback**：`127.0.0.1`／`localhost`／`::1`）將頁面 **upsert** 至 Joplin：預設頂層筆記本 **`note-wiki`**，其下依 wiki **YAML frontmatter** 的 **`domain`**（或 `topic_frontmatter_key`）建**子筆記本**，並以**筆記標題**做 upsert。`wiki-compile` 寫回本輪 planner paths；`agent-compile` 寫回本輪 selected notebook slug 對應的 wiki Markdown。若省略 `domain`（或該鍵非字串／為空），寫回會落到 **`_uncategorized`**。請先**備份 Profile**；寫回會覆寫 `note-wiki` 樹下**同名 note** 的正文。`wiki-compile --dry-run` 與 `agent-compile --dry-run` **不會**對 Joplin 發送會變更資料的 HTTP。關閉寫回：設 `joplin_wiki_writeback.enabled: false`。
+- **Joplin Data API（Clipper）**：在 Desktop **設定 → 網頁剪輯器**啟用 **Web Clipper 服務**，複製 **授權權杖（token）**，並確認 **埠號**（預設常見為 `41184`）。`wiki-compile` 或 `agent-compile` 成功後，當 `joplin_wiki_writeback` 啟用且非 `--dry-run` 時，會透過 **`joplin_data_api`**（僅允許 **本機 loopback**：`127.0.0.1`／`localhost`／`::1`）將工作流 Markdown **upsert** 至 Joplin：預設頂層筆記本 **`@llm-wiki`**，其下固定建立 **`wiki`**、**`brainstorming`**、**`artifacts`**。`wiki` 之下依 wiki **YAML frontmatter** 的 **`domain`**（或 `topic_frontmatter_key`）建子筆記本，並以**筆記標題**做 upsert；`brainstorming/` 與 `artifacts/` 會依本機資料夾階層建立 Joplin 子筆記本。`wiki-compile` 寫回本輪 planner paths；`agent-compile` 寫回本輪 selected notebook slug 對應的 wiki Markdown。若 wiki 省略 `domain`（或該鍵非字串／為空），寫回會落到 `@llm-wiki/wiki/_uncategorized`。請先**備份 Profile**；寫回會覆寫 `@llm-wiki` 樹下**同名 note** 的正文。`wiki-compile --dry-run` 與 `agent-compile --dry-run` **不會**對 Joplin 發送會變更資料的 HTTP。關閉寫回：設 `joplin_wiki_writeback.enabled: false`。
 - **寫回預檢（`GET /ping?token=…`）**：`index` 與非 dry-run 的 `wiki-compile` 寫回階段前會呼叫一次 ping 以確認 API 可用；失敗時 stderr 為單行 JSON，`error` 為 **`JOPLIN_DATA_API_FAILED`**。
 - **`sqlite-sync`**：仍以 **better-sqlite3 唯讀**開啟 `database.sqlite` 匯出至 `notes_root`；**不**以 Data API 取代大宗匯出。建議避免與大批量寫回在同一短時間窗內並行操作同一 Profile。
 

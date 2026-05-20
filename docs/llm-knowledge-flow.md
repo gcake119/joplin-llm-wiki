@@ -56,9 +56,10 @@ artifacts/
 - Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --select-notebooks` to update notebook selection in `config.yaml` without exporting immediately.
 - Use `pnpm exec joplin-llm-wiki index --config ./config.yaml` to index `notes_root/` and `wiki_root/`.
 - Use `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml` for local Ollama compilation into `wiki_root/`.
-- Use `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml` for Codex CLI agent compilation. This uses local `codex exec`, not an OpenAI API key. After a successful non-dry-run compile, enabled `joplin_wiki_writeback` writes the selected notebook slug wiki pages back through the local Joplin Data API.
+- Use `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml` for Codex CLI agent compilation. This uses local `codex exec`, not an OpenAI API key. After a successful non-dry-run compile, enabled `joplin_wiki_writeback` writes selected wiki pages to `@llm-wiki/wiki` and mirrors `brainstorming/` plus `artifacts/` to their matching notebooks through the local Joplin Data API.
 - Store exploratory Q&A, thinking notes, and compile/health observations in `brainstorming/chat/` or `brainstorming/health/`.
-- Store completed outputs in `artifacts/`; when an artifact should affect future compilation, import it into Joplin or another configured source path instead of placing it inside `notes_root/` directly.
+- Store completed outputs in `artifacts/`.
+- When `joplin_wiki_writeback.enabled` is true, successful non-dry-run compile runs mirror `wiki_root` outputs, `brainstorming/`, and `artifacts/` into Joplin under `@llm-wiki/wiki`, `@llm-wiki/brainstorming`, and `@llm-wiki/artifacts`.
 
 ## Model Selection
 
@@ -71,8 +72,7 @@ artifacts/
 ## Current Difference From Upstream
 
 The upstream workflow compiles both `raw/` and `artifacts/` into `wiki/`.
-This project currently compiles the configured `notes_root/` source tree and
-the existing `wiki_root/` tree. Because `notes_root/` is managed by Joplin
-SQLite mirroring and notebook filters, `artifacts/` is intentionally kept
-outside that tree during initialization to avoid accidental deletion or source
-pollution.
+This project compiles the configured `notes_root/` source tree into
+`wiki_root/`; `brainstorming/` and `artifacts/` stay outside `notes_root/` to
+avoid SQLite mirror deletion or source pollution, but they are mirrored to
+Joplin through Data API writeback when enabled.

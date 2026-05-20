@@ -18,8 +18,8 @@ import {
 } from "./frontmatter.js";
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import {
-  runWikiWriteback,
-  summarizeWikiWritebackDry,
+  runKnowledgeFlowWriteback,
+  summarizeKnowledgeFlowWritebackDry,
   normalizeWikiWritebackTopic,
 } from "../joplin/wiki-writeback.js";
 
@@ -265,7 +265,12 @@ export async function runWikiCompileFlow(args) {
     attachCorpusTelemetry(dryPayload, cfg, notesBundle);
     attachSweepTelemetry(dryPayload, sweepContext);
     if (cfg.joplin_wiki_writeback.enabled) {
-      Object.assign(dryPayload, summarizeWikiWritebackDry(cfg, wikiRoot, paths));
+      Object.assign(
+        dryPayload,
+        summarizeKnowledgeFlowWritebackDry(cfg, wikiRoot, paths, {
+          workflowRoot: path.dirname(path.resolve(ctx.configPath)),
+        }),
+      );
     }
     console.log(JSON.stringify(dryPayload));
     return { dryRun: true, paths, truncated };
@@ -330,7 +335,10 @@ export async function runWikiCompileFlow(args) {
   if (cfg.joplin_wiki_writeback.enabled) {
     Object.assign(
       compileSummary,
-      await runWikiWriteback(cfg, wikiRoot, paths, { dryRun: false }),
+      await runKnowledgeFlowWriteback(cfg, wikiRoot, paths, {
+        dryRun: false,
+        workflowRoot: path.dirname(path.resolve(ctx.configPath)),
+      }),
     );
   }
 

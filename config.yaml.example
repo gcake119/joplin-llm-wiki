@@ -104,10 +104,13 @@ joplin_data_api:
   timeout_ms: 30000
 
 # LLM Wiki 編譯完成後可選將頁面寫回 Joplin（預設開啟）。啟用時須設定 joplin_data_api.token；否則 load-config CONFIG_INVALID。
-# 寫回經 Data API（預設頂層 note-wiki；子筆記本依 wiki frontmatter 的 domain，見 README）。
+# 寫回經 Data API：預設頂層 @llm-wiki，下分 wiki / brainstorming / artifacts 三個筆記本。
 joplin_wiki_writeback:
   # enabled 省略時視同 true
-  parent_notebook_title: note-wiki
+  parent_notebook_title: "@llm-wiki"
+  wiki_notebook_title: wiki
+  brainstorming_notebook_title: brainstorming
+  artifacts_notebook_title: artifacts
   topic_frontmatter_key: domain
   note_title_key: title
   max_cli_attempts: 3

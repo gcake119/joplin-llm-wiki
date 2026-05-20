@@ -6,6 +6,7 @@ import assert from "node:assert";
 import { loadConfig } from "../src/config/load-config.js";
 import {
   runWikiWriteback,
+  runKnowledgeFlowWriteback,
   normalizeWikiWritebackTopic,
   summarizeWikiWritebackDry,
 } from "../src/joplin/wiki-writeback.js";
@@ -109,7 +110,10 @@ chroma:
   );
   const cfg = await loadConfig(cfgPath);
   assert.strictEqual(cfg.joplin_wiki_writeback.enabled, true);
-  assert.strictEqual(cfg.joplin_wiki_writeback.parent_notebook_title, "note-wiki");
+  assert.strictEqual(cfg.joplin_wiki_writeback.parent_notebook_title, "@llm-wiki");
+  assert.strictEqual(cfg.joplin_wiki_writeback.wiki_notebook_title, "wiki");
+  assert.strictEqual(cfg.joplin_wiki_writeback.brainstorming_notebook_title, "brainstorming");
+  assert.strictEqual(cfg.joplin_wiki_writeback.artifacts_notebook_title, "artifacts");
   assert.strictEqual(cfg.joplin_wiki_writeback.topic_frontmatter_key, "domain");
   assert.strictEqual(cfg.joplin_wiki_writeback.note_title_key, "title");
 });
@@ -249,7 +253,8 @@ chroma:
   );
   const cfg = await loadConfig(cfgPath);
   const parentId = "pid1111111111111111111111111111";
-  let folderGetCount = 0;
+  const folders = /** @type {{ id: string, parent_id: string, title: string, deleted_time: number }[]} */ ([]);
+  let nextFolder = 1;
   /** @type {string[]} */
   const posts = [];
 
@@ -264,46 +269,15 @@ chroma:
     }
 
     if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
-      folderGetCount++;
-      if (folderGetCount === 1) {
-        return jsonOk({ items: [], has_more: false });
-      }
-      if (folderGetCount === 2) {
-        return jsonOk({
-          items: [
-            {
-              id: parentId,
-              parent_id: "",
-              title: "note-wiki",
-              deleted_time: 0,
-            },
-          ],
-          has_more: false,
-        });
-      }
-      return jsonOk({
-        items: [
-          {
-            id: parentId,
-            parent_id: "",
-            title: "note-wiki",
-            deleted_time: 0,
-          },
-          {
-            id: "sub1",
-            parent_id: parentId,
-            title: "Networking",
-            deleted_time: 0,
-          },
-        ],
-        has_more: false,
-      });
+      return jsonOk({ items: folders, has_more: false });
     }
 
     if (m === "POST" && parts.length === 1 && parts[0] === "folders") {
       const b = JSON.parse(String(init?.body ?? "{}"));
       posts.push(`folder:${b.title}:${b.parent_id}`);
-      return jsonOk({ id: "new", title: b.title, parent_id: b.parent_id }, 200);
+      const id = b.parent_id === "" ? parentId : `sub${nextFolder++}`;
+      folders.push({ id, title: b.title, parent_id: b.parent_id, deleted_time: 0 });
+      return jsonOk({ id, title: b.title, parent_id: b.parent_id }, 200);
     }
 
     if (
@@ -326,8 +300,8 @@ chroma:
   };
 
   await runWikiWriteback(cfg, wiki, ["p.md"], { fetch: fetchMock });
-  assert.strictEqual(folderGetCount, 3);
-  assert.ok(posts.some((p) => p.startsWith("folder:note-wiki:")));
+  assert.ok(posts.some((p) => p.startsWith("folder:@llm-wiki:")));
+  assert.ok(posts.some((p) => p.startsWith("folder:wiki:")));
   assert.ok(posts.some((p) => p.startsWith("folder:Networking:")));
   assert.ok(posts.includes("note:create"));
 });
@@ -356,12 +330,18 @@ test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () 
           {
             id: "p",
             parent_id: "",
-            title: "note-wiki",
+            title: "@llm-wiki",
+            deleted_time: 0,
+          },
+          {
+            id: "w",
+            parent_id: "p",
+            title: "wiki",
             deleted_time: 0,
           },
           {
             id: "s",
-            parent_id: "p",
+            parent_id: "w",
             title: "Security",
             deleted_time: 0,
           },
@@ -398,6 +378,81 @@ test("SCN-JWKB-UPSERT-01 title from frontmatter under topic notebook", async () 
   };
 
   await runWikiWriteback(cfg, wiki, ["foo.md"], { fetch: fetchMock });
+});
+
+test("knowledge-flow writeback mirrors wiki, brainstorming, and artifacts under @llm-wiki", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jwkb-flow-"));
+  const wiki = path.join(tmp, "wiki");
+  const brainstorming = path.join(tmp, "brainstorming", "chat");
+  const artifacts = path.join(tmp, "artifacts", "projects");
+  fs.mkdirSync(path.join(wiki, "nb", "topic"), { recursive: true });
+  fs.mkdirSync(brainstorming, { recursive: true });
+  fs.mkdirSync(artifacts, { recursive: true });
+  fs.writeFileSync(
+    path.join(wiki, "nb", "topic", "note.md"),
+    "---\ndomain: nb\ntitle: Wiki Note\n---\n\nWiki body\n",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(brainstorming, "idea.md"),
+    "---\ntitle: Idea Log\n---\n\nIdea body\n",
+    "utf8",
+  );
+  fs.writeFileSync(path.join(artifacts, "deliverable.md"), "# Deliverable\n", "utf8");
+  const cfg = await loadConfig(await writeMiniCfg(tmp, wiki));
+
+  const folders = /** @type {{ id: string, parent_id: string, title: string, deleted_time: number }[]} */ ([]);
+  let nextFolder = 1;
+  /** @type {string[]} */
+  const notesCreated = [];
+  const fetchMock = async (/** @type {string | URL} */ url, init) => {
+    const u = new URL(url);
+    const m = init?.method ?? "GET";
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    if (parts[parts.length - 1] === "ping") return textOk("ok");
+    if (m === "GET" && parts.length === 1 && parts[0] === "folders") {
+      return jsonOk({ items: folders, has_more: false });
+    }
+    if (m === "POST" && parts.length === 1 && parts[0] === "folders") {
+      const b = JSON.parse(String(init?.body ?? "{}"));
+      const id = `f${nextFolder++}`;
+      folders.push({ id, parent_id: b.parent_id, title: b.title, deleted_time: 0 });
+      return jsonOk({ id, parent_id: b.parent_id, title: b.title }, 200);
+    }
+    if (
+      m === "GET" &&
+      parts.length === 3 &&
+      parts[0] === "folders" &&
+      parts[2] === "notes"
+    ) {
+      return jsonOk({ items: [], has_more: false });
+    }
+    if (m === "POST" && parts.length === 1 && parts[0] === "notes") {
+      const b = JSON.parse(String(init?.body ?? "{}"));
+      notesCreated.push(`${b.parent_id}:${b.title}`);
+      return jsonOk({ id: `n-${notesCreated.length}` }, 200);
+    }
+    throw new Error(`unexpected ${m} ${u.pathname}`);
+  };
+
+  const summary = await runKnowledgeFlowWriteback(cfg, wiki, ["nb/topic/note.md"], {
+    fetch: fetchMock,
+    workflowRoot: tmp,
+  });
+
+  assert.strictEqual(summary.writeback_written, 3);
+  assert.strictEqual(summary.workflow_writeback_written, 2);
+  const titles = folders.map((f) => `${f.parent_id}:${f.title}`);
+  assert.ok(titles.some((t) => t.endsWith(":@llm-wiki")));
+  assert.ok(titles.some((t) => t.endsWith(":wiki")));
+  assert.ok(titles.some((t) => t.endsWith(":brainstorming")));
+  assert.ok(titles.some((t) => t.endsWith(":artifacts")));
+  assert.ok(titles.some((t) => t.endsWith(":chat")));
+  assert.ok(titles.some((t) => t.endsWith(":projects")));
+  assert.ok(notesCreated.some((n) => n.endsWith(":Wiki Note")));
+  assert.ok(notesCreated.some((n) => n.endsWith(":Idea Log")));
+  assert.ok(notesCreated.some((n) => n.endsWith(":deliverable")));
 });
 
 test("SCN-JWKB-DAPI-01 retries on transport failure then JOPLIN_DATA_API_FAILED", async () => {
@@ -444,12 +499,18 @@ test("SCN-JWKB-LF-01 writeback uses loopback fetch only", async () => {
           {
             id: "p",
             parent_id: "",
-            title: "note-wiki",
+            title: "@llm-wiki",
+            deleted_time: 0,
+          },
+          {
+            id: "w",
+            parent_id: "p",
+            title: "wiki",
             deleted_time: 0,
           },
           {
             id: "t",
-            parent_id: "p",
+            parent_id: "w",
             title: "_uncategorized",
             deleted_time: 0,
           },

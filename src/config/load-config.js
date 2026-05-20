@@ -48,6 +48,9 @@ import YAML from "yaml";
  *   joplin_wiki_writeback: {
  *     enabled: boolean,
  *     parent_notebook_title: string,
+ *     wiki_notebook_title: string,
+ *     brainstorming_notebook_title: string,
+ *     artifacts_notebook_title: string,
  *     topic_frontmatter_key: string,
  *     note_title_key: string,
  *     max_cli_attempts: number,
@@ -323,7 +326,7 @@ export async function loadConfig(configPath) {
   const parent_notebook_title = str(
     wbNest,
     "parent_notebook_title",
-    "note-wiki",
+    "@llm-wiki",
   ).trim();
   if (!parent_notebook_title) {
     const err = new Error(
@@ -336,6 +339,13 @@ export async function loadConfig(configPath) {
   const joplin_wiki_writeback = {
     enabled: bool(wbNest, "enabled", true),
     parent_notebook_title,
+    wiki_notebook_title: str(wbNest, "wiki_notebook_title", "wiki").trim() || "wiki",
+    brainstorming_notebook_title:
+      str(wbNest, "brainstorming_notebook_title", "brainstorming").trim() ||
+      "brainstorming",
+    artifacts_notebook_title:
+      str(wbNest, "artifacts_notebook_title", "artifacts").trim() ||
+      "artifacts",
     topic_frontmatter_key: str(wbNest, "topic_frontmatter_key", "domain"),
     note_title_key: str(wbNest, "note_title_key", "title"),
     max_cli_attempts: num(wbNest, "max_cli_attempts", 3, {

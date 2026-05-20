@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown } from "../fs/note-discovery.js";
-import { runWikiWriteback } from "../joplin/wiki-writeback.js";
+import { runKnowledgeFlowWriteback } from "../joplin/wiki-writeback.js";
 
 /**
  * @param {{
@@ -12,13 +12,13 @@ import { runWikiWriteback } from "../joplin/wiki-writeback.js";
  *   argv: string[],
  *   opts: Map<string, string>,
  * }} ctx
- * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown, runWikiWriteback?: typeof runWikiWriteback }} [deps]
+ * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown, runWikiWriteback?: typeof runKnowledgeFlowWriteback }} [deps]
  */
 export async function runAgentCompile(ctx, deps = {}) {
   const load = deps.loadConfig ?? loadConfig;
   const discover = deps.discoverMarkdown ?? discoverMarkdown;
   const spawnImpl = deps.spawn ?? spawn;
-  const writeback = deps.runWikiWriteback ?? runWikiWriteback;
+  const writeback = deps.runWikiWriteback ?? runKnowledgeFlowWriteback;
   const cfg = await load(ctx.configPath);
   const task = await buildAgentCompileTask(cfg, ctx.configPath, discover);
   const { prompt, slugs } = task;
@@ -40,7 +40,13 @@ export async function runAgentCompile(ctx, deps = {}) {
     /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
     throw err;
   }
-  const writebackSummary = await runAgentCompileWriteback(cfg, discover, writeback, slugs);
+  const writebackSummary = await runAgentCompileWriteback(
+    cfg,
+    ctx.configPath,
+    discover,
+    writeback,
+    slugs,
+  );
   console.log(
     JSON.stringify({
       agent_compile: "ok",
@@ -102,11 +108,12 @@ ${notebookLines}
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {string} configPath
  * @param {typeof discoverMarkdown} discover
- * @param {typeof runWikiWriteback} writeback
+ * @param {typeof runKnowledgeFlowWriteback} writeback
  * @param {string[]} slugs
  */
-async function runAgentCompileWriteback(cfg, discover, writeback, slugs) {
+async function runAgentCompileWriteback(cfg, configPath, discover, writeback, slugs) {
   if (cfg.joplin_wiki_writeback?.enabled !== true) {
     return {};
   }
@@ -120,7 +127,10 @@ async function runAgentCompileWriteback(cfg, discover, writeback, slugs) {
       return first && slugSet.has(first);
     })
     .sort();
-  return writeback(cfg, wikiRoot, relPaths, { dryRun: false });
+  return writeback(cfg, wikiRoot, relPaths, {
+    dryRun: false,
+    workflowRoot: path.dirname(path.resolve(configPath)),
+  });
 }
 
 /**
