@@ -1,18 +1,23 @@
 schema_version: "1"
 page_types:
-  - id: hub
+  - id: index
     required_frontmatter_keys:
       - source_refs
       - compiled_at
       - compiler_revision
-    required_outbound_link_patterns:
-      - "^\\.\\./sources/"
-  - id: article
+    required_outbound_link_patterns: []
+  - id: summary
+    required_frontmatter_keys:
+      - source_refs
+      - compiled_at
+      - compiler_revision
+    required_outbound_link_patterns: []
+  - id: concept
     required_frontmatter_keys:
       - source_refs
       - compiled_at
       - compiler_revision
     required_outbound_link_patterns: []
 required_hub_pages:
-  - index.md
-  - topics/overview.md
+  - indexes/All-Sources.md
+  - indexes/All-Concepts.md

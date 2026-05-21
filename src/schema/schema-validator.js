@@ -70,7 +70,7 @@ export function loadWikiSchema(schemaPath) {
 
 /**
  * @param {WikiSchema} schema
- * @param {Set<string>} plannedPaths rel paths under wiki_root
+ * @param {Set<string>} plannedPaths rel paths under wiki
  * @param {string} wikiRootAbs
  */
 export function assertHubCoverage(schema, plannedPaths, wikiRootAbs) {

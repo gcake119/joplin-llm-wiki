@@ -21,9 +21,12 @@ import {
  */
 export async function runWikiCompile(ctx) {
   const cfgBase = await loadConfig(ctx.configPath);
-  const cliSweep = ctx.opts.get("corpus-sweep") === "true";
-  const sweepWanted =
-    cliSweep || cfgBase.wiki_ingest.corpus_auto_sweep.enabled;
+  const batchFallback =
+    ctx.opts.get("batch") === "true" ||
+    ctx.opts.get("full-library") === "false" ||
+    ctx.opts.get("full-scan") === "false" ||
+    ctx.opts.get("corpus-sweep") === "false";
+  const sweepWanted = !batchFallback;
 
   if (!sweepWanted) {
     await runWikiCompileFlow({ ctx });
@@ -38,19 +41,17 @@ export async function runWikiCompile(ctx) {
     throw err;
   }
 
-  const cfg =
-    cliSweep && !cfgBase.wiki_ingest.corpus_auto_sweep.enabled ?
-      {
-        ...cfgBase,
-        wiki_ingest: {
-          ...cfgBase.wiki_ingest,
-          corpus_auto_sweep: {
-            ...cfgBase.wiki_ingest.corpus_auto_sweep,
-            enabled: true,
-          },
-        },
-      }
-    : cfgBase;
+  const cfg = {
+    ...cfgBase,
+    wiki_ingest: {
+      ...cfgBase.wiki_ingest,
+      corpus_auto_sweep: {
+        ...cfgBase.wiki_ingest.corpus_auto_sweep,
+        enabled: true,
+        run_until_cycle_complete: true,
+      },
+    },
+  };
 
   const dryRun = ctx.opts.get("dry-run") === "true";
   const advanceOk =
@@ -66,8 +67,8 @@ export async function runWikiCompile(ctx) {
     );
   }
 
-  const notesRoot = path.resolve(cfg.notes_root);
-  const allNotes = await discoverMarkdown(notesRoot, cfg.notes_glob);
+  const rawRoot = path.resolve(cfg.raw);
+  const allNotes = await discoverMarkdown(rawRoot, cfg.raw_glob);
   const n = allNotes.length;
 
   if (n === 0) {
@@ -75,13 +76,13 @@ export async function runWikiCompile(ctx) {
     return 0;
   }
 
-  if (!cfg.wiki_root?.trim()) {
-    const err = new Error("wiki_root required for wiki-compile");
+  if (!cfg.wiki?.trim()) {
+    const err = new Error("wiki required for wiki-compile");
     /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
     throw err;
   }
 
-  const wikiRoot = path.resolve(cfg.wiki_root);
+  const wikiRoot = path.resolve(cfg.wiki);
   fs.mkdirSync(wikiRoot, { recursive: true });
 
   const sweep = cfg.wiki_ingest.corpus_auto_sweep;
@@ -248,7 +249,9 @@ async function runSweepWindowBatch(args) {
 
     if (
       windowsExecuted > 0 &&
-      state.next_offset === invocationStartOffset
+      (state.next_offset === invocationStartOffset ||
+        cfg.wiki_ingest.corpus_digest_max_files >= n ||
+        step >= n)
     ) {
       cycleComplete = true;
       break;

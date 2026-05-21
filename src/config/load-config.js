@@ -4,10 +4,10 @@ import YAML from "yaml";
 
 /**
  * @typedef {{
- *   notes_root: string,
- *   notes_glob: string,
- *   wiki_root: string,
- *   wiki: { glob: string },
+ *   raw: string,
+ *   raw_glob: string,
+ *   wiki: string,
+ *   wiki_glob: string,
  *   wiki_schema: { path: string, strict: boolean },
  *   wiki_ingest: {
  *     max_pages_per_run: number,
@@ -19,7 +19,6 @@ import YAML from "yaml";
  *     corpus_digest_max_files: number,
  *     corpus_digest_offset: number,
  *     corpus_writer_excerpt_mode: string,
- *     corpus_chroma_top_k: number,
  *     corpus_auto_sweep: {
  *       enabled: boolean,
  *       max_windows_per_invocation: number,
@@ -31,11 +30,7 @@ import YAML from "yaml";
  *     },
  *   },
  *   write_back: { sources_enabled: boolean },
- *   ollama: { base_url: string, embed_model: string, chat_model: string, timeout_ms: number, embed_batch_size: number },
- *   chroma: { persist_path: string, collection_sources: string, collection_wiki: string },
- *   chunk: { size_chars: number, overlap_chars: number },
- *   watch: { enabled: boolean, debounce_ms: number },
- *   rag: { top_k: number, max_context_chars: number, retrieve_mode: string },
+ *   ollama: { base_url: string, chat_model: string, timeout_ms: number },
  *   lint: {
  *     out_dir: string,
  *     duplicate_similarity_threshold: number,
@@ -51,6 +46,7 @@ import YAML from "yaml";
  *     wiki_notebook_title: string,
  *     brainstorming_notebook_title: string,
  *     artifacts_notebook_title: string,
+ *     artifacts_project_notebook_title: string,
  *     topic_frontmatter_key: string,
  *     note_title_key: string,
  *     max_cli_attempts: number,
@@ -71,7 +67,7 @@ import YAML from "yaml";
  *       notebook_path_separator: string,
  *       source_filename: string,
  *     },
- *     pipeline: { run_index: boolean, run_wiki_compile: boolean },
+ *     pipeline: { run_wiki_compile: boolean },
  *     schedule: { every_seconds: number | null },
  *   },
  * }} AppConfig
@@ -102,23 +98,17 @@ export async function loadConfig(configPath) {
 
   const cfgDir = path.dirname(abs);
 
-  let notes_root = reqStr(doc, "notes_root");
-  if (!path.isAbsolute(notes_root))
-    notes_root = path.resolve(cfgDir, notes_root);
+  rejectLegacyConfigKeys(doc);
 
-  const notes_glob = str(doc, "notes_glob", "**/*.md");
+  let raw = reqStr(doc, "raw");
+  if (!path.isAbsolute(raw))
+    raw = path.resolve(cfgDir, raw);
 
-  const wiki_root_raw = str(doc, "wiki_root", "");
-  const wiki_root =
-    wiki_root_raw.trim() === ""
-      ? ""
-      : path.isAbsolute(wiki_root_raw)
-        ? wiki_root_raw
-        : path.resolve(cfgDir, wiki_root_raw);
-  const wikiGlob =
-    typeof doc.wiki === "object" && doc.wiki !== null && "glob" in doc.wiki
-      ? str(/** @type {Record<string, unknown>} */ (doc.wiki), "glob", "**/*.md")
-      : "**/*.md";
+  const raw_glob = str(doc, "raw_glob", "**/*.md");
+
+  const wiki_raw = reqStr(doc, "wiki");
+  const wiki = path.isAbsolute(wiki_raw) ? wiki_raw : path.resolve(cfgDir, wiki_raw);
+  const wiki_glob = str(doc, "wiki_glob", "**/*.md");
 
   let wiki_schema_path = str(
     typeof doc.wiki_schema === "object" && doc.wiki_schema !== null
@@ -148,11 +138,10 @@ export async function loadConfig(configPath) {
     "filesystem_slice",
   );
   if (
-    corpus_writer_excerpt_mode_raw !== "filesystem_slice" &&
-    corpus_writer_excerpt_mode_raw !== "filesystem_plus_chroma"
+    corpus_writer_excerpt_mode_raw !== "filesystem_slice"
   ) {
     const err = new Error(
-      `wiki_ingest.corpus_writer_excerpt_mode must be "filesystem_slice" or "filesystem_plus_chroma"`,
+      `wiki_ingest.corpus_writer_excerpt_mode must be "filesystem_slice"`,
     );
     /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
     throw err;
@@ -199,10 +188,6 @@ export async function loadConfig(configPath) {
       max: 10_000_000,
     }),
     corpus_writer_excerpt_mode: corpus_writer_excerpt_mode_raw,
-    corpus_chroma_top_k: wikiIngestInt(ingestNest, "corpus_chroma_top_k", 8, {
-      min: 1,
-      max: 50,
-    }),
     corpus_auto_sweep: readCorpusAutoSweep(ingestNest, corpus_digest_max_files, cfgDir),
   };
 
@@ -212,60 +197,11 @@ export async function loadConfig(configPath) {
 
   const ollama = {
     base_url: str(nest(doc, "ollama"), "base_url", "http://127.0.0.1:11434"),
-    embed_model: str(nest(doc, "ollama"), "embed_model", "bge-m3"),
     chat_model: str(nest(doc, "ollama"), "chat_model", "gemma2:2b"),
     timeout_ms: num(nest(doc, "ollama"), "timeout_ms", 120_000, {
       min: 1000,
       max: 3_600_000,
     }),
-    embed_batch_size: num(nest(doc, "ollama"), "embed_batch_size", 16, {
-      min: 1,
-      max: 256,
-    }),
-  };
-
-  const chromaPersistRaw = str(nest(doc, "chroma"), "persist_path", "data/chroma");
-  const chromaPersist = path.isAbsolute(chromaPersistRaw)
-    ? chromaPersistRaw
-    : path.resolve(cfgDir, chromaPersistRaw);
-
-  const chroma = {
-    persist_path: chromaPersist,
-    collection_sources: str(
-      nest(doc, "chroma"),
-      "collection_sources",
-      "joplin_sources_mvp",
-    ),
-    collection_wiki: str(
-      nest(doc, "chroma"),
-      "collection_wiki",
-      "joplin_wiki_mvp",
-    ),
-  };
-
-  const chunk = {
-    size_chars: num(nest(doc, "chunk"), "size_chars", 1200, { min: 200, max: 50_000 }),
-    overlap_chars: num(nest(doc, "chunk"), "overlap_chars", 200, {
-      min: 0,
-      max: 10_000,
-    }),
-  };
-
-  const watch = {
-    enabled: bool(nest(doc, "watch"), "enabled", false),
-    debounce_ms: num(nest(doc, "watch"), "debounce_ms", 2000, {
-      min: 50,
-      max: 600_000,
-    }),
-  };
-
-  const rag = {
-    top_k: num(nest(doc, "rag"), "top_k", 5, { min: 1, max: 50 }),
-    max_context_chars: num(nest(doc, "rag"), "max_context_chars", 6000, {
-      min: 500,
-      max: 200_000,
-    }),
-    retrieve_mode: ragMode(nest(doc, "rag")),
   };
 
   const lintOutRaw = str(nest(doc, "lint"), "out_dir", "reports");
@@ -346,6 +282,11 @@ export async function loadConfig(configPath) {
     artifacts_notebook_title:
       str(wbNest, "artifacts_notebook_title", "artifacts").trim() ||
       "artifacts",
+    artifacts_project_notebook_title: str(
+      wbNest,
+      "artifacts_project_notebook_title",
+      "",
+    ).trim(),
     topic_frontmatter_key: str(wbNest, "topic_frontmatter_key", "domain"),
     note_title_key: str(wbNest, "note_title_key", "title"),
     max_cli_attempts: num(wbNest, "max_cli_attempts", 3, {
@@ -383,7 +324,7 @@ export async function loadConfig(configPath) {
   const export_root_raw = str(syncNest, "export_root", "").trim();
   let export_root =
     export_root_raw === ""
-      ? notes_root
+      ? raw
       : path.isAbsolute(export_root_raw)
         ? export_root_raw
         : path.resolve(cfgDir, export_root_raw);
@@ -410,7 +351,6 @@ export async function loadConfig(configPath) {
 
   const pipeNest = nest(doc, "joplin_sqlite_sync", "pipeline");
   const pipeline = {
-    run_index: bool(pipeNest, "run_index", true),
     run_wiki_compile: bool(pipeNest, "run_wiki_compile", true),
   };
 
@@ -423,11 +363,11 @@ export async function loadConfig(configPath) {
       /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
       throw err;
     }
-    const nr = path.normalize(notes_root);
+    const nr = path.normalize(raw);
     const er = path.normalize(export_root);
     if (er !== nr) {
       const err = new Error(
-        "joplin_sqlite_sync.export_root must equal notes_root (resolved paths)",
+        "joplin_sqlite_sync.export_root must equal raw (resolved paths)",
       );
       /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
       throw err;
@@ -447,18 +387,14 @@ export async function loadConfig(configPath) {
   };
 
   return {
-    notes_root,
-    notes_glob,
-    wiki_root,
-    wiki: { glob: wikiGlob },
+    raw,
+    raw_glob,
+    wiki,
+    wiki_glob,
     wiki_schema,
     wiki_ingest,
     write_back,
     ollama,
-    chroma,
-    chunk,
-    watch,
-    rag,
     lint,
     joplin_cli,
     joplin_data_api,
@@ -524,6 +460,56 @@ function readJoplinDataApiTimeoutMs(apiNest) {
     throw err;
   }
   return v;
+}
+
+/**
+ * @param {Record<string, unknown>} doc
+ */
+function rejectLegacyConfigKeys(doc) {
+  const legacy = [];
+  for (const key of [
+    "notes_root",
+    "notes_glob",
+    "wiki_root",
+    "rag",
+    "chroma",
+    "chunk",
+    "watch",
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(doc, key)) legacy.push(key);
+  }
+  if (
+    typeof doc.wiki === "object" &&
+    doc.wiki !== null &&
+    Object.prototype.hasOwnProperty.call(
+      /** @type {Record<string, unknown>} */ (doc.wiki),
+      "glob",
+    )
+  ) {
+    legacy.push("wiki.glob");
+  }
+  const ollama = nest(doc, "ollama");
+  for (const key of ["embed_model", "embed_batch_size"]) {
+    if (Object.prototype.hasOwnProperty.call(ollama, key)) {
+      legacy.push(`ollama.${key}`);
+    }
+  }
+  const ingest = nest(doc, "wiki_ingest");
+  for (const key of ["corpus_chroma_top_k"]) {
+    if (Object.prototype.hasOwnProperty.call(ingest, key)) {
+      legacy.push(`wiki_ingest.${key}`);
+    }
+  }
+  const pipe = nest(doc, "joplin_sqlite_sync", "pipeline");
+  if (Object.prototype.hasOwnProperty.call(pipe, "run_index")) {
+    legacy.push("joplin_sqlite_sync.pipeline.run_index");
+  }
+  if (legacy.length === 0) return;
+  const err = new Error(
+    `legacy config keys are no longer supported: ${legacy.join(", ")}; use raw, raw_glob, wiki, and wiki_glob`,
+  );
+  /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+  throw err;
 }
 
 /**
@@ -780,16 +766,6 @@ function strArr(doc, key, def) {
     if (typeof item === "string") out.push(item);
   }
   return out.length ? out : def;
-}
-
-/**
- * @param {Record<string, unknown>} rag
- */
-function ragMode(rag) {
-  const v = rag.retrieve_mode;
-  if (v === "wiki_first" || v === "sources_only" || v === "merged")
-    return v;
-  return "wiki_first";
 }
 
 /**

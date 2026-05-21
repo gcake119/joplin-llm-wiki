@@ -3,7 +3,7 @@
  */
 
 /**
- * @param {string} rel basename or rel path from notes_root
+ * @param {string} rel basename or rel path from raw
  */
 function basenameOf(rel) {
   const norm = rel.replace(/\\/g, "/");
@@ -66,7 +66,7 @@ export function heuristicTopicPaths(args) {
   for (let i = 0; i < keys.length && out.length < want; i++) {
     const group = slugify(keys[i]) || `topic-${off}-${i}`;
     const file = slugify(`${keys[i]}-知識筆記`) || `topic-note-${off}-${i}`;
-    out.push(`${group}/${file}.md`);
+    out.push(`concepts/${file || group}.md`);
   }
 
   return dedupePaths(out).slice(0, want);
@@ -108,6 +108,7 @@ function dedupePaths(paths) {
  */
 export function isTopicWikiPath(norm, hubSet) {
   if (!/\.md$/i.test(norm)) return false;
+  if (!norm.startsWith("concepts/")) return false;
   return !hubSet.has(norm);
 }
 

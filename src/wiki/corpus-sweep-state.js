@@ -32,7 +32,7 @@ export function defaultSweepStatePath(wikiRootResolved) {
 export function resolveSweepStatePath(cfg) {
   const custom = cfg.wiki_ingest.corpus_auto_sweep.state_path?.trim?.();
   if (custom) return path.resolve(custom);
-  return defaultSweepStatePath(cfg.wiki_root);
+  return defaultSweepStatePath(cfg.wiki);
 }
 
 /**

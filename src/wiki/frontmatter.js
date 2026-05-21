@@ -57,14 +57,14 @@ export function validateCompiledFrontmatter(data) {
 
 /**
  * @param {Record<string, unknown>} data
- * @param {string} notesRootAbs
+ * @param {string} rawRootAbs
  */
-export function assertSourceRefsResolvable(data, notesRootAbs) {
+export function assertSourceRefsResolvable(data, rawRootAbs) {
   validateCompiledFrontmatter(data);
   const refs = /** @type {string[]} */ (data.source_refs);
   for (const ref of refs) {
-    const abs = path.resolve(notesRootAbs, ref);
-    const rel = path.relative(notesRootAbs, abs);
+    const abs = path.resolve(rawRootAbs, ref);
+    const rel = path.relative(rawRootAbs, abs);
     if (rel.startsWith("..") || path.isAbsolute(rel))
       fmThrow(`source_refs escapes notes_root: ${ref}`);
     if (!fs.existsSync(abs)) fmThrow(`source_refs not found: ${ref}`);

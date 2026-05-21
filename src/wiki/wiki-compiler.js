@@ -10,7 +10,6 @@ import { OllamaClient } from "../ollama/client.js";
 import { summarizeSourcesForPlanner, planWikiPaths } from "./wiki-planner.js";
 import { isTopicWikiPath } from "./topic-path-heuristic.js";
 import { rotatedSlice } from "./corpus-slice.js";
-import { corpusChromaAugmentFromChroma } from "./corpus-chroma-excerpt.js";
 import {
   serializeWikiPage,
   validateCompiledFrontmatter,
@@ -18,9 +17,8 @@ import {
 } from "./frontmatter.js";
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import {
-  runKnowledgeFlowWriteback,
-  summarizeKnowledgeFlowWritebackDry,
-  normalizeWikiWritebackTopic,
+  runWikiWriteback,
+  summarizeWikiWritebackDry,
 } from "../joplin/wiki-writeback.js";
 
 /**
@@ -62,8 +60,7 @@ function attachSweepTelemetry(payload, sweepContext) {
 
 /**
  * Wiki-compile flow: planner uses **Ollama chat only** for JSON paths (`planWikiPaths`);
- * excerpts may rotate over `notes_root` and optionally call local **`collection_sources`**
- * via embedding + chromadb SDK (see `corpus-chroma-excerpt.js`, design Decision on local-only vectors).
+ * excerpts rotate over raw/ markdown and never use the removed vector/RAG pipeline.
  *
  * @param {{
  *   ctx: { configPath: string, argv: string[], opts: Map<string, string> },
@@ -81,8 +78,8 @@ function attachSweepTelemetry(payload, sweepContext) {
 export async function runWikiCompileFlow(args) {
   const { ctx, cfg: injectedCfg, sweepContext } = args;
   const cfg = injectedCfg ?? (await loadConfig(ctx.configPath));
-  if (!cfg.wiki_root?.trim()) {
-    const err = new Error("wiki_root required for wiki-compile");
+  if (!cfg.wiki?.trim()) {
+    const err = new Error("wiki required for wiki-compile");
     /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
     throw err;
   }
@@ -94,7 +91,7 @@ export async function runWikiCompileFlow(args) {
 
   const dryRun = ctx.opts.get("dry-run") === "true";
 
-  const wikiRoot = path.resolve(cfg.wiki_root);
+  const wikiRoot = path.resolve(cfg.wiki);
   fs.mkdirSync(wikiRoot, { recursive: true });
 
   const schema = loadWikiSchema(cfg.wiki_schema.path);
@@ -109,15 +106,15 @@ export async function runWikiCompileFlow(args) {
   const notesBundle = await summarizeSourcesForPlanner(cfg);
   if (notesBundle.sourceFileCount === 0) {
     const hint =
-      "no markdown files under notes_root matching notes_glob; add .md files or run joplin-sqlite-sync export before wiki-compile";
+      "no markdown files under raw matching raw_glob; add .md files or run sqlite-sync export before wiki-compile";
     if (dryRun) {
       const noSrc = {
         dry_run: true,
         warning: "NO_SOURCE_MARKDOWN",
         message: hint,
         paths: [],
-        notes_root: cfg.notes_root,
-        notes_glob: cfg.notes_glob,
+        raw: cfg.raw,
+        raw_glob: cfg.raw_glob,
       };
       attachSweepTelemetry(noSrc, sweepContext);
       console.log(JSON.stringify(noSrc));
@@ -135,12 +132,9 @@ export async function runWikiCompileFlow(args) {
     notesSummary: notesBundle,
   });
 
-  let paths = normalizePlannedPathsForNotebookSlugs(
+  let paths = filterAllowedWikiKnowledgePaths(
     plan.paths.map((p) => p.replace(/\\/g, "/")),
-    notesBundle.notebookSlugs ?? [],
-    cfg.wiki_ingest.max_pages_per_run,
   );
-  paths = filterStandaloneIndexPaths(paths);
   let truncated = false;
   if (paths.length > cfg.wiki_ingest.max_pages_per_run) {
     truncated = true;
@@ -267,9 +261,7 @@ export async function runWikiCompileFlow(args) {
     if (cfg.joplin_wiki_writeback.enabled) {
       Object.assign(
         dryPayload,
-        summarizeKnowledgeFlowWritebackDry(cfg, wikiRoot, paths, {
-          workflowRoot: path.dirname(path.resolve(ctx.configPath)),
-        }),
+        summarizeWikiWritebackDry(cfg, wikiRoot, paths),
       );
     }
     console.log(JSON.stringify(dryPayload));
@@ -277,11 +269,11 @@ export async function runWikiCompileFlow(args) {
   }
 
   const revision = `karpathy-mvp-${new Date().toISOString()}`;
-  const notesRootResolved = path.resolve(cfg.notes_root);
-  const allNoteAbs = await discoverMarkdown(notesRootResolved, cfg.notes_glob);
+  const rawRootResolved = path.resolve(cfg.raw);
+  const allNoteAbs = await discoverMarkdown(rawRootResolved, cfg.raw_glob);
   if (allNoteAbs.length === 0) {
     const err = new Error(
-      "no markdown files under notes_root matching notes_glob (required for wiki source_refs)",
+      "no markdown files under raw matching raw_glob (required for wiki source_refs)",
     );
     /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
     throw err;
@@ -293,7 +285,7 @@ export async function runWikiCompileFlow(args) {
     const sourceRefs = sourceRefsFromWriterSlice(
       wikiNorm,
       writerSliceAbs,
-      notesRootResolved,
+      rawRootResolved,
     );
 
     const body = await writeWikiPageBody({
@@ -313,7 +305,7 @@ export async function runWikiCompileFlow(args) {
       title: meta.title,
     };
     validateCompiledFrontmatter(pageData);
-    assertSourceRefsResolvable(pageData, cfg.notes_root);
+    assertSourceRefsResolvable(pageData, cfg.raw);
 
     const outAbs = path.join(wikiRoot, rel);
     fs.mkdirSync(path.dirname(outAbs), { recursive: true });
@@ -335,10 +327,7 @@ export async function runWikiCompileFlow(args) {
   if (cfg.joplin_wiki_writeback.enabled) {
     Object.assign(
       compileSummary,
-      await runKnowledgeFlowWriteback(cfg, wikiRoot, paths, {
-        dryRun: false,
-        workflowRoot: path.dirname(path.resolve(ctx.configPath)),
-      }),
+      await runWikiWriteback(cfg, wikiRoot, paths, { dryRun: false }),
     );
   }
 
@@ -347,7 +336,7 @@ export async function runWikiCompileFlow(args) {
 }
 
 /**
- * Derive `domain` / `title` frontmatter for Joplin writeback routing (`domain` = first path segment).
+ * Derive `domain` / `title` frontmatter. Joplin writeback routes by path section.
  *
  * @param {string} relPath
  */
@@ -359,7 +348,7 @@ function wikiListingMetaFromRelPath(relPath) {
     return { domain: "_uncategorized", title };
   }
   return {
-    domain: normalizeWikiWritebackTopic(parts[0]),
+    domain: parts[0],
     title,
   };
 }
@@ -378,7 +367,7 @@ function pathsFromRequiredHubPages(schema, maxPages) {
       String(h).replace(/\\/g, "/").replace(/^\/+/, "").trim(),
     )
     .filter((p) => p && !p.includes(".."));
-  return filterStandaloneIndexPaths(dedupePathsPreserveOrder(norm)).slice(
+  return filterAllowedWikiKnowledgePaths(dedupePathsPreserveOrder(norm)).slice(
     0,
     Math.max(0, Math.trunc(maxPages)),
   );
@@ -422,11 +411,20 @@ function prioritizeTopicsBeforeTruncate(paths, schema, maxPages) {
 }
 
 /** @param {string[]} paths */
-function filterStandaloneIndexPaths(paths) {
-  return paths.filter((p) => {
-    const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
-    return parts[parts.length - 1] !== "index.md";
-  });
+function filterAllowedWikiKnowledgePaths(paths) {
+  return paths.filter(isAllowedWikiKnowledgePath);
+}
+
+/** @param {string} p */
+function isAllowedWikiKnowledgePath(p) {
+  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length !== 2) return false;
+  if (!["summaries", "concepts", "indexes"].includes(parts[0])) return false;
+  if (!parts[1].endsWith(".md")) return false;
+  if (parts[0] === "indexes") {
+    return parts[1] === "All-Sources.md" || parts[1] === "All-Concepts.md";
+  }
+  return true;
 }
 
 /** @param {string[]} plannerPaths normalized forward slashes */
@@ -443,53 +441,17 @@ function dedupePathsPreserveOrder(plannerPaths) {
 }
 
 /**
- * @param {string[]} plannerPaths
- * @param {string[]} notebookSlugs
- * @param {number} maxPages
- */
-function normalizePlannedPathsForNotebookSlugs(plannerPaths, notebookSlugs, maxPages) {
-  const slugs = new Set(notebookSlugs);
-  if (slugs.size === 0) return dedupePathsPreserveOrder(plannerPaths);
-  /** @type {string[]} */
-  const out = [];
-  for (const p of plannerPaths) {
-    const n = p.replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!n || n.includes("..")) continue;
-    const first = n.split("/")[0];
-    if (slugs.has(first)) {
-      out.push(n);
-      continue;
-    }
-    if (notebookSlugs.length === 1) {
-      out.push(`${notebookSlugs[0]}/${n}`);
-      continue;
-    }
-    for (const slug of notebookSlugs) {
-      if (out.length >= maxPages) break;
-      out.push(`${slug}/${n}`);
-    }
-  }
-  return dedupePathsPreserveOrder(out);
-}
-
-/**
  * Sorted note paths that feed the trimmed writer excerpt for `wikiRelNorm`.
  *
  * - Non-corpus: rotating window (`max 5`) over all markdown.
  * - Corpus + `filesystem_slice`: fixed planner digest alignment (tests pin excerpt content).
- * - Corpus + `filesystem_plus_chroma`: digest start bumped by wiki path hash.
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRelNorm
  * @param {string[]} noteFilesAbsSorted
  */
 function writerNoteSliceForPage(cfg, wikiRelNorm, noteFilesAbsSorted) {
-  const notesRoot = path.resolve(cfg.notes_root);
-  const first = wikiRelNorm.split("/")[0];
-  const notebookScoped = noteFilesAbsSorted.filter((abs) =>
-    relativeUnder(notesRoot, abs).startsWith(`${first}/`),
-  );
-  const candidates = notebookScoped.length > 0 ? notebookScoped : noteFilesAbsSorted;
+  const candidates = noteFilesAbsSorted;
   const n = candidates.length;
   if (n === 0) return [];
   const ingest = cfg.wiki_ingest;
@@ -506,44 +468,28 @@ function writerNoteSliceForPage(cfg, wikiRelNorm, noteFilesAbsSorted) {
     return rotatedSlice(candidates, ingest.corpus_digest_offset, maxTake);
   }
 
-  const bumped = bumpedCorpusSliceStart(
-    ingest.corpus_digest_offset,
-    wikiRelNorm,
-    n,
-  );
-  return rotatedSlice(candidates, bumped, maxTake);
+  return rotatedSlice(candidates, ingest.corpus_digest_offset, maxTake);
 }
 
 /**
- * @param {number} baseOffsetRaw
- * @param {string} wikiRelNorm
- * @param {number} n
- */
-function bumpedCorpusSliceStart(baseOffsetRaw, wikiRelNorm, n) {
-  const base = (((Math.trunc(baseOffsetRaw) % n) + n) % n);
-  const bump = digestOffsetFromRel(wikiRelNorm, n);
-  return (base + bump) % n;
-}
-
-/**
- * Up to three `notes_root`-relative refs, each corresponding to raw bodies inside
+ * Up to three raw-relative refs, each corresponding to raw bodies inside
  * {@link writerNoteSliceForPage} (possibly truncated by excerpt byte budget later).
  *
  * @param {string} wikiRelNorm
  * @param {string[]} writerSliceAbs abs paths matching writer excerpt slice order
- * @param {string} notesRootResolved
+ * @param {string} rawRootResolved
  */
 function sourceRefsFromWriterSlice(
   wikiRelNorm,
   writerSliceAbs,
-  notesRootResolved,
+  rawRootResolved,
 ) {
   const m = writerSliceAbs.length;
   if (m === 0) return [];
   const k = Math.min(3, m);
   const off = digestOffsetFromRel(wikiRelNorm, m);
   const picks = rotatedSlice(writerSliceAbs, off, k);
-  return picks.map((abs) => relativeUnder(notesRootResolved, abs));
+  return picks.map((abs) => relativeUnder(rawRootResolved, abs));
 }
 
 /**
@@ -603,6 +549,12 @@ universal template. Useful optional headings include: 核心結論, 關鍵證據
 方法, 步驟, 決策紀錄, 實踐經驗, 我的實踐, 外部觀點, 疑點, 待追蹤, 術語,
 張力與缺口. Omit sections such as 術語 or 張力與缺口 when they are not useful
 for this topic.
+Path contract:
+- summaries/*.md: write one summary for one raw source. Identify the source clearly and avoid synthesis beyond that source.
+- concepts/*.md: write a concept entry that synthesizes sources and cross-references related summaries/concepts with Markdown links.
+- indexes/All-Sources.md: list source summaries and their raw evidence.
+- indexes/All-Concepts.md: list concept entries and important cross-links.
+- Never imply there are subfolders below summaries/, concepts/, or indexes/.
 Do NOT include YAML frontmatter.
 
 Sources digest:
@@ -627,8 +579,7 @@ ${excerpt}
  * @param {string[]} sliceAbs precomputed writer slice (`writerNoteSliceForPage`)
  */
 async function buildExcerptMarkdown(cfg, ollama, wikiRelNorm, sliceAbs) {
-  const root = path.resolve(cfg.notes_root);
-  const ingest = cfg.wiki_ingest;
+  const root = path.resolve(cfg.raw);
 
   const parts = [];
   let budget = 8000;
@@ -641,20 +592,6 @@ async function buildExcerptMarkdown(cfg, ollama, wikiRelNorm, sliceAbs) {
     parts.push(`### ${rel}\n\n${t}`);
   }
   let out = parts.join("\n\n");
-
-  if (
-    ingest.corpus_mode_enabled &&
-    ingest.corpus_writer_excerpt_mode === "filesystem_plus_chroma"
-  ) {
-    const chromaMd = await corpusChromaAugmentFromChroma(
-      cfg,
-      ollama,
-      wikiRelNorm,
-    );
-    if (chromaMd) {
-      out = `${out}\n\n### chroma_neighbors\n\n${chromaMd}`;
-    }
-  }
 
   return out;
 }

@@ -3,12 +3,10 @@ let origFetch = null;
 
 /**
  * @param {{
- *   embedDim?: number,
  *   chatResponses?: { test?(url: string, body: Record<string, unknown>): string },
  * }} opts
  */
 export function installMockOllamaFetch(opts = {}) {
-  const dim = opts.embedDim ?? 12;
   origFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -22,20 +20,6 @@ export function installMockOllamaFetch(opts = {}) {
       body = JSON.parse(String(init?.body ?? "{}"));
     } catch {
       body = {};
-    }
-
-    if (url.includes("/api/embed") || url.includes("/api/embeddings")) {
-      const rawIn = body.input;
-      const inputs = Array.isArray(rawIn) ? rawIn : [rawIn];
-      const embeddings = inputs.map((_, idx) =>
-        Array.from({ length: dim }, (_, j) =>
-          Math.sin(idx + j + 0.1),
-        ),
-      );
-      return new Response(JSON.stringify({ embeddings }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
     }
 
     if (url.includes("/api/chat")) {

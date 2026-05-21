@@ -1,32 +1,29 @@
 # Example configuration for `joplin-llm-wiki`.
 # Copy to `config.yaml` and adjust paths.
-# Local default: repository-root `notes_root/` (directory is gitignored).
+# Local default: repository-root `raw/` (directory is gitignored).
 #
 # Knowledge flow: this repo partially adopts gatelynch/llm-knowledge-base:
-# raw/ -> notes_root/, wiki/ -> wiki_root/, plus brainstorming/ and artifacts/.
+# raw/ -> raw/, wiki/ -> wiki/, plus brainstorming/ and artifacts/.
 #
-# 本檔 wiki_ingest／ollama 預設對齊「筆電可跑的較小 chat 模型」（如 gemma4:e4b）實測；
-# 若機器與模型較大，可改回註解中的「高配預設」數值（見 README「本機小模型」）。
+# 本檔預設為全庫掃描；若本機 Ollama 資源不足，可用 `wiki-compile --batch=true`
+# 退回單批次 fallback。
 # 若要以 Codex 月訂閱編譯 wiki，使用 `agent-compile` + 本機已登入 `codex exec`；
 # 這不是 OpenAI API provider，也不使用 API key。
 
-notes_root: ./notes_root
-notes_glob: "**/*.md"
+raw: ./raw
+raw_glob: "**/*.md"
 
-wiki_root: ./wiki_root
-wiki:
-  glob: "**/*.md"
+wiki: ./wiki
+wiki_glob: "**/*.md"
 
 wiki_schema:
   path: ./wiki-schema.example.yaml
   strict: true
 
 wiki_ingest:
-  # 小模型建議 5–8；高配可改 15
-  max_pages_per_run: 8
-  # 建議 ≤ required_hub_pages 數量或略高（schema 範例為 2 個 hub）；高配可改 10
-  min_pages_per_run: 2
-  # 每視窗至少幾個 topics/*.md（0=關閉；小模型建議 3）
+  max_pages_per_run: 15
+  min_pages_per_run: 10
+  # 每視窗至少幾個 concepts/*.md（0=關閉）
   min_topic_pages_per_run: 3
   planner_reject_source_paths: true
   max_planner_rounds: 3
@@ -37,7 +34,7 @@ wiki_ingest:
   corpus_digest_max_files: 40
   corpus_digest_offset: 0
   # Multi-window digest sweep（單次 CLI 連跑多視窗）。需 corpus_mode_enabled true。
-  # 進度：wiki_root/.joplin-llm-wiki/corpus-sweep-state.json（可用 state_path 覆寫）
+  # 進度：wiki/.joplin-llm-wiki/corpus-sweep-state.json（可用 state_path 覆寫）
   corpus_auto_sweep:
     enabled: true
     # 小模型建議 1–3 視窗／次，避免單次 invocation 過長
@@ -47,39 +44,18 @@ wiki_ingest:
     # false：--dry-run 只跑 1 個視窗且不推進 offset（預覽 planner 用）
     advance_state_on_dry_run: false
     # 單次 CLI 內連續 sweep 直到 cycle_complete（非 dry-run）；受 max_total_windows 上限
-    run_until_cycle_complete: false
+    run_until_cycle_complete: true
     max_total_windows_per_invocation: 500
   corpus_writer_excerpt_mode: filesystem_slice
-  corpus_chroma_top_k: 8
 
 write_back:
   sources_enabled: false
 
 ollama:
   base_url: http://127.0.0.1:11434
-  embed_model: bge-m3:latest
   # 本機較小 chat；請在 Ollama Modelfile／模型參數設定 num_ctx（本套件 API 未傳 options.num_ctx）
   chat_model: gemma4:e4b
   timeout_ms: 120000
-  embed_batch_size: 16
-
-chroma:
-  persist_path: data/chroma
-  collection_sources: joplin_sources_mvp
-  collection_wiki: joplin_wiki_mvp
-
-chunk:
-  size_chars: 1200
-  overlap_chars: 200
-
-watch:
-  enabled: false
-  debounce_ms: 2000
-
-rag:
-  top_k: 5
-  max_context_chars: 6000
-  retrieve_mode: wiki_first
 
 lint:
   out_dir: reports
@@ -103,20 +79,22 @@ joplin_data_api:
   token: "" # 於 Joplin Desktop → 設定 → 網頁剪輯器 複製授權權杖
   timeout_ms: 30000
 
-# LLM Wiki 編譯完成後可選將頁面寫回 Joplin（預設開啟）。啟用時須設定 joplin_data_api.token；否則 load-config CONFIG_INVALID。
-# 寫回經 Data API：預設頂層 @llm-wiki，下分 wiki / brainstorming / artifacts 三個筆記本。
+# LLM Wiki 編譯完成後可選將 wiki 頁面寫回 Joplin（預設開啟）。啟用時須設定 joplin_data_api.token；否則 load-config CONFIG_INVALID。
+# compile 寫回經 Data API：預設頂層 @llm-wiki，下分 wiki/summaries、wiki/concepts、wiki/indexes。
+# brainstorming / artifacts 只在需要整理問答、健康報告或作品時按需寫回。
 joplin_wiki_writeback:
   # enabled 省略時視同 true
   parent_notebook_title: "@llm-wiki"
   wiki_notebook_title: wiki
   brainstorming_notebook_title: brainstorming
   artifacts_notebook_title: artifacts
+  artifacts_project_notebook_title: "" # 僅 artifacts 按需寫回時需要
   topic_frontmatter_key: domain
   note_title_key: title
   max_cli_attempts: 3
 
-# Optional: batch-export notes from Joplin Desktop database.sqlite into notes_root, then run pipelines.
-# When enabled, database_path is required. For MVP, export_root must match notes_root (omit export_root to use notes_root).
+# Optional: batch-export notes from Joplin Desktop database.sqlite into raw, then run pipelines.
+# When enabled, database_path is required. For MVP, export_root must match raw (omit export_root to use raw).
 joplin_sqlite_sync:
   enabled: false
   database_path: ""
@@ -130,12 +108,11 @@ joplin_sqlite_sync:
     include_notebook_ids: []
     include_notebook_paths: []
     include_descendants: true
-    # 工作/專案A/會議 -> notes_root/工作-專案A-會議/<safe-title>.md
+    # 工作/專案A/會議 -> raw/工作-專案A-會議/<safe-title>.md
     notebook_path_style: joined_slug
     notebook_path_separator: "-"
     source_filename: title
   pipeline:
-    run_index: true
     run_wiki_compile: true
   schedule:
     every_seconds: null

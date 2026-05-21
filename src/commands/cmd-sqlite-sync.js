@@ -9,7 +9,6 @@ import {
   openReadonlyDatabase,
 } from "../joplin/sqlite/exporter.js";
 import { listNotebooksFromSqlite } from "../joplin/sqlite/notebooks.js";
-import { runIndex } from "./cmd-index.js";
 import { runWikiCompile } from "./cmd-wiki-compile.js";
 
 const defaultDeps = {
@@ -17,8 +16,6 @@ const defaultDeps = {
   exportNotesFromSqlite,
   openReadonlyDatabase,
   listNotebooksFromSqlite,
-  /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
-  runIndex: (ctx) => runIndex(ctx),
   /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
   runWikiCompile: (ctx) => runWikiCompile(ctx),
 };
@@ -137,9 +134,6 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
   }
   if (exportOnlyCli) {
     return { ...summary, export_only: true };
-  }
-  if (sync.pipeline.run_index) {
-    await deps.runIndex(ctx);
   }
   if (sync.pipeline.run_wiki_compile) {
     await deps.runWikiCompile(ctx);

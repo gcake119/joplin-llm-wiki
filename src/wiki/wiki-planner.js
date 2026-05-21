@@ -8,18 +8,14 @@ import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import path from "node:path";
 import fs from "node:fs";
 import { rotatedSlice } from "./corpus-slice.js";
-import {
-  heuristicTopicPaths,
-  isTopicWikiPath,
-  looksLikeSourceBasename,
-} from "./topic-path-heuristic.js";
+import { heuristicTopicPaths, isTopicWikiPath } from "./topic-path-heuristic.js";
 
 /**
  * @param {import('../config/load-config.js').AppConfig} cfg
  */
 export async function summarizeSourcesForPlanner(cfg) {
-  const root = path.resolve(cfg.notes_root);
-  const files = await discoverMarkdown(root, cfg.notes_glob);
+  const root = path.resolve(cfg.raw);
+  const files = await discoverMarkdown(root, cfg.raw_glob);
   const ingest = cfg.wiki_ingest;
 
   /** @type {string[]} */
@@ -32,13 +28,10 @@ export async function summarizeSourcesForPlanner(cfg) {
   }
 
   const digestRelPaths = [];
-  const notebookSlugs = new Set();
   const lines = [];
   for (const abs of digestAbs) {
     const rel = relativeUnder(root, abs);
     digestRelPaths.push(rel);
-    const first = rel.split("/")[0];
-    if (rel.includes("/") && first) notebookSlugs.add(first);
     const st = fs.statSync(abs);
     lines.push(`${rel} mtime_ms=${Math.trunc(st.mtimeMs)}`);
   }
@@ -53,7 +46,7 @@ export async function summarizeSourcesForPlanner(cfg) {
     sourceFileCount: files.length,
     digest_paths_in_prompt_count: digestAbs.length,
     digestRelPaths,
-    notebookSlugs: [...notebookSlugs].sort(),
+    notebookSlugs: [],
   };
 }
 
@@ -147,8 +140,20 @@ function pathsFromObjectArray(val, opts) {
 function normalizeOnePath(p, opts) {
   const norm = p.replace(/\\/g, "/").replace(/^\/+/, "");
   if (!norm || norm.includes("..")) return "";
-  if (opts.rejectSourcePaths && looksLikeSourceBasename(norm)) return "";
+  if (!isFlatWikiKnowledgePath(norm)) return "";
   return norm;
+}
+
+/** @param {string} rel */
+function isFlatWikiKnowledgePath(rel) {
+  const parts = rel.split("/").filter(Boolean);
+  if (parts.length !== 2) return false;
+  if (!["summaries", "concepts", "indexes"].includes(parts[0])) return false;
+  if (!parts[1].endsWith(".md")) return false;
+  if (parts[0] === "indexes") {
+    return parts[1] === "All-Sources.md" || parts[1] === "All-Concepts.md";
+  }
+  return true;
 }
 
 /** @param {string[]} plannerPaths */
@@ -218,7 +223,6 @@ export async function planWikiPaths(args) {
   const maxTopic = Math.max(0, maxRun - 1);
   const srcCount = notesSummary.sourceFileCount;
   const digestCount = notesSummary.digest_paths_in_prompt_count;
-  const notebookSlugs = notesSummary.notebookSlugs ?? [];
   const hubs = hubPathSet(schema);
   const rejectSource = cfg.wiki_ingest.planner_reject_source_paths;
   const effectiveOffset = cfg.wiki_ingest.corpus_digest_offset;
@@ -226,7 +230,7 @@ export async function planWikiPaths(args) {
   const system =
     "You output ONLY compact JSON with key paths (string array). No prose.";
   const fewShot = `Example valid output:
-{"paths":["knowledge-management/note-taking.md","software-development/frontend-state.md","personal-finance/asset-allocation.md"]}`;
+{"paths":["summaries/source-title.md","concepts/knowledge-management.md","indexes/All-Sources.md","indexes/All-Concepts.md"]}`;
 
   const basePrompt = `Plan wiki pages to update for Karpathy ingest.
 
@@ -235,21 +239,22 @@ Page type ids: ${schema.page_types.map((p) => p.id).join(", ")}
 
 ${fewShot}
 
-Sources digest (relative paths + mtimes from notes_root — do NOT copy these as wiki paths):
+Sources digest (relative paths + mtimes from raw/ — do NOT copy these as wiki paths):
 ${notesSummary.summary}
 
 Constraints:
-- Return between 1 and ${maxRun} paths relative to wiki_root (forward slashes only).
-- Name wiki Markdown files by the actual content topic, not by source filename or opaque cluster id.
-- Group related topics into one shared topic-folder, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/knowledge-management/note-taking.md` : "notebook-slug/topic-folder/content-topic.md"}.
-- When source paths begin with a notebook directory, prefix wiki paths with that same notebook directory, e.g. ${notebookSlugs[0] ? `${notebookSlugs[0]}/topic-folder/content-topic.md` : "notebook-slug/topic-folder/content-topic.md"}.
-- Notebook directories in this digest: ${notebookSlugs.length ? notebookSlugs.join(", ") : "(none)"}.
-- You MUST return at least ${minTopic} topic note paths (e.g. topic-folder/content-topic.md) that group this digest into themes. Do not return only hub pages.
-- Do not create a standalone index.md. Put overview/index material inside the most relevant topic note body.
+- Return between 1 and ${maxRun} paths relative to wiki/ (forward slashes only).
+- Allowed paths are ONLY flat files directly under summaries/, concepts/, or indexes/.
+- summaries/*.md: one summary page per raw source that needs a refreshed source-level summary.
+- concepts/*.md: concept entries that synthesize and cross-reference summaries/concepts.
+- indexes/All-Sources.md and indexes/All-Concepts.md: the only index files.
+- Do NOT create subdirectories below summaries/, concepts/, or indexes/.
+- Do NOT create notebook-slug folders, topic folders, index.md, or opaque cluster ids.
+- You MUST return at least ${minTopic} concepts/*.md paths when there is enough material.
 - Cluster digest files by semantic topic first, then filename prefix or mtime; use short readable slugs.
 - Never return bare source filenames like "abc123....md" as wiki paths.
 - The notes library has ${srcCount} files; this digest lists ${digestCount} of them (metadata only).
-- JSON shape strictly: {"paths":["topic-folder/content-topic.md"]}`;
+- JSON shape strictly: {"paths":["summaries/source-title.md","concepts/content-topic.md","indexes/All-Sources.md"]}`;
 
   /** @type {string | undefined} */
   let text = "";
