@@ -3,7 +3,10 @@ import { EventEmitter } from "node:events";
 import path from "node:path";
 import { test } from "node:test";
 
-import { runCorpusPipeline, runInitPipeline } from "../../src/health-gui/corpus/corpus-pipeline-runner.js";
+import {
+  runCorpusPipeline,
+  runInitPipeline,
+} from "../../src/health-gui/corpus/corpus-pipeline-runner.js";
 
 const repoRoot = "/repo/abs";
 const cfgAbs = "/tmp/fixture/cfg.yaml";
@@ -25,11 +28,10 @@ test("SCN-HGUI-CORPUS-01 rejects without confirmed — zero spawn", async () => 
   assert.strictEqual(spawns, 0);
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.code, "CONFIRMATION_REQUIRED");
-  assert.strictEqual(r.index.exitCode, null);
   assert.strictEqual(r.wikiCompile.exitCode, null);
 });
 
-test("SCN-HGUI-CORPUS-02 argv and cwd for index then wiki-compile both exit 0", async () => {
+test("SCN-HGUI-CORPUS-02 argv and cwd for wiki-compile exits 0", async () => {
   const calls = [];
   const spawnImpl = (cmd, args, opts) => {
     calls.push({ cmd, args: [...args], cwd: opts.cwd });
@@ -40,45 +42,35 @@ test("SCN-HGUI-CORPUS-02 argv and cwd for index then wiki-compile both exit 0", 
   const r = await runCorpusPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl);
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.code, "OK");
-  assert.strictEqual(calls.length, 2);
+  assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].cmd, "pnpm");
   assert.deepStrictEqual(calls[0].args, [
-    "exec",
-    "joplin-llm-wiki",
-    "index",
-    "--config",
-    path.resolve(cfgAbs),
-  ]);
-  assert.strictEqual(calls[0].cwd, path.resolve(repoRoot));
-  assert.deepStrictEqual(calls[1].args, [
     "exec",
     "joplin-llm-wiki",
     "wiki-compile",
     "--config",
     path.resolve(cfgAbs),
   ]);
-  assert.strictEqual(calls[1].cwd, path.resolve(repoRoot));
-  assert.strictEqual(r.index.exitCode, 0);
+  assert.strictEqual(calls[0].cwd, path.resolve(repoRoot));
   assert.strictEqual(r.wikiCompile.exitCode, 0);
 });
 
-test("SCN-HGUI-CORPUS-03 index non-zero skips wiki-compile spawn", async () => {
+test("SCN-HGUI-CORPUS-03 wiki-compile non-zero returns failure", async () => {
   let spawns = 0;
-  const spawnImpl = (cmd, args) => {
+  const spawnImpl = () => {
     spawns++;
     const c = makeChild();
-    queueMicrotask(() => c.emit("close", spawns === 1 ? 2 : 0));
+    queueMicrotask(() => c.emit("close", 2));
     return c;
   };
   const r = await runCorpusPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl);
   assert.strictEqual(spawns, 1);
   assert.strictEqual(r.ok, false);
-  assert.strictEqual(r.code, "INDEX_FAILED");
-  assert.strictEqual(r.index.exitCode, 2);
-  assert.strictEqual(r.wikiCompile.exitCode, null);
+  assert.strictEqual(r.code, "WIKI_COMPILE_FAILED");
+  assert.strictEqual(r.wikiCompile.exitCode, 2);
 });
 
-test("SCN-HGUI-CORPUS-agent mode spawns agent-compile only", async () => {
+test("SCN-HGUI-CORPUS-agent mode spawns agent-compile in full-library mode", async () => {
   const calls = [];
   const spawnImpl = (cmd, args, opts) => {
     calls.push({ cmd, args: [...args], cwd: opts.cwd });
@@ -100,6 +92,7 @@ test("SCN-HGUI-CORPUS-agent mode spawns agent-compile only", async () => {
     "agent-compile",
     "--config",
     path.resolve(cfgAbs),
+    "--full-library=true",
   ]);
 });
 
@@ -125,7 +118,6 @@ test("SCN-HGUI-CORPUS-04 overlapping request returns PIPELINE_IN_FLIGHT", async 
   children[0].emit("close", 0);
   const r1 = await p1;
   assert.strictEqual(r1.ok, true);
-  assert.strictEqual(children.length, 2);
 });
 
 test("SCN-HGUI-INIT-01 rejects without confirmed — zero spawn", async () => {
@@ -134,27 +126,21 @@ test("SCN-HGUI-INIT-01 rejects without confirmed — zero spawn", async () => {
     spawns++;
     return makeChild();
   };
-  const r = await runInitPipeline(
-    repoRoot,
-    cfgAbs,
-    { confirmed: false },
-    spawnImpl,
-    {
-      loadConfig: async () =>
-        /** @type {any} */ ({
-          notes_root: "/n",
-          notes_glob: "**/*.md",
-          joplin_sqlite_sync: { enabled: true },
-        }),
-      discoverMarkdown: async () => [],
-    },
-  );
+  const r = await runInitPipeline(repoRoot, cfgAbs, { confirmed: false }, spawnImpl, {
+    loadConfig: async () =>
+      /** @type {any} */ ({
+        raw: "/raw",
+        raw_glob: "**/*.md",
+        joplin_sqlite_sync: { enabled: true },
+      }),
+    discoverMarkdown: async () => [],
+  });
   assert.strictEqual(spawns, 0);
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.code, "CONFIRMATION_REQUIRED");
 });
 
-test("SCN-HGUI-INIT-02 empty notes + sqlite on: sqlite-sync then index then wiki", async () => {
+test("SCN-HGUI-INIT-02 empty raw + sqlite on: sqlite-sync then wiki-compile", async () => {
   const calls = [];
   const spawnImpl = (cmd, args, opts) => {
     calls.push({ cmd, args: [...args], cwd: opts.cwd });
@@ -165,29 +151,34 @@ test("SCN-HGUI-INIT-02 empty notes + sqlite on: sqlite-sync then index then wiki
   const r = await runInitPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl, {
     loadConfig: async () =>
       /** @type {any} */ ({
-        notes_root: "/notes",
-        notes_glob: "**/*.md",
+        raw: "/raw",
+        raw_glob: "**/*.md",
         joplin_sqlite_sync: { enabled: true },
       }),
     discoverMarkdown: async () => [],
   });
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(calls.length, 3);
-  assert.deepStrictEqual(calls[0].args.slice(0, 5), [
+  assert.strictEqual(calls.length, 2);
+  assert.deepStrictEqual(calls[0].args, [
     "exec",
     "joplin-llm-wiki",
     "sqlite-sync",
     "--config",
     path.resolve(cfgAbs),
+    "--export-only",
   ]);
-  assert.strictEqual(calls[0].args[5], "--export-only");
-  assert.deepStrictEqual(calls[1].args.slice(0, 4), ["exec", "joplin-llm-wiki", "index", "--config"]);
-  assert.deepStrictEqual(calls[2].args.slice(0, 4), ["exec", "joplin-llm-wiki", "wiki-compile", "--config"]);
+  assert.deepStrictEqual(calls[1].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "wiki-compile",
+    "--config",
+    path.resolve(cfgAbs),
+  ]);
   assert.strictEqual(r.sqliteSync.skipped, false);
   assert.strictEqual(r.sqliteSync.exitCode, 0);
 });
 
-test("SCN-HGUI-INIT-03 notes present: skip sqlite-sync", async () => {
+test("SCN-HGUI-INIT-03 raw present: skip sqlite-sync", async () => {
   const calls = [];
   const spawnImpl = (cmd, args, opts) => {
     calls.push({ cmd, args: [...args], cwd: opts.cwd });
@@ -198,20 +189,55 @@ test("SCN-HGUI-INIT-03 notes present: skip sqlite-sync", async () => {
   const r = await runInitPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl, {
     loadConfig: async () =>
       /** @type {any} */ ({
-        notes_root: "/notes",
-        notes_glob: "**/*.md",
+        raw: "/raw",
+        raw_glob: "**/*.md",
         joplin_sqlite_sync: { enabled: true },
       }),
-    discoverMarkdown: async () => ["/notes/a.md"],
+    discoverMarkdown: async () => ["/raw/a.md"],
   });
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(calls.length, 2);
-  assert.strictEqual(calls[0].args[2], "index");
-  assert.strictEqual(calls[1].args[2], "wiki-compile");
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].args[2], "wiki-compile");
   assert.strictEqual(r.sqliteSync.skipped, true);
 });
 
-test("SCN-HGUI-INIT-04 empty notes + sqlite off → INIT_EMPTY_NOTES", async () => {
+test("SCN-HGUI-INIT-agent mode runs agent-compile in full-library mode", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runInitPipeline(
+    repoRoot,
+    cfgAbs,
+    { confirmed: true, compileMode: "agent" },
+    spawnImpl,
+    {
+      loadConfig: async () =>
+        /** @type {any} */ ({
+          raw: "/raw",
+          raw_glob: "**/*.md",
+          joplin_sqlite_sync: { enabled: false },
+        }),
+      discoverMarkdown: async () => ["/raw/a.md"],
+    },
+  );
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "agent-compile",
+    "--config",
+    path.resolve(cfgAbs),
+    "--full-library=true",
+  ]);
+  assert.strictEqual(r.sqliteSync.skipped, true);
+});
+
+test("SCN-HGUI-INIT-04 empty raw + sqlite off -> INIT_EMPTY_NOTES", async () => {
   let spawns = 0;
   const spawnImpl = () => {
     spawns++;
@@ -220,8 +246,8 @@ test("SCN-HGUI-INIT-04 empty notes + sqlite off → INIT_EMPTY_NOTES", async () 
   const r = await runInitPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl, {
     loadConfig: async () =>
       /** @type {any} */ ({
-        notes_root: "/notes",
-        notes_glob: "**/*.md",
+        raw: "/raw",
+        raw_glob: "**/*.md",
         joplin_sqlite_sync: { enabled: false },
       }),
     discoverMarkdown: async () => [],
@@ -246,8 +272,8 @@ test("SCN-HGUI-INIT-05 overlapping init returns PIPELINE_IN_FLIGHT", async () =>
   const deps = {
     loadConfig: async () =>
       /** @type {any} */ ({
-        notes_root: "/notes",
-        notes_glob: "**/*.md",
+        raw: "/raw",
+        raw_glob: "**/*.md",
         joplin_sqlite_sync: { enabled: true },
       }),
     discoverMarkdown: async () => [],

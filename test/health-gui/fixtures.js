@@ -6,8 +6,8 @@ import path from "node:path";
  * @param {string} tmpRoot
  */
 export function writeMinimalValidConfig(tmpRoot) {
-  const notes = path.join(tmpRoot, "notes");
-  fs.mkdirSync(notes, { recursive: true });
+  const raw = path.join(tmpRoot, "raw");
+  fs.mkdirSync(raw, { recursive: true });
   const wiki = path.join(tmpRoot, "wiki");
   fs.mkdirSync(wiki, { recursive: true });
   const schemaPath = path.join(tmpRoot, "schema.yaml");
@@ -22,24 +22,19 @@ required_hub_pages: []
 `,
     "utf8",
   );
-  const chromaDir = path.join(tmpRoot, "chroma");
-  fs.mkdirSync(chromaDir, { recursive: true });
   const cfgPath = path.join(tmpRoot, "cfg.yaml");
   const yaml = `
-notes_root: ${JSON.stringify(notes)}
-wiki_root: ${JSON.stringify(wiki)}
+raw: ${JSON.stringify(raw)}
+raw_glob: "**/*.md"
+wiki: ${JSON.stringify(wiki)}
+wiki_glob: "**/*.md"
 wiki_schema:
   path: ${JSON.stringify(schemaPath)}
   strict: true
-wiki:
-  glob: "**/*.md"
-chroma:
-  persist_path: ${JSON.stringify(chromaDir)}
 joplin_wiki_writeback:
   enabled: false
 ollama:
   base_url: http://127.0.0.1:11434
-  embed_model: bge-m3
   chat_model: gemma2:2b
 `;
   fs.writeFileSync(cfgPath, yaml, "utf8");

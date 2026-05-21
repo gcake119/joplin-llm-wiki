@@ -10,6 +10,7 @@ import YAML from "yaml";
 import {
   mergeMvpFields,
   readConfigFileUtf8,
+  readGuiFieldsLenient,
   saveConfigValidated,
 } from "./config/config-coordinator.js";
 import { loadConfig } from "../config/load-config.js";
@@ -42,8 +43,6 @@ function wireIpc() {
   ipcMain.handle("get-meta", async () => ({
     configPath,
     repoRoot,
-    chromaHost: process.env.CHROMA_HOST ?? "127.0.0.1",
-    chromaPort: process.env.CHROMA_PORT ?? "8000",
   }));
 
   ipcMain.handle("check-health", async () => buildHealthSnapshot(configPath));
@@ -56,19 +55,43 @@ function wireIpc() {
       return {
         ok: true,
         fields: {
-          notes_root: cfg.notes_root,
+          raw: cfg.raw,
+          wiki: cfg.wiki,
           ollama_base_url: cfg.ollama.base_url,
-          ollama_embed_model: cfg.ollama.embed_model,
           ollama_chat_model: cfg.ollama.chat_model,
-          chroma_persist_path: cfg.chroma.persist_path,
+          joplin_data_api_base_url: cfg.joplin_data_api.base_url,
+          joplin_wiki_writeback_enabled: cfg.joplin_wiki_writeback.enabled,
+          artifacts_project_notebook_title:
+            cfg.joplin_wiki_writeback.artifacts_project_notebook_title,
         },
       };
     } catch (e) {
       const code = /** @type {Error & { code?: string }} */ (e).code;
+      const msg = String(/** @type {Error} */ (e).message);
+      if (code === "CONFIG_INVALID" && msg.includes("legacy config keys")) {
+        const cur = readConfigFileUtf8(configPath);
+        if (cur.ok) {
+          try {
+            const doc = YAML.parse(cur.yamlText) ?? {};
+            if (typeof doc === "object" && doc !== null && !Array.isArray(doc)) {
+              return {
+                ok: true,
+                repairMode: true,
+                message: msg,
+                fields: readGuiFieldsLenient(
+                  /** @type {Record<string, unknown>} */ (doc),
+                ),
+              };
+            }
+          } catch {
+            /* fall through to regular error */
+          }
+        }
+      }
       return {
         ok: false,
         code: code ?? "CONFIG_INVALID",
-        message: String(/** @type {Error} */ (e).message),
+        message: msg,
       };
     }
   });
@@ -93,18 +116,17 @@ function wireIpc() {
       };
     }
     const f = /** @type {Record<string, unknown>} */ (fields);
-    const notes_root = f.notes_root;
+    const raw = f.raw;
+    const wiki = f.wiki;
     const ollama_base_url = f.ollama_base_url;
-    const ollama_embed_model = f.ollama_embed_model;
     const ollama_chat_model = f.ollama_chat_model;
-    const chroma_persist_path = f.chroma_persist_path;
-    for (const [k, v] of Object.entries({
-      notes_root,
+    const required = {
+      raw,
+      wiki,
       ollama_base_url,
-      ollama_embed_model,
       ollama_chat_model,
-      chroma_persist_path,
-    })) {
+    };
+    for (const [k, v] of Object.entries(required)) {
       if (typeof v !== "string" || v.trim() === "") {
         return {
           ok: false,
@@ -126,11 +148,21 @@ function wireIpc() {
       };
     }
     const yamlText = mergeMvpFields(doc, {
-      notes_root: /** @type {string} */ (notes_root),
+      raw: /** @type {string} */ (raw),
+      wiki: /** @type {string} */ (wiki),
       ollama_base_url: /** @type {string} */ (ollama_base_url),
-      ollama_embed_model: /** @type {string} */ (ollama_embed_model),
       ollama_chat_model: /** @type {string} */ (ollama_chat_model),
-      chroma_persist_path: /** @type {string} */ (chroma_persist_path),
+      joplin_data_api_base_url:
+        typeof f.joplin_data_api_base_url === "string"
+          ? f.joplin_data_api_base_url.trim()
+          : "",
+      artifacts_project_notebook_title:
+        typeof f.artifacts_project_notebook_title === "string"
+          ? f.artifacts_project_notebook_title.trim()
+          : "",
+      joplin_wiki_writeback_enabled:
+        f.joplin_wiki_writeback_enabled === true ||
+        f.joplin_wiki_writeback_enabled === "true",
     });
     return saveConfigValidated(configPath, yamlText);
   });
@@ -196,7 +228,6 @@ function wireIpc() {
           stderrTail: "",
           skipped: false,
         },
-        index: { exitCode: null, stdoutTail: "", stderrTail: "" },
         wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
       };
     }
@@ -222,7 +253,6 @@ function wireIpc() {
       return {
         ok: false,
         code: "BAD_REQUEST",
-        index: { exitCode: null, stdoutTail: "", stderrTail: "" },
         wikiCompile: { exitCode: null, stdoutTail: "", stderrTail: "" },
       };
     }

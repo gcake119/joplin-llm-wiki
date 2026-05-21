@@ -45,7 +45,7 @@ export async function probeOllama(cfg, deps = {}) {
         }
       }
     }
-    const need = [cfg.ollama.embed_model, cfg.ollama.chat_model].filter(Boolean);
+    const need = [cfg.ollama.chat_model].filter(Boolean);
     const missingModels = need.filter((n) => !models.includes(n));
     return {
       reachable: true,

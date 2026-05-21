@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-joplin-brain-stack.sh — install three LaunchAgents (Ollama, Chroma, sqlite-sync)
+# install-joplin-brain-stack.sh — install LaunchAgents (Ollama, sqlite-sync)
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-${1:-}}"
@@ -25,7 +25,7 @@ DEST="${HOME}/Library/LaunchAgents"
 LOGDIR="${HOME}/Library/Logs/joplin-llm-wiki"
 mkdir -p "$DEST" "$LOGDIR"
 
-for name in com.joplin-brain.ollama com.joplin-brain.chroma com.joplin-brain.sqlite-sync; do
+for name in com.joplin-brain.ollama com.joplin-brain.sqlite-sync; do
   src="${SCRIPT_DIR}/${name}.plist.example"
   if [[ ! -f "$src" ]]; then
     echo "install-joplin-brain-stack.sh: missing ${src}" >&2
@@ -37,7 +37,7 @@ for name in com.joplin-brain.ollama com.joplin-brain.chroma com.joplin-brain.sql
       "$src" > "${DEST}/${name}.plist"
 done
 
-for p in "${DEST}/com.joplin-brain.ollama.plist" "${DEST}/com.joplin-brain.chroma.plist" "${DEST}/com.joplin-brain.sqlite-sync.plist"; do
+for p in "${DEST}/com.joplin-brain.ollama.plist" "${DEST}/com.joplin-brain.sqlite-sync.plist"; do
   plutil -lint "$p" >/dev/null
 done
 
@@ -45,7 +45,8 @@ uid="$(id -u)"
 for name in com.joplin-brain.ollama com.joplin-brain.chroma com.joplin-brain.sqlite-sync; do
   launchctl bootout "gui/${uid}/${name}" 2>/dev/null || true
 done
-for name in com.joplin-brain.ollama com.joplin-brain.chroma com.joplin-brain.sqlite-sync; do
+rm -f "${DEST}/com.joplin-brain.chroma.plist"
+for name in com.joplin-brain.ollama com.joplin-brain.sqlite-sync; do
   launchctl bootstrap "gui/${uid}" "${DEST}/${name}.plist"
 done
 

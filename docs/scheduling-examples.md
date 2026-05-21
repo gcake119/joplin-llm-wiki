@@ -1,8 +1,8 @@
 ## Cron / launchd 範例：`wiki-compile` / `agent-compile` + `lint`
 
-> **Joplin 寫回**：若設定中 `joplin_wiki_writeback` 為開啟（預設），`wiki-compile` 與成功的 `agent-compile`（非 `--dry-run`）都會經 **本機 Joplin Data API** 寫入 `@llm-wiki/wiki`，並同步 `brainstorming/`、`artifacts/` 到 `@llm-wiki/brainstorming`、`@llm-wiki/artifacts`；須設定 **`joplin_data_api.token`**（Web Clipper 授權權杖）且 Desktop **Clipper 服務**在跑、與 **`database.sqlite`／profile** 一致。無頭排程機若無法滿足此前提，請設 `joplin_wiki_writeback.enabled: false` 或改用僅 `--dry-run`。詳見 README「Joplin：Desktop、Data API 與 Wiki 寫回」。
+> **Joplin 寫回**：若設定中 `joplin_wiki_writeback` 為開啟（預設），`wiki-compile` 與成功的 `agent-compile`（非 `--dry-run`）都會經 **本機 Joplin Data API** 寫入 `@llm-wiki/wiki/{summaries,concepts,indexes}`。`brainstorming/` 與 `artifacts/` 不跟著 compile 自動同步，只在需要整理問答、健康報告或作品時按需寫回；artifacts 寫回才需要 **`joplin_wiki_writeback.artifacts_project_notebook_title`**。須設定 **`joplin_data_api.token`**（Web Clipper 授權權杖），且 Desktop **Clipper 服務**在跑、與 **`database.sqlite`／profile** 一致。無頭排程機若無法滿足此前提，請設 `joplin_wiki_writeback.enabled: false` 或改用僅 `--dry-run`。詳見 README「Joplin：Desktop、Data API 與 Wiki 寫回」。
 
-> **模型選擇**：`wiki-compile` 是本地 Ollama 路線；`agent-compile` 是本機已登入 `codex exec` 的 Codex Agent 路線，不使用 OpenAI API key，也不等同 API 額度。兩者都應維持 `notes_root/<joined-notebook-slug>/` → `wiki_root/<joined-notebook-slug>/` 的資料流。
+> **模型選擇**：`wiki-compile` 是本地 Ollama 路線；`agent-compile` 是本機已登入 `codex exec` 的 Codex Agent 路線，不使用 OpenAI API key，也不等同 API 額度。兩條管路預設都會掃完整個 `raw/` 筆記庫；`--batch=true` 才是 10-15 頁單批次 fallback。兩者都應維持 `raw/` → `wiki/summaries|concepts|indexes` 的資料流。
 
 以下假設儲存庫在 `/ABS/PATH/TO/joplin-llm-wiki`，且已在該目錄執行過 `pnpm install`。
 
@@ -16,12 +16,15 @@
 # 若要改用 Codex Agent 編譯，確認排程環境可找到且已登入 codex
 0 * * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki agent-compile --config ./my-karpathy.config.yaml >> ~/logs/joplin-llm-wiki-agent-compile.log 2>&1
 
+# 本機 Ollama 單批次 fallback（只在全庫掃描太重時使用）
+0 2 * * 0 cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki wiki-compile --config ./my-karpathy.config.yaml --batch=true >> ~/logs/joplin-llm-wiki-wiki-batch.log 2>&1
+
 # 每天凌晨跑 lint 報告
 15 3 * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki lint --config ./my-karpathy.config.yaml >> ~/logs/joplin-llm-wiki-lint.log 2>&1
 ```
 
 建議：
 
-- 長時間任務請確認本機 `ollama` 與 `chroma run`（向量伺服器）已在使用者 session 內啟動。
-- 若排程使用 `agent-compile`，請先以互動式 session 驗證 `codex exec` 可用；若只想取得可手動貼給 Codex 的任務提示，先跑 `agent-compile --dry-run`。
+- 長時間任務請確認本機 `ollama` 已在使用者 session 內啟動；Chroma／向量索引已移除。
+- 若排程使用 `agent-compile`，請先以互動式 session 驗證 `codex exec` 可用；若只想取得可手動貼給 Codex 的任務提示，先跑 `agent-compile --dry-run`。`--batch=true` 只適合本地模型資源不足時的 fallback，不是預設資料流。
 - macOS 可使用 `launchd` plist 將上述命令包成 `LaunchAgent`，並設定 `PATH` 包含 `pnpm` / `node`。

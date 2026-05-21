@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall-joplin-brain-stack.sh — bootout and remove the three joplin-brain LaunchAgents
+# uninstall-joplin-brain-stack.sh — bootout and remove joplin-brain LaunchAgents
 set -euo pipefail
 
 uid="$(id -u)"

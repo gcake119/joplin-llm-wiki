@@ -17,16 +17,16 @@ let pipelineBusy = false;
  *   message: string,
  * } | {
  *   kind: "phase_start",
- *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
  *   label: string,
  * } | {
  *   kind: "phase_stream",
- *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
  *   channel: "stdout" | "stderr",
  *   text: string,
  * } | {
  *   kind: "phase_end",
- *   phase: "sqlite-sync" | "index" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
  *   exitCode: number | null,
  *   spawnFailed: boolean,
  * }} PipelineProgressEvent
@@ -68,7 +68,7 @@ function lineSplitter(onLine) {
  * @param {typeof spawn} spawnImpl
  * @param {string} root
  * @param {string} configAbs
- * @param {"index" | "wiki-compile" | "sqlite-sync" | "agent-compile"} subcommand
+ * @param {"wiki-compile" | "sqlite-sync" | "agent-compile"} subcommand
  * @param {string[]} [extraArgv]
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
@@ -160,43 +160,66 @@ function assignPhase(target, res) {
  * @param {string} configAbs
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
-async function runIndexThenWiki(spawnImpl, root, configAbs, progress = null, compileMode = "local") {
-  const index = emptyPhase();
+async function runIndexThenWiki(
+  spawnImpl,
+  root,
+  configAbs,
+  progress = null,
+  compileMode = "local",
+  agentFullLibrary = false,
+) {
   const wikiCompile = emptyPhase();
 
   if (compileMode === "agent") {
-    const agentRes = await runPhase(spawnImpl, root, configAbs, "agent-compile", [], progress);
+    const extraArgv = agentFullLibrary ? ["--full-library=true"] : [];
+    const agentRes = await runPhase(spawnImpl, root, configAbs, "agent-compile", extraArgv, progress);
     assignPhase(wikiCompile, agentRes);
-    if (agentRes.spawnFailed) return { ok: false, code: "SPAWN_ERROR", index, wikiCompile };
-    if (agentRes.exitCode !== 0) return { ok: false, code: "AGENT_COMPILE_FAILED", index, wikiCompile };
-    return { ok: true, code: "OK", index, wikiCompile };
-  }
-
-  const idxRes = await runPhase(spawnImpl, root, configAbs, "index", [], progress);
-  assignPhase(index, idxRes);
-
-  if (idxRes.spawnFailed) {
-    return { ok: false, code: "SPAWN_ERROR", index, wikiCompile };
-  }
-  if (idxRes.exitCode !== 0) {
-    return { ok: false, code: "INDEX_FAILED", index, wikiCompile };
+    if (agentRes.spawnFailed) return { ok: false, code: "SPAWN_ERROR", wikiCompile };
+    if (agentRes.exitCode !== 0) {
+      return {
+        ok: false,
+        code: classifyCompileFailure(agentRes, "AGENT_COMPILE_FAILED"),
+        wikiCompile,
+      };
+    }
+    return { ok: true, code: "OK", wikiCompile };
   }
 
   const wikiRes = await runPhase(spawnImpl, root, configAbs, "wiki-compile", [], progress);
   assignPhase(wikiCompile, wikiRes);
 
   if (wikiRes.spawnFailed) {
-    return { ok: false, code: "SPAWN_ERROR", index, wikiCompile };
+    return { ok: false, code: "SPAWN_ERROR", wikiCompile };
   }
   if (wikiRes.exitCode !== 0) {
-    return { ok: false, code: "WIKI_COMPILE_FAILED", index, wikiCompile };
+    return {
+      ok: false,
+      code: classifyCompileFailure(wikiRes, "WIKI_COMPILE_FAILED"),
+      wikiCompile,
+    };
   }
 
-  return { ok: true, code: "OK", index, wikiCompile };
+  return { ok: true, code: "OK", wikiCompile };
 }
 
 /**
- * Run index then wiki-compile via pnpm exec (same cwd and config as CLI).
+ * @param {{ stdoutTail?: string, stderrTail?: string }} res
+ * @param {string} fallback
+ */
+function classifyCompileFailure(res, fallback) {
+  const text = `${res.stderrTail ?? ""}\n${res.stdoutTail ?? ""}`;
+  if (
+    /usage limit/i.test(text) ||
+    /purchase more credits/i.test(text) ||
+    /try again at/i.test(text)
+  ) {
+    return "CODEX_USAGE_LIMIT";
+  }
+  return fallback;
+}
+
+/**
+ * Run wiki-compile via pnpm exec (same cwd and config as CLI).
  *
  * @param {string} repoRoot
  * @param {string} configPathAbs
@@ -209,7 +232,6 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
     return {
       ok: false,
       code: "CONFIRMATION_REQUIRED",
-      index: emptyPhase(),
       wikiCompile: emptyPhase(),
     };
   }
@@ -218,7 +240,6 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
     return {
       ok: false,
       code: "PIPELINE_IN_FLIGHT",
-      index: emptyPhase(),
       wikiCompile: emptyPhase(),
     };
   }
@@ -234,6 +255,7 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
       configAbs,
       progress,
       payload.compileMode === "agent" ? "agent" : "local",
+      payload.compileMode === "agent",
     );
   } finally {
     pipelineBusy = false;
@@ -241,8 +263,8 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
 }
 
 /**
- * When notes_root has no matching markdown: run sqlite-sync (requires
- * joplin_sqlite_sync.enabled), then index + wiki-compile. Otherwise same as corpus only phases.
+ * When raw has no matching markdown: run sqlite-sync (requires
+ * joplin_sqlite_sync.enabled), then wiki-compile. Otherwise same as corpus only phases.
  *
  * @param {string} repoRoot
  * @param {string} configPathAbs
@@ -267,7 +289,6 @@ export async function runInitPipeline(
       ok: false,
       code: "CONFIRMATION_REQUIRED",
       sqliteSync: emptySqlitePhase(),
-      index: emptyPhase(),
       wikiCompile: emptyPhase(),
     };
   }
@@ -277,7 +298,6 @@ export async function runInitPipeline(
       ok: false,
       code: "PIPELINE_IN_FLIGHT",
       sqliteSync: emptySqlitePhase(),
-      index: emptyPhase(),
       wikiCompile: emptyPhase(),
     };
   }
@@ -298,14 +318,13 @@ export async function runInitPipeline(
         code,
         message: String(/** @type {Error} */ (e).message),
         sqliteSync: emptySqlitePhase(),
-        index: emptyPhase(),
         wikiCompile: emptyPhase(),
       };
     }
 
-    progress?.({ kind: "precheck", message: "檢查 notes_root 是否已有筆記…" });
-    const notesAbs = path.resolve(cfg.notes_root);
-    const files = await discover(notesAbs, cfg.notes_glob);
+    progress?.({ kind: "precheck", message: "檢查 raw 是否已有筆記…" });
+    const notesAbs = path.resolve(cfg.raw);
+    const files = await discover(notesAbs, cfg.raw_glob);
     /** @type {{ exitCode: number | null, stdoutTail: string, stderrTail: string, skipped: boolean }} */
     let sqliteSync = emptySqlitePhase({ skipped: true });
 
@@ -315,9 +334,8 @@ export async function runInitPipeline(
           ok: false,
           code: "INIT_EMPTY_NOTES",
           message:
-            "notes_root 無符合 notes_glob 的 .md；請在 config 啟用 joplin_sqlite_sync（含 database_path），或手動放入筆記後再試。",
+            "raw 無符合 raw_glob 的 .md；請在 config 啟用 joplin_sqlite_sync（含 database_path），或手動放入筆記後再試。",
           sqliteSync: emptySqlitePhase(),
-          index: emptyPhase(),
           wikiCompile: emptyPhase(),
         };
       }
@@ -335,7 +353,6 @@ export async function runInitPipeline(
           ok: false,
           code: "SPAWN_ERROR",
           sqliteSync,
-          index: emptyPhase(),
           wikiCompile: emptyPhase(),
         };
       }
@@ -344,14 +361,13 @@ export async function runInitPipeline(
           ok: false,
           code: "SQLITE_SYNC_FAILED",
           sqliteSync,
-          index: emptyPhase(),
           wikiCompile: emptyPhase(),
         };
       }
     } else {
       progress?.({
         kind: "sqlite_skipped",
-        message: "notes_root 已有筆記，略過 SQLite 匯出。",
+        message: "raw 已有筆記，略過 SQLite 匯出。",
       });
     }
 
@@ -361,12 +377,12 @@ export async function runInitPipeline(
       configAbs,
       progress,
       payload.compileMode === "agent" ? "agent" : "local",
+      payload.compileMode === "agent",
     );
     return {
       ok: tail.ok,
       code: tail.code,
       sqliteSync,
-      index: tail.index,
       wikiCompile: tail.wikiCompile,
     };
   } finally {

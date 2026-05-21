@@ -1,14 +1,13 @@
-# macOS：全堆疊 LaunchAgent（Ollama + Chroma + sqlite-sync）
+# macOS：LaunchAgent（Ollama + sqlite-sync）
 
 本文件說明如何以 **launchd LaunchAgent** 在登入後背景常駐：
 
 1. **Ollama**（`ollama serve`）
-2. **Chroma**（與 README 相同之 `pnpm exec chroma run --path ./data/chroma --host 127.0.0.1 --port 8000`）
-3. **`joplin-llm-wiki sqlite-sync`**（含每週期匯出、索引、`wiki-compile`／寫回等，由你的 `config.yaml` 決定）
+2. **`joplin-llm-wiki sqlite-sync`**（含每週期匯出、`wiki-compile`／寫回等，由你的 `config.yaml` 決定）
 
 設計前提是**全本機**、無對外 HTTP API；監聽僅限本機 loopback（與專案 README 一致）。
 
-此 stack 對齊本地模型路線：`wiki-compile` + Ollama。若你要用 Codex 月訂閱做 wiki 編譯，請改用 `agent-compile` 或 Health GUI 的 Codex Agent 模式；該路線透過本機已登入的 `codex exec`，不使用 OpenAI API key，且不由此三支 LaunchAgent 自動管理。
+此 stack 對齊本地模型路線：`wiki-compile` + Ollama。若你要用 Codex 月訂閱做 wiki 編譯，請改用 `agent-compile` 或 Health GUI 的 Codex Agent 模式；該路線透過本機已登入的 `codex exec`，不使用 OpenAI API key，且不由此 LaunchAgent stack 自動管理。
 
 亦可經 **Health GUI**（Electron）執行相同的 install／uninstall 腳本與設定編輯，詳見根目錄 `README.md` 的 **Health GUI** 章節。
 
@@ -33,10 +32,8 @@
 | 變數 | 預設 | 說明 |
 |------|------|------|
 | `MLS_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama HTTP 基礎位址（就緒檢查會請求 `/api/tags`） |
-| `MLS_CHROMA_URL` | `http://127.0.0.1:8000` | Chroma HTTP 基礎位址（就緒檢查會請求 `/api/v2/heartbeat` 或 `/api/v1/heartbeat`） |
-| `MLS_WAIT_TIMEOUT_SEC` | `120` | 等待 Ollama＋Chroma 就緒的上限秒數 |
+| `MLS_WAIT_TIMEOUT_SEC` | `120` | 等待 Ollama 就緒的上限秒數 |
 | `MLS_WAIT_INTERVAL_SEC` | `2` | 輪詢間隔秒數 |
-| `CHROMA_HOST` / `CHROMA_PORT` | `127.0.0.1`／`8000` | 僅影響 **`run-chroma.sh`** 之 `chroma run` 參數 |
 
 ## 日誌
 
@@ -45,28 +42,26 @@ plist 將輸出導向（安裝後已由占位符替換為你的 `$HOME`）：
 | 服務 | 路徑 |
 |------|------|
 | Ollama | `~/Library/Logs/joplin-llm-wiki/ollama.log`、`ollama.err.log` |
-| Chroma | `~/Library/Logs/joplin-llm-wiki/chroma.log`、`chroma.err.log` |
 | sqlite-sync | `~/Library/Logs/joplin-llm-wiki/sqlite-sync.log`、`sqlite-sync.err.log` |
 
 `sqlite-sync` 每完成一輪排程，stdout 會出現與 CLI 相同之 **JSON summary**（可於 `sqlite-sync.log` 追蹤）。
 
 **升級自舊 repo／套件名時**：若你先前將日誌寫在 `~/Library/Logs/joplin-brain/`，新版本預設改為 **`~/Library/Logs/joplin-llm-wiki/`**；請重新執行 **`install-joplin-brain-stack.sh`** 以套用 plist 內新路徑（或自行複製／對齊 `StandardOutPath`）。
 
-若 **Chroma 或 Ollama 未在逾時內就緒**，`run-sqlite-sync.sh` 會在 **stderr** 印出**單行**錯誤並以**非零退出**（見 `sqlite-sync.err.log`），避免無窮等待。
+若 **Ollama 未在逾時內就緒**，`run-sqlite-sync.sh` 會在 **stderr** 印出**單行**錯誤並以**非零退出**（見 `sqlite-sync.err.log`），避免無窮等待。
 
 ### Activity Monitor／`ps` 里的工序名
 
-三支 plist 以 **`scripts/launchd/shims/`** 下的 **bash shim 腳本**（將引數轉交 `/bin/bash`）作為程式進入點，再載入對應的 `run-*.sh`，讓行程列表中的「指令」欄較易對應本專案堆疊（實際顯示仍依 macOS／shell 版本略有差異）。語意對應如下：
+plist 以 **`scripts/launchd/shims/`** 下的 **bash shim 腳本**（將引數轉交 `/bin/bash`）作為程式進入點，再載入對應的 `run-*.sh`，讓行程列表中的「指令」欄較易對應本專案堆疊（實際顯示仍依 macOS／shell 版本略有差異）。語意對應如下：
 
 | 顯示名稱（約） | 實際行為 |
 |----------------|----------|
 | `joplin-llm-wiki-ollama-serve` | 執行 **`ollama serve`** |
-| `joplin-llm-wiki-chroma-server` | 執行 **`pnpm exec chroma run …`**（本機 Chroma） |
-| `joplin-llm-wiki-sqlite-sync` | **輪詢 Ollama／Chroma 就緒**後執行 **`joplin-llm-wiki sqlite-sync`** |
+| `joplin-llm-wiki-sqlite-sync` | **輪詢 Ollama 就緒**後執行 **`joplin-llm-wiki sqlite-sync`** |
 
 wrapper 內對長駐子行程另使用 **`exec -a`** 將行程名與上列對齊（監視器裡看到的標籤可能仍依 runtime／系統版本略有差異）。
 
-**若你已裝過舊版 plist**：請再跑一次 **`install-joplin-brain-stack.sh`**，覆寫 `~/Library/LaunchAgents/` 內三份 plist 後 **`launchctl bootout`／`bootstrap`**，才會套用新工序名。
+**若你已裝過舊版 plist**：請再跑一次 **`install-joplin-brain-stack.sh`**，腳本會移除舊 Chroma plist 並重新載入 Ollama/sqlite-sync。
 
 ## 一鍵安裝
 
@@ -87,16 +82,16 @@ REPO_ROOT="$(pwd)" JOPLIN_LLMWIKI_CONFIG="/絕對路徑/你的.config.yaml" \
 
 安裝腳本會：
 
-1. 將三支範本 plist 寫入 `~/Library/LaunchAgents/com.joplin-brain.{ollama,chroma,sqlite-sync}.plist`
+1. 將範本 plist 寫入 `~/Library/LaunchAgents/com.joplin-brain.{ollama,sqlite-sync}.plist`
 2. 先對既有同名 job 執行 `bootout`（若存在），再依序 `launchctl bootstrap gui/$(id -u) …`
 
 ### 驗證載入
 
 ```bash
-launchctl print "gui/$(id -u)" | grep -E 'com\.joplin-brain\.(ollama|chroma|sqlite-sync)' || true
+launchctl print "gui/$(id -u)" | grep -E 'com\.joplin-brain\.(ollama|sqlite-sync)' || true
 ```
 
-（若你的系統之 `launchctl print` 輸出格式不同，請改以 Activity Monitor 或 `ps` 檢查 **`joplin-llm-wiki-ollama-serve`**、**`joplin-llm-wiki-chroma-server`**、**`joplin-llm-wiki-sqlite-sync`**（shell／pnpm／node／ollama 子行程另可依進程樹辨識）。）
+（若你的系統之 `launchctl print` 輸出格式不同，請改以 Activity Monitor 或 `ps` 檢查 **`joplin-llm-wiki-ollama-serve`**、**`joplin-llm-wiki-sqlite-sync`**（shell／pnpm／node／ollama 子行程另可依進程樹辨識）。）
 
 ## 解除安裝
 
@@ -104,7 +99,7 @@ launchctl print "gui/$(id -u)" | grep -E 'com\.joplin-brain\.(ollama|chroma|sqli
 ./scripts/launchd/uninstall-joplin-brain-stack.sh
 ```
 
-此動作**不會**刪除 Joplin profile、`database.sqlite`、`notes_root` 或 `data/chroma`。
+此動作**不會**刪除 Joplin profile、`database.sqlite`、`raw` 或 `wiki`。
 
 ## launchctl 版本差異
 
@@ -116,7 +111,7 @@ launchctl print "gui/$(id -u)" | grep -E 'com\.joplin-brain\.(ollama|chroma|sqli
 
 ## 精簡模式（僅 sqlite-sync）
 
-若你已用手動終端機或其他方式常駐 Ollama／Chroma，可只複製／載入 `com.joplin-brain.sqlite-sync.plist`（仍需正確 `REPO_ROOT`、`JOPLIN_LLMWIKI_CONFIG`（或相容之 `JOPLIN_BRAIN_CONFIG`）與日誌路徑）；若 Ollama／Chroma 未起，`run-sqlite-sync.sh` 會依 `MLS_WAIT_TIMEOUT_SEC` **逾時失敗**。
+若你已用手動終端機或其他方式常駐 Ollama，可只複製／載入 `com.joplin-brain.sqlite-sync.plist`（仍需正確 `REPO_ROOT`、`JOPLIN_LLMWIKI_CONFIG`（或相容之 `JOPLIN_BRAIN_CONFIG`）與日誌路徑）；若 Ollama 未起，`run-sqlite-sync.sh` 會依 `MLS_WAIT_TIMEOUT_SEC` **逾時失敗**。
 
 ## config 範例片段（sqlite-sync + 600 秒 + 典型 DB 路徑占位）
 
@@ -128,7 +123,6 @@ joplin_sqlite_sync:
   database_path: "/Users/你的使用者/.config/joplin-desktop/database.sqlite"
   reconcile_mode: mirror
   pipeline:
-    run_index: true
     run_wiki_compile: true
   schedule:
     every_seconds: 600

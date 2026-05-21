@@ -2,29 +2,22 @@ import path from "node:path";
 
 import { loadConfig } from "../config/load-config.js";
 import { probeOllama } from "./probes/ollama-probe.js";
-import { probeChroma } from "./probes/chroma-probe.js";
-import { persistParentHint } from "./probes/fs-hints.js";
 
 /**
  * @param {string} configPath
- * @param {{ fetch?: typeof fetch, chroma?: { ChromaStore?: typeof import('../vector/chroma-store.js').ChromaStore } }} [deps]
+ * @param {{ fetch?: typeof fetch }} [deps]
  */
 export async function buildHealthSnapshot(configPath, deps = {}) {
   const resolved = path.resolve(configPath);
   try {
     const cfg = await loadConfig(resolved);
-    const [ollama, chroma] = await Promise.all([
-      probeOllama(cfg, deps),
-      probeChroma(cfg, process.env, deps.chroma),
-    ]);
-    const filesystem = persistParentHint(cfg.chroma.persist_path);
+    const ollama = await probeOllama(cfg, deps);
     return {
       ok: true,
       configPathResolved: resolved,
-      notesRoot: cfg.notes_root,
+      rawRoot: cfg.raw,
+      wikiRoot: cfg.wiki,
       ollama,
-      chroma,
-      filesystem,
     };
   } catch (err) {
     const code = /** @type {Error & { code?: string }} */ (err).code;
