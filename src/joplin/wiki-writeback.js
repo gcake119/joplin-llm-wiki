@@ -40,19 +40,19 @@ export function summarizeWikiWritebackDry(cfg, wikiRootAbs, relPaths) {
   const topics = new Set(entries.map((e) => e.topic));
   return {
     writeback_would_write: entries.length,
-    writeback_would_create_notebooks: topics.size + (entries.length > 0 ? 1 : 0),
+    writeback_would_create_notebooks: topics.size + (entries.length > 0 ? 2 : 0),
     writeback_collision_count: collisions,
   };
 }
 
 /**
- * Dry-run summary for the full llm-knowledge-flow writeback tree:
+ * Dry-run summary for the on-demand llm-knowledge-flow writeback tree:
  * @llm-wiki/wiki, @llm-wiki/brainstorming, @llm-wiki/artifacts.
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs
  * @param {string[]} relPaths
- * @param {{ workflowRoot?: string }} [options]
+ * @param {{ workflowRoot?: string, workflowRelPaths?: string[] }} [options]
  */
 export function summarizeKnowledgeFlowWritebackDry(
   cfg,
@@ -62,7 +62,10 @@ export function summarizeKnowledgeFlowWritebackDry(
 ) {
   const base = summarizeWikiWritebackDry(cfg, wikiRootAbs, relPaths);
   if (!cfg.joplin_wiki_writeback.enabled) return base;
-  const workflow = readWorkflowMarkdownEntries(options.workflowRoot ?? process.cwd());
+  const workflow = readWorkflowMarkdownEntries(
+    options.workflowRoot ?? process.cwd(),
+    options.workflowRelPaths,
+  );
   return {
     writeback_would_write: base.writeback_would_write + workflow.entries.length,
     writeback_would_create_notebooks:
@@ -79,7 +82,7 @@ export function summarizeKnowledgeFlowWritebackDry(
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs
- * @param {string[]} relPaths relative paths under `wiki_root` touched this run
+ * @param {string[]} relPaths relative paths under `wiki` touched this run
  * @param {{ fetch?: typeof fetch, dryRun?: boolean }} [options]
  */
 export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {}) {
@@ -157,12 +160,14 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
 }
 
 /**
- * Write wiki, brainstorming, and artifacts markdown into the Joplin hierarchy.
+ * On-demand writeback for wiki, brainstorming, and artifacts markdown into the
+ * Joplin hierarchy. Compile flows call `runWikiWriteback` instead, so
+ * brainstorming/artifacts are not synchronized automatically.
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs
  * @param {string[]} wikiRelPaths
- * @param {{ fetch?: typeof fetch, dryRun?: boolean, workflowRoot?: string }} [options]
+ * @param {{ fetch?: typeof fetch, dryRun?: boolean, workflowRoot?: string, workflowRelPaths?: string[], artifactsProjectNotebookTitle?: string }} [options]
  */
 export async function runKnowledgeFlowWriteback(
   cfg,
@@ -185,13 +190,25 @@ export async function runKnowledgeFlowWriteback(
   }
 
   const wikiSummary = await runWikiWriteback(cfg, wikiRootAbs, wikiRelPaths, options);
-  const workflow = readWorkflowMarkdownEntries(options.workflowRoot ?? process.cwd());
+  const workflow = readWorkflowMarkdownEntries(
+    options.workflowRoot ?? process.cwd(),
+    options.workflowRelPaths,
+  );
   if (workflow.entries.length === 0) {
     return {
       ...wikiSummary,
       workflow_writeback_written: 0,
       workflow_writeback_notebooks_ensured: 0,
     };
+  }
+  const artifactsProjectTitle =
+    options.artifactsProjectNotebookTitle || wb.artifacts_project_notebook_title;
+  if (workflow.entries.some((e) => e.section === "artifacts") && !artifactsProjectTitle) {
+    const err = new Error(
+      "joplin_wiki_writeback.artifacts_project_notebook_title must be non-empty when writing artifacts",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
   }
 
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
@@ -202,15 +219,15 @@ export async function runKnowledgeFlowWriteback(
   let notebooksEnsured = 0;
   let written = 0;
   for (const e of workflow.entries) {
-    const sectionTitle =
-      e.section === "brainstorming" ?
-        wb.brainstorming_notebook_title
-      : wb.artifacts_notebook_title;
-    const folderId = await ensureNestedFolders(client, parentId, [
-      sectionTitle,
-      ...e.folderParts,
-    ]);
-    notebooksEnsured += 1 + e.folderParts.length;
+    const folderPath =
+      e.section === "brainstorming"
+        ? [wb.brainstorming_notebook_title, ...e.folderParts]
+        : [
+            wb.artifacts_notebook_title,
+            artifactsProjectTitle,
+          ];
+    const folderId = await ensureNestedFolders(client, parentId, folderPath);
+    notebooksEnsured += folderPath.length;
     await upsertNoteInTopic(client, folderId, e.noteTitle, e.body);
     written++;
   }
@@ -234,7 +251,6 @@ export async function runKnowledgeFlowWriteback(
  */
 function readWikiEntries(cfg, wikiRootAbs, relPaths, allowMissing) {
   const wb = cfg.joplin_wiki_writeback;
-  const topicKey = wb.topic_frontmatter_key;
   const noteTitleKey = wb.note_title_key;
   /** @type {{ rel: string, topic: string, noteTitle: string, body: string }[]} */
   const entries = [];
@@ -251,11 +267,7 @@ function readWikiEntries(cfg, wikiRootAbs, relPaths, allowMissing) {
     }
     const raw = fs.readFileSync(abs, "utf8");
     const { data, body } = parseWikiMarkdown(raw);
-    const topicRaw = data[topicKey];
-    let topic = "_uncategorized";
-    if (typeof topicRaw === "string" && topicRaw.trim()) {
-      topic = normalizeWikiWritebackTopic(topicRaw);
-    }
+    const topic = wikiSectionFromRel(rel);
     let noteTitle = path.basename(rel, ".md");
     const nt = data[noteTitleKey];
     if (typeof nt === "string" && nt.trim()) noteTitle = nt.trim();
@@ -281,12 +293,18 @@ function entryFromRelPathOnly(rel) {
   const norm = rel.replace(/\\/g, "/");
   const parts = norm.split("/").filter(Boolean);
   const title = path.basename(norm, ".md");
-  let topic = "_uncategorized";
-  if (parts.length > 1) {
-    topic = normalizeWikiWritebackTopic(parts[0]);
-  }
+  const topic = wikiSectionFromRel(norm);
   let noteTitle = title;
   return { rel, topic, noteTitle, body: "" };
+}
+
+/** @param {string} rel */
+function wikiSectionFromRel(rel) {
+  const section = rel.replace(/\\/g, "/").split("/").filter(Boolean)[0] ?? "";
+  if (section === "summaries" || section === "concepts" || section === "indexes") {
+    return section;
+  }
+  return "_uncategorized";
 }
 
 /**
@@ -389,7 +407,9 @@ function writePhaseFail(message) {
 /**
  * @param {string} workflowRoot
  */
-function readWorkflowMarkdownEntries(workflowRoot) {
+function readWorkflowMarkdownEntries(workflowRoot, relPathFilter = null) {
+  const allowed =
+    relPathFilter ? new Set(relPathFilter.map((p) => p.replace(/\\/g, "/"))) : null;
   /** @type {{ section: "brainstorming" | "artifacts", rel: string, folderParts: string[], noteTitle: string, body: string }[]} */
   const entries = [];
   for (const section of /** @type {const} */ (["brainstorming", "artifacts"])) {
@@ -397,9 +417,14 @@ function readWorkflowMarkdownEntries(workflowRoot) {
     if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) continue;
     for (const abs of discoverMarkdownFiles(root)) {
       const rel = path.relative(root, abs).replace(/\\/g, "/");
+      const workflowRel = `${section}/${rel}`;
+      if (allowed && !allowed.has(workflowRel)) continue;
       const parts = rel.split("/").filter(Boolean);
       const filename = parts.pop() ?? "untitled.md";
-      const folderParts = parts.map(normalizeWikiWritebackTopic);
+      const folderParts =
+        section === "brainstorming"
+          ? brainstormingFolderParts(parts)
+          : [];
       const raw = fs.readFileSync(abs, "utf8");
       const { data, body } = parseWikiMarkdownLenient(raw);
       const titleRaw = data.title;
@@ -421,6 +446,13 @@ function readWorkflowMarkdownEntries(workflowRoot) {
     else seen.add(k);
   }
   return { entries, collisions, folderPaths };
+}
+
+/** @param {string[]} parts */
+function brainstormingFolderParts(parts) {
+  const first = parts[0];
+  if (first === "chat" || first === "health") return [first];
+  return ["chat"];
 }
 
 /**

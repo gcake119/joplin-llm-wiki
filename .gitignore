@@ -1,10 +1,13 @@
 .spectra/
+.joplin-llm-wiki/
 openspec/.vector-search.db*
 node_modules/
 
 # joplin-brain runtime outputs (REQ-IDX-004 / Karpathy MVP)
 data/
 reports/
+wiki/
+raw/
 wiki_root/
 notes_root/
 brainstorming/*
@@ -32,3 +35,4 @@ config.yaml
 .agents/skills/spectra-ingest/SKILL.md
 .agents/skills/spectra-propose/SKILL.md
 AGENTS.md
+.pnpm-store/v11/index.db
