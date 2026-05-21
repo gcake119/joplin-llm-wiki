@@ -1,3 +1,7 @@
+# pnpm v11+ project settings. Registry/auth only → .npmrc
+strictDepBuilds: false
+
+# Allow native modules to run install/postinstall scripts (better-sqlite3, electron, …).
 allowBuilds:
   better-sqlite3: true
   electron: true

@@ -10,21 +10,13 @@
  */
 export async function runCommand(command, ctx) {
   switch (command) {
-    case "index": {
-      const { runIndex } = await import("./cmd-index.js");
-      return runIndex(ctx);
-    }
-    case "watch": {
-      const { runWatch } = await import("./cmd-watch.js");
-      return runWatch(ctx);
-    }
     case "wiki-compile": {
       const { runWikiCompile } = await import("./cmd-wiki-compile.js");
       return runWikiCompile(ctx);
     }
-    case "ask": {
-      const { runAsk } = await import("./cmd-ask.js");
-      return runAsk(ctx);
+    case "query": {
+      const { runQuery } = await import("./cmd-query.js");
+      return runQuery(ctx);
     }
     case "lint": {
       const { runLint } = await import("./cmd-lint.js");

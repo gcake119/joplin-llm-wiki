@@ -2,15 +2,6 @@
   "name": "joplin-llm-wiki",
   "version": "0.1.0",
   "type": "module",
-  "pnpm": {
-    "allowBuilds": {
-      "better-sqlite3": true,
-      "electron": true,
-      "onnxruntime-node": true,
-      "protobufjs": true,
-      "sharp": true
-    }
-  },
   "bin": {
     "joplin-llm-wiki": "bin/joplin-llm-wiki.js",
     "joplin-llm-wiki-health-gui": "bin/joplin-llm-wiki-health-gui.js"
@@ -24,9 +15,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@chroma-core/default-embed": "^0.1.9",
     "better-sqlite3": "11.8.1",
-    "chromadb": "^3.4.3",
     "fast-glob": "^3.3.3",
     "yaml": "^2.7.1"
   },

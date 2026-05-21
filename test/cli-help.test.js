@@ -15,10 +15,11 @@ test("joplin-llm-wiki --help exits 0", () => {
   assert.match(out, /joplin-llm-wiki/i);
 });
 
-test("wiki-compile --help mentions corpus-sweep", () => {
+test("wiki-compile --help mentions full-library default and batch fallback", () => {
   const out = execFileSync(process.execPath, [cli, "wiki-compile", "--help"], {
     encoding: "utf8",
     cwd: root,
   });
-  assert.match(out, /corpus-sweep/i);
+  assert.match(out, /defaults to a full-library corpus sweep/i);
+  assert.match(out, /--batch=true\|false/);
 });

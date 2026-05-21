@@ -35,6 +35,18 @@ test("unknown subcommand exits 1", () => {
 });
 
 test("known command --help exits 0", () => {
-  const out = run(["index", "--help"]);
-  assert.match(out, /index/i);
+  const out = run(["query", "--help"]);
+  assert.match(out, /query/i);
+});
+
+test("agent-compile help documents full-library default and batch fallback", () => {
+  const out = run(["agent-compile", "--help"]);
+  assert.match(out, /By default, scans every raw\/ source/);
+  assert.match(out, /--batch=true\|false/);
+  assert.match(out, /--full-library=true\|false/);
+});
+
+test("removed ask and index commands are unknown", () => {
+  assert.strictEqual(runThrows(["ask"])?.status, 1);
+  assert.strictEqual(runThrows(["index"])?.status, 1);
 });

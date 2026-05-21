@@ -23,10 +23,8 @@ export async function main(argv) {
   const rest = positionals.slice(1);
 
   const known = new Set([
-    "index",
-    "watch",
     "wiki-compile",
-    "ask",
+    "query",
     "lint",
     "sqlite-sync",
     "agent-compile",
@@ -65,13 +63,14 @@ export async function main(argv) {
       code === "SQLITE_OPEN_FAILED" ||
       code === "SQLITE_EXPORT_FAILED" ||
       code === "CODEX_CLI_UNAVAILABLE" ||
+      code === "CODEX_USAGE_LIMIT" ||
       code === "AGENT_COMPILE_FAILED" ||
       code === "CORPUS_SWEEP_STATE_IO"
     ) {
       emitErr(code, String(err.message ?? err));
       return 1;
     }
-    if (code === "OLLAMA_UNAVAILABLE" || code === "CHROMA_ERROR") {
+    if (code === "OLLAMA_UNAVAILABLE") {
       emitErr(code, String(err.message ?? err));
       return 2;
     }
@@ -136,18 +135,16 @@ function emitErr(error, message) {
 }
 
 function printGlobalHelp() {
-  console.log(`joplin-llm-wiki — local Karpathy-style wiki + RAG over Joplin markdown
+  console.log(`joplin-llm-wiki — local raw/wiki knowledge loop over Joplin markdown
 
 Usage:
   joplin-llm-wiki [options] <command> [command-options]
 
 Commands:
-  index          Index sources (and wiki when configured)
-  watch          Watch sources for changes
-  wiki-compile   Compile wiki pages under wiki_root
-  ask            Retrieval-augmented Q&A
-  lint           Karpathy lint (duplicates, orphans, contradictions, schema gaps)
-  sqlite-sync    Export Joplin SQLite to notes_root; optional index + wiki-compile (--export-only: export only)
+  wiki-compile   Compile wiki pages under wiki/
+  query          Answer from wiki/raw knowledge and stage optional captures
+  lint           Filesystem lint (wiki gaps, links, brainstorming follow-up)
+  sqlite-sync    Export Joplin SQLite to raw/; optional wiki-compile (--export-only: export only)
   agent-compile  Compile wiki via local Codex CLI agent workflow
 
 Global:
@@ -158,7 +155,7 @@ Common:
 
 Examples:
   pnpm exec joplin-llm-wiki --help
-  pnpm exec joplin-llm-wiki index --config config.yaml
+  pnpm exec joplin-llm-wiki query --config config.yaml "我的問題"
 `);
 }
 
@@ -173,11 +170,14 @@ Usage:
   joplin-llm-wiki wiki-compile --config <path> [options]
 
 Options:
-  --dry-run=true|false       Plan without writing wiki_root files (default: false)
-  --corpus-sweep=true|false  Enable wiki_ingest.corpus_auto_sweep for this invocation only (YAML corpus_auto_sweep.enabled=false otherwise applies defaults except activation)
+  --dry-run=true|false       Plan without writing wiki/ files (default: false)
+  --full-library=true|false  Full-library sweep is the default; false aliases --batch=true
+  --batch=true|false         Fallback: run one Ollama planning/writing batch instead of a full-library sweep
+  --corpus-sweep=false       Legacy alias for --batch=true
 
 Configuration notes:
-  Corpus sweep chains multiple planner digest windows with persisted offset state under wiki_root (see README).
+  wiki-compile defaults to a full-library corpus sweep. The 10-15 page single
+  batch is only the Ollama fallback mode.
 
 Run with a valid config file; see config.yaml.example.
 `);
@@ -191,9 +191,38 @@ Usage:
   joplin-llm-wiki agent-compile --config <path> [options]
 
 Options:
-  --dry-run=true|false       Print the Codex task prompt without running codex exec
+  --dry-run=true|false         Print the Codex task prompt without running codex exec
+  --full-library=true|false    Full-library scan is the default; false aliases --batch=true
+  --batch=true|false           Fallback: keep the 10-15 wiki-page batch limit
 
 Runs local Codex CLI non-interactively. Requires Codex CLI installed and logged in.
+By default, scans every raw/ source and requires per-source summaries plus indexes.
+`);
+    return;
+  }
+
+  if (command === "query") {
+    console.log(`query
+
+Usage:
+  joplin-llm-wiki query --config <path> [options] "<question>"
+  joplin-llm-wiki query --config <path> --confirm-capture <id> [options]
+
+Options:
+  --provider ollama|codex-agent   Answer with Ollama or local Codex CLI
+  --source-scope knowledge|wiki|raw
+                                  Default knowledge uses wiki/ first, then raw/
+  --capture=false|brainstorming|artifacts
+                                  Default lets the model suggest a pending capture
+  --file-back=false               Legacy alias for --capture=false
+  --show-capture <id>             Print a pending capture JSON
+  --confirm-capture <id>          Write a pending capture to brainstorming/ or artifacts/
+  --artifact-project <name>       Required for artifacts unless configured
+  --writeback-workflow=true       After confirmation, write the selected note to Joplin
+
+Query does not use RAG, embeddings, Chroma, or vector indexes. It reads
+filesystem Markdown directly and stages valuable Q&A as pending captures before
+writing formal notes.
 `);
     return;
   }
@@ -206,7 +235,7 @@ Usage:
 
 Options:
   --dry-run=true|false          Count exportable notes without writing files
-  --export-only=true|false      Export only; skip configured index/wiki pipeline
+  --export-only=true|false      Export only; skip configured wiki pipeline
   --every <seconds>             Run repeatedly at the given interval
   --select-notebooks=true       Interactive notebook picker; writes notebook_filter to config
   --run=true                    With --select-notebooks, run export after saving selection
