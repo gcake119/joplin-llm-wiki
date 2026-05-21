@@ -18,11 +18,12 @@ discuss? → propose → apply ⇄ ingest → archive
 
 ## joplin-llm-wiki（實作速記）
 
-- 本 repo 部分採用 **`gatelynch/llm-knowledge-base`** 四層知識流：`raw/` → `notes_root/`，`wiki/` → `wiki_root/`，`brainstorming/`／`artifacts/` 保留為探索與成品區；上游專案不是 runtime dependency。
-- Joplin notebook 匯出使用 **`notes_root/<joined-notebook-slug>/<safe-title>.md`**；巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。compiled wiki 對應 **`wiki_root/<joined-notebook-slug>/`**，`source_refs` 使用 nested source relative path。
+- 本 repo 部分採用 **`gatelynch/llm-knowledge-base`** 四層知識流：`raw/` → `raw/`，`wiki/` → `wiki/`，`brainstorming/`／`artifacts/` 保留為探索與成品區；上游專案不是 runtime dependency。
+- Joplin notebook 匯出使用 **`raw/<joined-notebook-slug>/<safe-title>.md`**；巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。compiled wiki 只能寫入 **`wiki/summaries/*.md`**、**`wiki/concepts/*.md`**、**`wiki/indexes/All-Sources.md`**、**`wiki/indexes/All-Concepts.md`**，三個分類底下不得建立子資料夾；`source_refs` 使用 `raw/` 下的相對路徑。
+- 查詢指令是 **`query`**，預設優先讀 `wiki/`，必要時補 `raw/`；Q&A 先建立 pending capture，確認後才寫 `brainstorming/chat/` 或 `artifacts/projects/<project>/`。`ask`、`index`、`watch`、RAG／Chroma／embedding vector 管線已移除。
 - 人可讀的知識管理輸出使用**繁體中文**。技術名詞、source path、filename 可保留原文。
-- 模型分流：本地預設是 **`wiki-compile` + Ollama**；Codex 月訂閱路線是 **`agent-compile` + 本機 `codex exec`**，不使用 OpenAI API key，也不等同 API 額度。OpenAI API provider 目前未實作。
-- `wiki-compile` 可觸發 **`joplin_wiki_writeback`**（預設開啟）；迷你測試用設定請見 `.cursor/rules/joplin-brain-config.mdc`。
+- 模型分流：本地預設是 **`wiki-compile` + Ollama**；Codex 月訂閱路線是 **`agent-compile` + 本機 `codex exec`**，不使用 OpenAI API key，也不等同 API 額度。兩條管路預設都掃完整個 `raw/` 筆記庫；`--batch=true` 才是 10-15 頁單批次 fallback。OpenAI API provider 目前未實作。
+- `wiki-compile` / `agent-compile` 可觸發 **`joplin_wiki_writeback`**（預設開啟）；compile 寫回只同步 `@llm-wiki/wiki/{summaries,concepts,indexes}`。`brainstorming` 與 `artifacts` 只在需要整理問答、健康報告或作品時按需寫回。迷你測試用設定請見 `.cursor/rules/joplin-brain-config.mdc`。
 - 本機小模型範例（`gemma4:e4b`、`corpus_digest_max_files: 40` 等）見 **`config.yaml.example`** 與 README「本機小模型」。
 
 <!-- SPECTRA:END -->

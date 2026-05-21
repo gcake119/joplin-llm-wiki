@@ -1,492 +1,105 @@
-# cli-rag Specification
+# cli-query Specification
 
 ## Purpose
 
-TBD - created by archiving change 'joplin-brain-mvp'. Update Purpose after archive.
+The `query` command answers questions from the local user knowledge base without
+RAG, embeddings, Chroma, or vector indexes. It reads Markdown from the
+filesystem, prioritizes compiled `wiki/` knowledge, may supplement from `raw/`
+source material, and stages valuable Q&A as confirmed captures.
 
 ## Requirements
 
-### Requirement: REQ-LOCAL-RAG Local inference only
+### Requirement: REQ-QUERY-001 Filesystem knowledge scope
 
-The system SHALL send chat and embedding requests only to `ollama.base_url`.
+The system SHALL default `query --source-scope` to `knowledge`.
 
-The system SHALL NOT call cloud LLM APIs in MVP.
+In `knowledge` scope, the system SHALL read `wiki/` first and MAY include `raw/`
+as original source evidence.
 
-#### Scenario: SCN-LOCAL-RAG-01 No third-party hosts
+The system SHALL support `--source-scope=wiki` and `--source-scope=raw` to
+restrict context assembly to one layer.
 
-- **WHEN** `ask` executes successfully
-- **THEN** all HTTP requests target only the configured `ollama.base_url` host
+The system SHALL NOT use RAG, embeddings, Chroma, vector databases, or vector
+indexes for query context.
 
+#### Scenario: SCN-QUERY-SCOPE-01 Default knowledge scope
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+- **WHEN** `query` runs with Markdown in both `wiki/` and `raw/`
+- **THEN** the prompt context includes wiki entries before raw entries
+- **AND** stdout `SOURCES` includes layer/path objects for included files
 
----
-### Requirement: REQ-RAG-001 Retrieval uses indexed vectors
+#### Scenario: SCN-QUERY-SCOPE-02 Wiki-only scope
 
-The system SHALL embed the user question with `ollama.embed_model`.
+- **WHEN** `query --source-scope=wiki` runs
+- **THEN** raw files do not enter the prompt context
 
-The system SHALL query Chroma for `rag.top_k` nearest chunks.
+#### Scenario: SCN-QUERY-SCOPE-03 Raw fallback
 
-#### Scenario: SCN-RAG-RETR Top_k respected
+- **WHEN** `wiki/` has no Markdown but `raw/` does
+- **THEN** default `query` can still answer from raw context
 
-- **WHEN** configuration sets `rag.top_k` to 3 and corpus has ≥5 chunks
-- **THEN** at most 3 distinct chunks feed the prompt construction step
+### Requirement: REQ-QUERY-002 Grounding prompt
 
-##### Example: bounded chunks
+The query prompt SHALL state that `wiki/` is the preferred compiled knowledge
+layer and `raw/` is uncompiled source evidence.
 
-| rag.top_k | Max chunks in prompt |
-|-----------|----------------------|
-| 3 | 3 |
-| 5 | 5 |
+The prompt SHALL require the model to disclose when it uses conversation-provided
+or external content that is not present in the knowledge context.
 
+The prompt SHALL require the model to report insufficient knowledge when neither
+`wiki/` nor `raw/` supports the answer.
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+#### Scenario: SCN-QUERY-PROMPT-01 No raw prohibition
 
----
-### Requirement: REQ-RAG-002 Grounded answer with citations
+- **WHEN** query prompt text is assembled
+- **THEN** it does not say that raw is forbidden
+- **AND** it explains the wiki-first, raw-supplement rule
 
-The system SHALL call Ollama chat (`POST /api/chat` preferred; `/api/generate` allowed if documented) using a prompt that includes retrieved chunk texts.
+### Requirement: REQ-QUERY-003 Pending capture before formal notes
 
-The system SHALL emit a machine-parseable SOURCES block on stdout containing JSON array of objects with key `relative_path` referencing contributing notes.
+The system SHALL enable capture suggestion by default.
 
-#### Scenario: SCN-RAG-01 Citations required
+The system SHALL allow explicit `--capture=brainstorming` and
+`--capture=artifacts` requests.
 
-- **WHEN** `pnpm exec joplin-brain ask` runs against indexed fixtures
-- **THEN** stdout includes SOURCES JSON listing at least one existing `relative_path`
+The system SHALL treat `--file-back=false` as a legacy alias for disabling
+capture.
 
+When a capture is suggested or requested, the system SHALL create a pending
+capture under `.joplin-llm-wiki/pending-captures/` and SHALL NOT write a formal
+`brainstorming/` or `artifacts/` note until confirmation.
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+Capture classification SHALL be exactly one of `brainstorming` or `artifacts`.
 
----
-### Requirement: REQ-RAG-003 Failure modes
+#### Scenario: SCN-QUERY-CAPTURE-01 Pending only
 
-The system SHALL exit 1 when the question string is empty after trimming.
+- **WHEN** the model returns `should_create: true`
+- **THEN** query writes a pending capture JSON
+- **AND** no formal note is written under `brainstorming/` or `artifacts/`
 
-The system SHALL exit 2 when Ollama chat or embeddings fail after retries.
+#### Scenario: SCN-QUERY-CAPTURE-02 Confirm brainstorming
 
-The system SHALL exit 1 when retrieval returns zero chunks.
+- **WHEN** `query --confirm-capture <id>` confirms a brainstorming capture
+- **THEN** the system writes a Markdown note under `brainstorming/chat/`
+- **AND** the note frontmatter records `knowledge_sources` with layer/path data
 
-#### Scenario: SCN-RAG-FAIL Empty question
+#### Scenario: SCN-QUERY-CAPTURE-03 Artifact project required
 
-- **WHEN** user passes an empty question argument
-- **THEN** CLI exits 1 and stderr explains empty query
+- **WHEN** `query --confirm-capture <id>` confirms an artifacts capture
+- **AND** no artifact project is provided by option or config
+- **THEN** the command exits 1 with `ARTIFACT_PROJECT_REQUIRED`
 
+### Requirement: REQ-QUERY-004 On-demand workflow writeback
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+When confirmation is run with `--writeback-workflow=true`, the system SHALL write
+back only the selected confirmed workflow note to Joplin.
 
----
-### Requirement: REQ-RAG-004 Performance targets
+The system SHALL map brainstorming captures to `@llm-wiki/brainstorming/chat`.
 
-The system SHALL default `rag.top_k` to 5.
+The system SHALL map artifacts captures to
+`@llm-wiki/artifacts/<project-notebook>`.
 
-The system SHALL complete `ask` end-to-end within 120 seconds for MVP fixture corpus on a developer machine when Ollama is responsive.
+#### Scenario: SCN-QUERY-WRITEBACK-01 Selected note only
 
-#### Scenario: SCN-RAG-PERF Fixtures complete
-
-- **WHEN** indexed fixture corpus (≤20 chunks) is queried
-- **THEN** the command finishes within 120 wall-clock seconds
-
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
-
----
-### Requirement: REQ-RAG-005 Offline localhost operation
-
-The system SHALL operate without wide-area network when `ollama.base_url` is reachable on localhost and indexed data is local.
-
-#### Scenario: SCN-OFFLINE-RAG WAN disconnected
-
-- **WHEN** external network interfaces are disabled except loopback services
-- **THEN** `ask` still returns an answer with citations for indexed content
-
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
-
----
-### Requirement: REQ-RAG-006 Wiki-first retrieval
-
-When `rag.retrieve_mode` is `wiki_first`, the system SHALL query `chroma.collection_wiki` first until `rag.top_k` chunks are collected or the collection is exhausted.
-
-The system SHALL then query `chroma.collection_sources` for remaining slots.
-
-#### Scenario: SCN-RAG-WIKI-FIRST Prefers wiki chunks
-
-- **WHEN** both collections contain relevant chunks and mode is `wiki_first`
-- **THEN** at least one chunk in the prompt has metadata `layer=wiki` when wiki collection returned hits for the query
-
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
-
----
-### Requirement: REQ-RAG-007 Sources-only and merged modes
-
-When `rag.retrieve_mode` is `sources_only`, the system SHALL query only `chroma.collection_sources`.
-
-When `rag.retrieve_mode` is `merged`, the system SHALL build the prompt from the union of hits ranked by similarity score with deduplication key `(layer,relative_path,chunk_index)`.
-
-#### Scenario: SCN-RAG-SOURCES-ONLY No wiki chunks
-
-- **WHEN** mode is `sources_only`
-- **THEN** no chunk with metadata `layer=wiki` enters the prompt
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+- **WHEN** a pending capture is confirmed with `--writeback-workflow=true`
+- **THEN** writeback receives only the newly confirmed workflow note path

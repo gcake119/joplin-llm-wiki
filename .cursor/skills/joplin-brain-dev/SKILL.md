@@ -14,14 +14,16 @@ metadata:
 
 ## 知識流與模型邊界
 
-- 本 repo 部分採用 `gatelynch/llm-knowledge-base` 的四層知識流：`raw/` 對應 `notes_root/`，`wiki/` 對應 `wiki_root/`，並保留 `brainstorming/` 與 `artifacts/`。
-- `notes_root/` 是 Joplin SQLite mirror/export 產物，預設視為唯讀證據；不要手動放入長期維護內容。
-- Notebook 篩選匯出使用 `notes_root/<joined-notebook-slug>/<safe-title>.md`。巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。
-- 編譯輸出使用 `wiki_root/<joined-notebook-slug>/`，wiki frontmatter 的 `domain` 對應 joined notebook slug，以利 Joplin writeback routing。
+- 本 repo 部分採用 `gatelynch/llm-knowledge-base` 的四層知識流：`raw/` 對應 `raw/`，`wiki/` 對應 `wiki/`，並保留 `brainstorming/` 與 `artifacts/`。
+- `raw/` 是 Joplin SQLite mirror/export 產物，預設視為唯讀證據；不要手動放入長期維護內容。
+- Notebook 篩選匯出使用 `raw/<joined-notebook-slug>/<safe-title>.md`。巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。
+- 編譯輸出只能使用 `wiki/summaries/*.md`、`wiki/concepts/*.md`、`wiki/indexes/All-Sources.md`、`wiki/indexes/All-Concepts.md`；三個分類底下不得建立子資料夾。`summaries` 是每個來源一份摘要，`concepts` 是概念條目並交叉引用 summaries/concepts，`indexes` 是固定入口。
+- `query` 預設使用 `--source-scope=knowledge`：優先讀 `wiki/`，必要時補 `raw/` 原始素材；可用 `--source-scope=wiki|raw` 明確限制。成功回答不直接 file-back，會先建立 pending capture，確認後才寫 `brainstorming/chat/` 或 `artifacts/projects/<project>/`。`ask`、`index`、`watch`、RAG／Chroma／embedding vector 管線已移除。
 - 人可讀的知識管理輸出使用繁體中文；技術名詞、source path、filename 可保留原文。
 - 模型分流：
   - 本地預設是 `wiki-compile` + Ollama。
   - Codex 月訂閱路線是 `agent-compile` + 本機已登入的 `codex exec`，不使用 OpenAI API key，也不等同 API 額度。
+  - 兩條管路預設都掃完整個 `raw/` 筆記庫；`--batch=true` 才是 10-15 頁單批次 fallback。
   - OpenAI API provider 目前未實作。
 
 ## 本機小模型（`config.yaml.example` 對齊值）
@@ -40,10 +42,9 @@ wiki_ingest:
     max_windows_per_invocation: 2
     step_files: 40
     advance_state_on_dry_run: false
-    run_until_cycle_complete: false
+    run_until_cycle_complete: true
     max_total_windows_per_invocation: 500
 ollama:
-  embed_model: bge-m3:latest
   chat_model: gemma4:e4b
 ```
 
@@ -61,7 +62,7 @@ joplin_wiki_writeback:
   enabled: false
 ```
 
-- 需模擬寫回：`runWikiWriteback(..., { fetch })` 傳入 mock **`fetch`**（見 `test/joplin-wiki-writeback.test.js`）。**index** 在寫回開啟時會先做 **`runJoplinDataApiPreflight`**（見 `test/joplin-cli.test.js` / `test/integration-index.test.js` 慣例）。
+- 需模擬寫回：`runWikiWriteback(..., { fetch })` 傳入 mock **`fetch`**（見 `test/joplin-wiki-writeback.test.js`）。compile 寫回啟用時需提供 `joplin_data_api.token`；wiki 寫回固定到 `@llm-wiki/wiki/{summaries,concepts,indexes}`。`brainstorming` 與 `artifacts` 只在需要整理問答、健康報告或作品時按需寫回；artifacts 寫回才需要 `joplin_wiki_writeback.artifacts_project_notebook_title`。
 
 ## 模組位置
 
@@ -74,6 +75,7 @@ joplin_wiki_writeback:
 | 寫回筆記本樹 + upsert | `src/joplin/wiki-writeback.js` |
 | 編譯編排（含寫回觸發） | `src/wiki/wiki-compiler.js`；CLI 薄封裝 `src/commands/cmd-wiki-compile.js` |
 | Codex Agent 編譯 | `src/commands/cmd-agent-compile.js` |
+| Wiki/raw filesystem query + pending capture | `src/commands/cmd-query.js` |
 | 錯誤碼 | `JOPLIN_DATA_API_FAILED`、`JOPLIN_DATA_API_WRITE_FAILED`（`src/cli.js`；仍相容舊字串 `JOPLIN_CLI_*`） |
 
 ## 規格真相來源
