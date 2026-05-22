@@ -120,4 +120,6 @@ joplin_sqlite_sync:
     # Legacy compatibility: if compile_mode is omitted, run_wiki_compile true => local, false => off.
     # run_wiki_compile: true
   schedule:
+    # null: one-shot sqlite-sync. Set seconds (e.g. 600) for in-process polling.
+    # This is polling, not a filesystem watcher.
     every_seconds: null

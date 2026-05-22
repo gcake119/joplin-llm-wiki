@@ -74,6 +74,8 @@ joplin_sqlite_sync:
   database_path: "/ABS/PATH/database.sqlite"
   pipeline:
     compile_mode: local # local | agent | off
+  schedule:
+    every_seconds: 600 # null 表示單輪執行；設秒數才會常駐輪詢
 ```
 
 - `local`：偵測到 raw 新增、更新或刪除後執行 `wiki-compile`。
@@ -83,6 +85,8 @@ joplin_sqlite_sync:
 相容舊設定：若省略 `compile_mode`，`pipeline.run_wiki_compile: true` 視為 `local`，`false` 視為 `off`。狀態檔預設寫在 config 同目錄下的 `.joplin-llm-wiki/sqlite-sync-state.json`，不放在 `raw/`，避免 `reconcile_mode: mirror` 清理。
 
 第一次非 dry-run 同步只建立 baseline，不觸發編譯；之後以 raw-relative path、`joplin_note_id` 與 Markdown 內容 SHA-256 判斷變更。`--export-only` 仍會匯出並更新狀態但不編譯；`--snapshot-only` 只掃現有 `raw/` 建立 baseline，不開 SQLite、不刪檔、不編譯，適合 `raw/` 已有資料時接上自動變更偵測。
+
+定時檢查不是檔案系統 watcher。要自動週期檢查 SQLite/raw snapshot，必須讓 `sqlite-sync` 以常駐輪詢或外部排程執行：設定 `joplin_sqlite_sync.schedule.every_seconds`、CLI 使用 `--every <seconds>`，或由 launchd/cron 定期啟動。若 `every_seconds: null` 且沒有 `--every`，`sqlite-sync` 只跑一輪後結束。
 
 ## Joplin Writeback
 
