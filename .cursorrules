@@ -21,6 +21,7 @@ discuss? → propose → apply ⇄ ingest → archive
 - 本 repo 部分採用 **`gatelynch/llm-knowledge-base`** 四層知識流：`raw/` → `raw/`，`wiki/` → `wiki/`，`brainstorming/`／`artifacts/` 保留為探索與成品區；上游專案不是 runtime dependency。
 - Joplin notebook 匯出使用 **`raw/<joined-notebook-slug>/<safe-title>.md`**；巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。compiled wiki 只能寫入 **`wiki/summaries/*.md`**、**`wiki/concepts/*.md`**、**`wiki/indexes/All-Sources.md`**、**`wiki/indexes/All-Concepts.md`**，三個分類底下不得建立子資料夾；`source_refs` 使用 `raw/` 下的相對路徑。
 - `sqlite-sync` 正常模式匯出後會比對 raw snapshot，只在 raw 變更時依 **`joplin_sqlite_sync.pipeline.compile_mode: local|agent|off`** 觸發 `wiki-compile`、`agent-compile` 或不編譯。第一次非 dry-run 只建立 baseline；`--export-only` 更新 raw/state 但不編譯；`--snapshot-only` 只從既有 `raw/` 建 baseline，不開 SQLite、不刪檔、不編譯。
+- `sqlite-sync` 定時檢查是輪詢，不是檔案 watcher。常駐輪詢用 `joplin_sqlite_sync.schedule.every_seconds` 或 `--every <seconds>`；若由 launchd/cron 重複啟動單輪命令，保持 `every_seconds: null`，避免雙重排程。
 - 查詢指令是 **`query`**，預設優先讀 `wiki/`，必要時補 `raw/`；Q&A 先建立 pending capture，確認後才寫 `brainstorming/chat/` 或 `artifacts/projects/<project>/`。`ask`、`index`、`watch`、RAG／Chroma／embedding vector 管線已移除。
 - 人可讀的知識管理輸出使用**繁體中文**。技術名詞、source path、filename 可保留原文。
 - 模型分流：本地預設是 **`wiki-compile` + Ollama**；Codex 月訂閱路線是 **`agent-compile` + 本機 `codex exec`**，不使用 OpenAI API key，也不等同 API 額度。兩條管路預設都掃完整個 `raw/` 筆記庫；`--batch=true` 才是 10-15 頁單批次 fallback。OpenAI API provider 目前未實作。

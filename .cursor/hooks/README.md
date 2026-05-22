@@ -26,6 +26,7 @@
 - **資料流基準**：`gatelynch/llm-knowledge-base` 只作為四層 workflow 參考。此 repo 的 `raw/` 是 Joplin SQLite 匯出的來源層；compiled wiki 只能落在 `wiki/summaries/*.md`、`wiki/concepts/*.md`、`wiki/indexes/All-Sources.md`、`wiki/indexes/All-Concepts.md`，不得在這三個目錄底下建立子資料夾。
 - **模型基準**：本地路線是 `wiki-compile` + Ollama；Codex 月訂閱路線是 `agent-compile` + 本機 `codex exec`，不使用 OpenAI API key。兩條管路預設都掃完整個 `raw/`；`--batch=true` 才是 10-15 頁單批次 fallback。
 - **SQLite sync 基準**：正常 `sqlite-sync` 以 snapshot 判斷 raw 變更，依 `joplin_sqlite_sync.pipeline.compile_mode: local|agent|off` 決定觸發 `wiki-compile`、`agent-compile` 或不編譯。首次非 dry-run 只建 baseline；`--snapshot-only` 只建立既有 `raw/` baseline。
+- **排程基準**：`sqlite-sync` 自動檢查是輪詢，不是 watcher。修改 launchd/cron/docs 時要明確區分：`schedule.every_seconds` / `--every` 是行程內常駐輪詢；cron 或 plist `StartInterval` 是外部重複啟動單輪命令。不要同時啟用兩層排程。
 - **Health GUI 基準**：主要 CLI workflow 應維持可從固定 tab 進入：Health、Config、Notebooks、Pipeline、Query、Lint、LaunchAgent。不得用 generic command runner 取代 Query/Lint/snapshot-only 的固定 IPC handler。
 - **Query / Capture**：`query` 預設優先讀 `wiki/`，必要時補 `raw/`；Q&A 先進 pending capture，確認後才寫 `brainstorming/chat/` 或 `artifacts/projects/<project>/`。`ask`、`index`、`watch`、RAG／Chroma／embedding vector 管線已移除。
 - **Joplin wiki 寫回**依 **本機 Data API**（Web Clipper token）；舊版「PATH 裡要有 `joplin` CLI」敘述已廢止。compile 寫回只同步 `@llm-wiki/wiki/{summaries,concepts,indexes}`；`brainstorming` 與 `artifacts` 只在需要整理問答、健康報告或作品時按需寫回。排程／無頭環境若要跳過寫回，設定檔使用 `joplin_wiki_writeback.enabled: false` 或僅 `--dry-run`（詳見 `README.md`、`docs/scheduling-examples.md`）。
