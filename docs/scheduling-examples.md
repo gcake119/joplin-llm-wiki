@@ -4,11 +4,16 @@
 
 > **模型選擇**：`wiki-compile` 是本地 Ollama 路線；`agent-compile` 是本機已登入 `codex exec` 的 Codex Agent 路線，不使用 OpenAI API key，也不等同 API 額度。兩條管路預設都會掃完整個 `raw/` 筆記庫；`--batch=true` 才是 10-15 頁單批次 fallback。`sqlite-sync` 的自動編譯由 `joplin_sqlite_sync.pipeline.compile_mode: local|agent|off` 決定：`local` 觸發 `wiki-compile`，`agent` 觸發 `agent-compile`，`off` 僅同步 raw。兩者都應維持 `raw/` → `wiki/summaries|concepts|indexes` 的資料流。
 
+> **定時語意**：這不是檔案系統 watcher。每次 `sqlite-sync` 執行時才會匯出 SQLite、比對 raw snapshot，並依 `compile_mode` 決定是否編譯。可用 cron/launchd 反覆啟動單輪命令，也可在 config 設 `joplin_sqlite_sync.schedule.every_seconds` 或 CLI 傳 `--every <seconds>` 讓同一個行程常駐輪詢。
+
 以下假設儲存庫在 `/ABS/PATH/TO/joplin-llm-wiki`，且已在該目錄執行過 `pnpm install`。
 
 ```cron
 # 每 30 分鐘從 Joplin SQLite 匯出 selected notebooks；若 raw 有變更，依 compile_mode 自動編譯
 */30 * * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki sqlite-sync --config ./my-karpathy.config.yaml >> ~/logs/joplin-llm-wiki-sqlite-sync.log 2>&1
+
+# 單一常駐行程每 600 秒輪詢一次；適合手動測試，不一定比 launchd/cron 更好管理
+@reboot cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki sqlite-sync --config ./my-karpathy.config.yaml --every 600 >> ~/logs/joplin-llm-wiki-sqlite-sync-loop.log 2>&1
 
 # 只刷新 raw，不觸發編譯，但仍更新 snapshot state
 */30 * * * * cd /ABS/PATH/TO/joplin-llm-wiki && pnpm exec joplin-llm-wiki sqlite-sync --config ./my-karpathy.config.yaml --export-only >> ~/logs/joplin-llm-wiki-sqlite-export.log 2>&1
