@@ -19,7 +19,7 @@ function el(id) {
 
 /**
  * @param {typeof window.jbHealth} jbApi
- * @param {"init" | "corpus"} mode
+ * @param {"init" | "corpus" | "snapshot"} mode
  */
 function bindPipelineProgressUi(jbApi, mode) {
   const wrap = document.getElementById("pipeline-progress-wrap");
@@ -52,7 +52,9 @@ function bindPipelineProgressUi(jbApi, mode) {
           { id: "sqlite", text: "SQLite 匯出（若需要）" },
           { id: "wiki", text: compileText },
         ]
-      : [{ id: "wiki", text: compileText }];
+      : mode === "snapshot"
+        ? [{ id: "sqlite", text: "raw 快照" }]
+        : [{ id: "wiki", text: compileText }];
 
   /** @type {Record<string, HTMLLIElement>} */
   const liById = {};
@@ -568,6 +570,7 @@ async function init() {
 
   function setPipelineButtonsDisabled(disabled) {
     /** @type {HTMLButtonElement} */ (el("btn-run-init")).disabled = disabled;
+    /** @type {HTMLButtonElement} */ (el("btn-run-snapshot")).disabled = disabled;
     /** @type {HTMLButtonElement} */ (el("btn-run-corpus")).disabled = disabled;
   }
 
@@ -581,11 +584,16 @@ async function init() {
     mode === "agent"
       ? "將執行 agent-compile 全庫掃描（不會自動匯出 SQLite；可能耗時數分鐘）。此模式需要本機已登入的 codex exec，會讀取 raw 並寫入 wiki。若 raw 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。確定執行？"
       : "將執行 wiki-compile 全庫掃描（不會自動匯出 SQLite；可能耗時數分鐘）。若 raw 尚無 .md，請改用「初始化」按鈕或先手動 sqlite-sync。若設定啟用 Joplin wiki 寫回，wiki-compile 會經本機 Data API 更新 @llm-wiki/wiki。確定執行？";
+  const snapshotConfirmText =
+    "將從現有 raw Markdown 建立 sqlite-sync 快照基準，不匯出 SQLite、不刪除 raw、不編譯 wiki。下一次 sqlite-sync 會以此基準判斷新增/更新/刪除。確定執行？";
   const runInit = createSingleFlight(() =>
     jb.runInitPipeline({ confirmed: true, compileMode: selectedCompileMode() }),
   );
   const runCorpus = createSingleFlight(() =>
     jb.runCorpusPipeline({ confirmed: true, compileMode: selectedCompileMode() }),
+  );
+  const runSnapshot = createSingleFlight(() =>
+    jb.runSnapshotPipeline({ confirmed: true }),
   );
 
   el("btn-run-init").addEventListener("click", async () => {
@@ -675,6 +683,128 @@ async function init() {
     } finally {
       tearProgress();
       setPipelineButtonsDisabled(false);
+    }
+  });
+
+  el("btn-run-snapshot").addEventListener("click", async () => {
+    if (!confirm(snapshotConfirmText)) return;
+    const st = el("corpus-status");
+    let tearProgress = () => {};
+    st.textContent = "建立 raw 快照中…";
+    setPipelineButtonsDisabled(true);
+    try {
+      tearProgress = bindPipelineProgressUi(jb, "snapshot");
+      const r = await runSnapshot();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪管線尚在進行）";
+        return;
+      }
+      const res = r.result;
+      appendPipelineLog(res, "snapshot-only");
+      st.textContent =
+        res && typeof res === "object" && res.ok === true
+          ? "raw 快照已建立。"
+          : `建立快照結束：${/** @type {{ code?: string }} */ (res).code ?? "錯誤"}（詳見下方日誌）`;
+    } catch (e) {
+      appendPipelineLog(
+        {
+          ok: false,
+          code: "EXCEPTION",
+          message: String(e),
+          sqliteSync: {
+            exitCode: null,
+            stdoutTail: "",
+            stderrTail: "",
+            skipped: false,
+          },
+        },
+        "snapshot-only",
+      );
+      st.textContent = "執行時發生例外（見日誌）";
+    } finally {
+      tearProgress();
+      setPipelineButtonsDisabled(false);
+    }
+  });
+
+  function appendCommandLog(targetId, title, res, phaseKey) {
+    const pre = el(targetId);
+    const rec = /** @type {{ ok?: boolean, code?: string, message?: string }} */ (res);
+    const phase =
+      res && typeof res === "object" && res !== null && phaseKey in res
+        ? /** @type {{ exitCode?: number | null, stdoutTail?: string, stderrTail?: string }} */ (
+            /** @type {Record<string, unknown>} */ (res)[phaseKey]
+          )
+        : {};
+    const chunk = `\n--- ${title} ---\nok=${rec.ok} code=${rec.code ?? ""}${rec.message ? `\nmessage: ${rec.message}` : ""}\nexit=${phase.exitCode}\nstdout (tail):\n${phase.stdoutTail ?? ""}\nstderr (tail):\n${phase.stderrTail ?? ""}\n`;
+    pre.textContent = (pre.textContent + chunk).slice(-12000);
+  }
+
+  const runQuery = createSingleFlight(() => {
+    const scope = /** @type {HTMLSelectElement} */ (el("query-source-scope")).value;
+    const question = /** @type {HTMLTextAreaElement} */ (el("query-question")).value;
+    return jb.runQuery({ question, sourceScope: scope });
+  });
+  const runQueryCapture = createSingleFlight(() => {
+    const confirmCapture = /** @type {HTMLInputElement} */ (el("query-capture-id")).value;
+    return jb.runQuery({ confirmCapture });
+  });
+  const runLint = createSingleFlight(() => jb.runLint({}));
+
+  el("btn-run-query").addEventListener("click", async () => {
+    const st = el("query-status");
+    st.textContent = "查詢中…";
+    try {
+      const r = await runQuery();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪查詢尚在進行）";
+        return;
+      }
+      appendCommandLog("query-log", "query", r.result, "query");
+      st.textContent =
+        r.result && typeof r.result === "object" && r.result.ok === true
+          ? "查詢完成。"
+          : `查詢失敗：${/** @type {{ code?: string }} */ (r.result).code ?? "錯誤"}`;
+    } catch (e) {
+      st.textContent = `查詢例外：${String(e)}`;
+    }
+  });
+
+  el("btn-confirm-query-capture").addEventListener("click", async () => {
+    const st = el("query-status");
+    st.textContent = "確認 capture 中…";
+    try {
+      const r = await runQueryCapture();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪查詢尚在進行）";
+        return;
+      }
+      appendCommandLog("query-log", "confirm-capture", r.result, "query");
+      st.textContent =
+        r.result && typeof r.result === "object" && r.result.ok === true
+          ? "capture 已確認。"
+          : `確認失敗：${/** @type {{ code?: string }} */ (r.result).code ?? "錯誤"}`;
+    } catch (e) {
+      st.textContent = `確認例外：${String(e)}`;
+    }
+  });
+
+  el("btn-run-lint").addEventListener("click", async () => {
+    const st = el("lint-status");
+    st.textContent = "檢查中…";
+    try {
+      const r = await runLint();
+      if (r.skipped) {
+        st.textContent = "略過（上一輪檢查尚在進行）";
+        return;
+      }
+      appendCommandLog("lint-log", "lint", r.result, "lint");
+      st.textContent =
+        r.result && typeof r.result === "object" && r.result.ok === true
+          ? "檢查完成。"
+          : `檢查失敗：${/** @type {{ code?: string }} */ (r.result).code ?? "錯誤"}`;
+    } catch (e) {
+      st.textContent = `檢查例外：${String(e)}`;
     }
   });
 

@@ -35,13 +35,19 @@
         margin-top: 6px;
         color: #444;
       }
-      input[type="text"] {
+      input[type="text"],
+      textarea,
+      select {
         width: 100%;
         box-sizing: border-box;
         padding: 6px 8px;
         margin-top: 2px;
         border: 1px solid #ccc;
         border-radius: 4px;
+      }
+      textarea {
+        min-height: 84px;
+        resize: vertical;
       }
       .row {
         display: flex;
@@ -212,6 +218,8 @@
       <button type="button" class="tab-btn" data-tab="config">設定</button>
       <button type="button" class="tab-btn" data-tab="notebooks">筆記本</button>
       <button type="button" class="tab-btn" data-tab="pipeline">管線</button>
+      <button type="button" class="tab-btn" data-tab="query">查詢</button>
+      <button type="button" class="tab-btn" data-tab="lint">檢查</button>
       <button type="button" class="tab-btn" data-tab="launchd">LaunchAgent</button>
     </nav>
 
@@ -290,6 +298,7 @@
         <button type="button" class="primary" id="btn-run-init">
           初始化（匯出→Wiki）
         </button>
+        <button type="button" id="btn-run-snapshot">僅建立 raw 快照</button>
         <button type="button" id="btn-run-corpus">僅編譯 Wiki</button>
         <span class="muted" id="corpus-status"></span>
       </div>
@@ -301,6 +310,40 @@
         <pre id="pipeline-progress-live"></pre>
       </div>
       <pre id="corpus-log"></pre>
+    </section>
+
+    <section class="tab-panel hidden" data-panel="query">
+      <h2>Query</h2>
+      <label>來源範圍
+        <select id="query-source-scope">
+          <option value="knowledge">knowledge（wiki 優先，必要時補 raw）</option>
+          <option value="wiki">wiki</option>
+          <option value="raw">raw</option>
+        </select>
+      </label>
+      <label>問題
+        <textarea id="query-question"></textarea>
+      </label>
+      <div class="row" style="margin-top: 10px">
+        <button type="button" class="primary" id="btn-run-query">查詢</button>
+        <span class="muted" id="query-status"></span>
+      </div>
+      <label>確認 capture id
+        <input type="text" id="query-capture-id" />
+      </label>
+      <div class="row" style="margin-top: 10px">
+        <button type="button" id="btn-confirm-query-capture">確認寫入 capture</button>
+      </div>
+      <pre id="query-log"></pre>
+    </section>
+
+    <section class="tab-panel hidden" data-panel="lint">
+      <h2>Lint</h2>
+      <div class="row">
+        <button type="button" class="primary" id="btn-run-lint">執行檢查</button>
+        <span class="muted" id="lint-status"></span>
+      </div>
+      <pre id="lint-log"></pre>
     </section>
 
     <section class="tab-panel hidden" data-panel="launchd">

@@ -26,6 +26,7 @@
 
 ```bash
 pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only
+pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --snapshot-only
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --batch=true
@@ -62,6 +63,26 @@ ollama:
 ```
 
 舊鍵 `notes_root`、`notes_glob`、`wiki_root`、`wiki.glob`、`ollama.embed_model`、`ollama.embed_batch_size`、`chroma`、`rag`、`watch`、`chunk`、`joplin_sqlite_sync.pipeline.run_index` 會被 `loadConfig` 以 `CONFIG_INVALID` 拒絕。Health GUI 會以 repair mode 載入舊 config，按儲存後移除這些 legacy 欄位。預設資料夾 `raw/` 與 `wiki/` 已列入 `.gitignore`。
+
+## SQLite Sync Change Gate
+
+`sqlite-sync` 可在每次匯出後偵測 `raw/` 是否有實質變更，再依設定同步 wiki 層：
+
+```yaml
+joplin_sqlite_sync:
+  enabled: true
+  database_path: "/ABS/PATH/database.sqlite"
+  pipeline:
+    compile_mode: local # local | agent | off
+```
+
+- `local`：偵測到 raw 新增、更新或刪除後執行 `wiki-compile`。
+- `agent`：偵測到 raw 變更後執行 `agent-compile`，走本機已登入的 `codex exec`。
+- `off`：只匯出與更新快照狀態，不自動編譯。
+
+相容舊設定：若省略 `compile_mode`，`pipeline.run_wiki_compile: true` 視為 `local`，`false` 視為 `off`。狀態檔預設寫在 config 同目錄下的 `.joplin-llm-wiki/sqlite-sync-state.json`，不放在 `raw/`，避免 `reconcile_mode: mirror` 清理。
+
+第一次非 dry-run 同步只建立 baseline，不觸發編譯；之後以 raw-relative path、`joplin_note_id` 與 Markdown 內容 SHA-256 判斷變更。`--export-only` 仍會匯出並更新狀態但不編譯；`--snapshot-only` 只掃現有 `raw/` 建立 baseline，不開 SQLite、不刪檔、不編譯，適合 `raw/` 已有資料時接上自動變更偵測。
 
 ## Joplin Writeback
 

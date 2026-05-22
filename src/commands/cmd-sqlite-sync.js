@@ -10,14 +10,29 @@ import {
 } from "../joplin/sqlite/exporter.js";
 import { listNotebooksFromSqlite } from "../joplin/sqlite/notebooks.js";
 import { runWikiCompile } from "./cmd-wiki-compile.js";
+import { discoverMarkdown } from "../fs/note-discovery.js";
+import {
+  buildSnapshotFromMarkdown,
+  compareSnapshots,
+  readSnapshotState,
+  writeSnapshotStateAtomic,
+} from "../joplin/sqlite/sync-state.js";
+import { runAgentCompile } from "./cmd-agent-compile.js";
 
 const defaultDeps = {
   loadConfig,
   exportNotesFromSqlite,
   openReadonlyDatabase,
   listNotebooksFromSqlite,
+  discoverMarkdown,
+  buildSnapshotFromMarkdown,
+  compareSnapshots,
+  readSnapshotState,
+  writeSnapshotStateAtomic,
   /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
   runWikiCompile: (ctx) => runWikiCompile(ctx),
+  /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
+  runAgentCompile: (ctx) => runAgentCompile(ctx),
 };
 
 /**
@@ -30,9 +45,11 @@ const defaultDeps = {
  * @returns {Promise<number>}
  */
 export async function runSqliteSync(ctx, deps = defaultDeps) {
+  deps = { ...defaultDeps, ...deps };
   let cfg = await deps.loadConfig(ctx.configPath);
   let sync = cfg.joplin_sqlite_sync;
   const exportOnlyCli = ctx.opts.get("export-only") === "true";
+  const snapshotOnlyCli = ctx.opts.get("snapshot-only") === "true";
   const selectNotebooks = ctx.opts.get("select-notebooks") === "true";
   const listNotebooksJson = ctx.opts.get("list-notebooks-json") === "true";
   if (listNotebooksJson) {
@@ -47,6 +64,11 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
     }
     cfg = await deps.loadConfig(ctx.configPath);
     sync = cfg.joplin_sqlite_sync;
+  }
+  if (snapshotOnlyCli) {
+    const summary = await runSnapshotOnly(ctx, cfg, deps);
+    console.log(JSON.stringify({ cycle: 1, ...summary }));
+    return 0;
   }
   if (!sync.enabled) {
     console.log(
@@ -108,6 +130,43 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
 }
 
 /**
+ * @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {typeof defaultDeps} deps
+ */
+async function runSnapshotOnly(ctx, cfg, deps) {
+  const rawRoot = path.resolve(cfg.raw);
+  const files = await deps.discoverMarkdown(rawRoot, cfg.raw_glob);
+  if (files.length === 0) {
+    const err = new Error("NO_SOURCE_MARKDOWN: raw contains no matching markdown");
+    /** @type {Error & { code?: string }} */ (err).code = "NO_SOURCE_MARKDOWN";
+    throw err;
+  }
+  const snapshot = deps.buildSnapshotFromMarkdown(rawRoot, files);
+  deps.writeSnapshotStateAtomic(resolveSqliteSyncStatePath(ctx.configPath), snapshot);
+  return {
+    exported_notes: 0,
+    written_files: 0,
+    skipped_notes: [],
+    deleted_files: 0,
+    duration_ms: 0,
+    raw_changed: false,
+    change_detection: "snapshot_created",
+    changed_files: { added: files.length, updated: 0, deleted: 0 },
+    compile_mode: cfg.joplin_sqlite_sync.pipeline.compile_mode,
+    compile_triggered: false,
+    snapshot_only: true,
+  };
+}
+
+/**
+ * @param {string} configPath
+ */
+function resolveSqliteSyncStatePath(configPath) {
+  return path.join(path.dirname(path.resolve(configPath)), ".joplin-llm-wiki", "sqlite-sync-state.json");
+}
+
+/**
  * @param {{
  *   configPath: string,
  *   argv: string[],
@@ -129,16 +188,43 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     dryRun,
     notebookFilter: sync.notebook_filter,
   });
+  const statePath = resolveSqliteSyncStatePath(ctx.configPath);
+  const currentFiles = await deps.discoverMarkdown(path.resolve(sync.export_root), cfg.raw_glob);
+  const currentSnapshot = deps.buildSnapshotFromMarkdown(
+    path.resolve(sync.export_root),
+    currentFiles,
+  );
+  const previousRead = deps.readSnapshotState(statePath);
+  if (previousRead.warning) {
+    console.error(JSON.stringify({ warning: previousRead.warning.code, message: previousRead.warning.message }));
+  }
+  const comparison = deps.compareSnapshots(previousRead.snapshot, currentSnapshot, { dryRun });
+  const compileMode = sync.pipeline.compile_mode;
+  const baseSummary = {
+    ...summary,
+    ...comparison,
+    compile_mode: compileMode,
+    compile_triggered: false,
+  };
   if (dryRun) {
-    return { ...summary, dry_run: true };
+    return { ...baseSummary, dry_run: true };
   }
+  deps.writeSnapshotStateAtomic(statePath, currentSnapshot);
   if (exportOnlyCli) {
-    return { ...summary, export_only: true };
+    return { ...baseSummary, export_only: true };
   }
-  if (sync.pipeline.run_wiki_compile) {
+  if (!comparison.raw_changed || comparison.change_detection === "baseline" || compileMode === "off") {
+    return baseSummary;
+  }
+  if (compileMode === "agent") {
+    await deps.runAgentCompile(ctx);
+    return { ...baseSummary, compile_triggered: true };
+  }
+  if (compileMode === "local") {
     await deps.runWikiCompile(ctx);
+    return { ...baseSummary, compile_triggered: true };
   }
-  return summary;
+  return baseSummary;
 }
 
 export { defaultDeps };

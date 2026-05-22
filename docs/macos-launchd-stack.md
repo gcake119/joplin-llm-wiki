@@ -3,11 +3,11 @@
 本文件說明如何以 **launchd LaunchAgent** 在登入後背景常駐：
 
 1. **Ollama**（`ollama serve`）
-2. **`joplin-llm-wiki sqlite-sync`**（含每週期匯出、`wiki-compile`／寫回等，由你的 `config.yaml` 決定）
+2. **`joplin-llm-wiki sqlite-sync`**（每週期匯出並依 `compile_mode` 決定是否同步 wiki 層）
 
 設計前提是**全本機**、無對外 HTTP API；監聽僅限本機 loopback（與專案 README 一致）。
 
-此 stack 對齊本地模型路線：`wiki-compile` + Ollama。若你要用 Codex 月訂閱做 wiki 編譯，請改用 `agent-compile` 或 Health GUI 的 Codex Agent 模式；該路線透過本機已登入的 `codex exec`，不使用 OpenAI API key，且不由此 LaunchAgent stack 自動管理。
+此 stack 預設對齊本地模型路線：`compile_mode: local` 會在 raw 變更時執行 `wiki-compile` + Ollama。若你要用 Codex 月訂閱做 wiki 編譯，可將 `joplin_sqlite_sync.pipeline.compile_mode` 設為 `agent`；該路線透過本機已登入的 `codex exec`，不使用 OpenAI API key。若只想匯出 raw，設為 `off`。
 
 亦可經 **Health GUI**（Electron）執行相同的 install／uninstall 腳本與設定編輯，詳見根目錄 `README.md` 的 **Health GUI** 章節。
 
@@ -20,6 +20,7 @@
   - `joplin_sqlite_sync.enabled: true`
   - `joplin_sqlite_sync.database_path`：指向與 **Joplin Desktop** 相同 profile 之 `database.sqlite` 的**絕對路徑**
   - 在常見預設 profile 佈局下，該檔路徑為 **`~/.config/joplin-desktop/database.sqlite`**（請在 YAML 展開為絕對路徑，勿直接寫 `~`，除非你使用的 YAML 載入器會展開）
+  - `joplin_sqlite_sync.pipeline.compile_mode: local`（或 `agent` / `off`）
   - `joplin_sqlite_sync.schedule.every_seconds: 600`（或你希望的秒數；600＝約 10 分鐘一輪）
   - 若啟用 **Joplin 寫回**：在 `config.yaml` 設定 **`joplin_data_api`**（**token** 非空、**base_url** 為 loopback，見 README）；**Joplin Desktop** 須啟用 **Web Clipper／Data API** 服務，排程主機須能連到該埠（預設常見 `41184`）。純 launchd、無圖形環境時通常**無法**常駐 Clipper——請改 **`joplin_wiki_writeback.enabled: false`** 或使用僅 **`wiki-compile --dry-run`** 的排程。
 
@@ -44,7 +45,7 @@ plist 將輸出導向（安裝後已由占位符替換為你的 `$HOME`）：
 | Ollama | `~/Library/Logs/joplin-llm-wiki/ollama.log`、`ollama.err.log` |
 | sqlite-sync | `~/Library/Logs/joplin-llm-wiki/sqlite-sync.log`、`sqlite-sync.err.log` |
 
-`sqlite-sync` 每完成一輪排程，stdout 會出現與 CLI 相同之 **JSON summary**（可於 `sqlite-sync.log` 追蹤）。
+`sqlite-sync` 每完成一輪排程，stdout 會出現與 CLI 相同之 **JSON summary**（可於 `sqlite-sync.log` 追蹤），包含 `raw_changed`、`change_detection`、`changed_files`、`compile_mode`、`compile_triggered`。
 
 **升級自舊 repo／套件名時**：若你先前將日誌寫在 `~/Library/Logs/joplin-brain/`，新版本預設改為 **`~/Library/Logs/joplin-llm-wiki/`**；請重新執行 **`install-joplin-brain-stack.sh`** 以套用 plist 內新路徑（或自行複製／對齊 `StandardOutPath`）。
 
@@ -123,7 +124,7 @@ joplin_sqlite_sync:
   database_path: "/Users/你的使用者/.config/joplin-desktop/database.sqlite"
   reconcile_mode: mirror
   pipeline:
-    run_wiki_compile: true
+    compile_mode: local
   schedule:
     every_seconds: 600
   notebook_filter:
@@ -141,6 +142,14 @@ joplin_sqlite_sync:
 ```bash
 pnpm exec joplin-llm-wiki sqlite-sync --config /絕對路徑/你的.config.yaml
 ```
+
+若 `raw/` 已有既有 Markdown，且你只想建立第一個快照基準，先跑：
+
+```bash
+pnpm exec joplin-llm-wiki sqlite-sync --config /絕對路徑/你的.config.yaml --snapshot-only
+```
+
+`--snapshot-only` 不開啟 SQLite、不刪除 `raw/` 檔案、不觸發 compile；後續正常 `sqlite-sync` 才會根據變更觸發 `compile_mode` 指定的 pipeline。
 
 ## 相關檔案
 

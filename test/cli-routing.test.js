@@ -46,6 +46,15 @@ test("agent-compile help documents full-library default and batch fallback", () 
   assert.match(out, /--full-library=true\|false/);
 });
 
+test("sqlite-sync help documents compile_mode and snapshot-only", () => {
+  const out = run(["sqlite-sync", "--help"]);
+  assert.match(out, /--snapshot-only=true\|false/);
+  assert.match(out, /pipeline\.compile_mode/);
+  assert.match(out, /local\s+Run wiki-compile/);
+  assert.match(out, /agent\s+Run agent-compile/);
+  assert.match(out, /First run records a baseline snapshot only/);
+});
+
 test("removed ask and index commands are unknown", () => {
   assert.strictEqual(runThrows(["ask"])?.status, 1);
   assert.strictEqual(runThrows(["index"])?.status, 1);

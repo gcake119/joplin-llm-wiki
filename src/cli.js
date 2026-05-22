@@ -65,7 +65,9 @@ export async function main(argv) {
       code === "CODEX_CLI_UNAVAILABLE" ||
       code === "CODEX_USAGE_LIMIT" ||
       code === "AGENT_COMPILE_FAILED" ||
-      code === "CORPUS_SWEEP_STATE_IO"
+      code === "CORPUS_SWEEP_STATE_IO" ||
+      code === "SQLITE_SYNC_STATE_IO" ||
+      code === "NO_SOURCE_MARKDOWN"
     ) {
       emitErr(code, String(err.message ?? err));
       return 1;
@@ -144,7 +146,7 @@ Commands:
   wiki-compile   Compile wiki pages under wiki/
   query          Answer from wiki/raw knowledge and stage optional captures
   lint           Filesystem lint (wiki gaps, links, brainstorming follow-up)
-  sqlite-sync    Export Joplin SQLite to raw/; optional wiki-compile (--export-only: export only)
+  sqlite-sync    Export Joplin SQLite to raw/; optionally compile wiki when raw changed
   agent-compile  Compile wiki via local Codex CLI agent workflow
 
 Global:
@@ -236,12 +238,23 @@ Usage:
 Options:
   --dry-run=true|false          Count exportable notes without writing files
   --export-only=true|false      Export only; skip configured wiki pipeline
+  --snapshot-only=true|false    Build a raw snapshot baseline from existing Markdown only
   --every <seconds>             Run repeatedly at the given interval
   --select-notebooks=true       Interactive notebook picker; writes notebook_filter to config
   --run=true                    With --select-notebooks, run export after saving selection
   --list-notebooks-json=true    Print notebook tree JSON for GUI integration
   --list-notebooks-json-out <path>
                                 With --list-notebooks-json, write JSON to a file instead of stdout
+
+Config:
+  joplin_sqlite_sync.pipeline.compile_mode controls post-export compilation:
+    local  Run wiki-compile when raw changes
+    agent  Run agent-compile when raw changes
+    off    Never compile from sqlite-sync
+
+First run records a baseline snapshot only. Later runs compare raw-relative path,
+Joplin note id, and content hash. --export-only still refreshes raw and state but
+never compiles; --snapshot-only skips SQLite export, deletion, and compilation.
 
 Run with a valid config file; see config.yaml.example.
 `);

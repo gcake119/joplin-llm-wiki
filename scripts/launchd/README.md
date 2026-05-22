@@ -10,7 +10,7 @@
 |------|------|
 | `shims/joplin-llm-wiki-*` | bash shim：將 plist 引數轉交 `/bin/bash`（見 `docs/macos-launchd-stack.md`） |
 | `run-ollama.sh` | 前景執行 `ollama serve`（stdout／stderr 建議由 plist 導向日誌） |
-| `run-sqlite-sync.sh` | 等待 Ollama 就緒後執行 `pnpm exec joplin-llm-wiki sqlite-sync` |
+| `run-sqlite-sync.sh` | 等待 Ollama 就緒後執行 `pnpm exec joplin-llm-wiki sqlite-sync`；是否編譯由 `joplin_sqlite_sync.pipeline.compile_mode` 決定 |
 | `com.joplin-brain.*.plist.example` | LaunchAgent 範本（安裝腳本會替換路徑占位符） |
 | `install-joplin-brain-stack.sh` | 將 plist 裝入 `~/Library/LaunchAgents/` 並 `launchctl bootstrap` |
 | `uninstall-joplin-brain-stack.sh` | `launchctl bootout` 並移除 plist |

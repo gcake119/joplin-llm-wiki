@@ -17,16 +17,16 @@ let pipelineBusy = false;
  *   message: string,
  * } | {
  *   kind: "phase_start",
- *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile" | "query" | "lint",
  *   label: string,
  * } | {
  *   kind: "phase_stream",
- *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile" | "query" | "lint",
  *   channel: "stdout" | "stderr",
  *   text: string,
  * } | {
  *   kind: "phase_end",
- *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile",
+ *   phase: "sqlite-sync" | "wiki-compile" | "agent-compile" | "query" | "lint",
  *   exitCode: number | null,
  *   spawnFailed: boolean,
  * }} PipelineProgressEvent
@@ -68,14 +68,14 @@ function lineSplitter(onLine) {
  * @param {typeof spawn} spawnImpl
  * @param {string} root
  * @param {string} configAbs
- * @param {"wiki-compile" | "sqlite-sync" | "agent-compile"} subcommand
+ * @param {"wiki-compile" | "sqlite-sync" | "agent-compile" | "query" | "lint"} subcommand
  * @param {string[]} [extraArgv]
  * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
  */
 function runPhase(spawnImpl, root, configAbs, subcommand, extraArgv = [], progress = null) {
   const label =
     subcommand === "sqlite-sync"
-      ? "sqlite-sync --export-only"
+      ? `sqlite-sync ${extraArgv.join(" ")}`.trim()
       : subcommand === "agent-compile"
         ? "joplin-llm-wiki agent-compile"
       : `joplin-llm-wiki ${subcommand}`;
@@ -260,6 +260,129 @@ export async function runCorpusPipeline(repoRoot, configPathAbs, payload, spawnI
   } finally {
     pipelineBusy = false;
   }
+}
+
+/**
+ * Create or refresh the raw snapshot baseline from existing Markdown.
+ *
+ * @param {string} repoRoot
+ * @param {string} configPathAbs
+ * @param {{ confirmed?: boolean }} payload
+ * @param {typeof spawn} [spawnImpl]
+ * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
+ */
+export async function runSnapshotPipeline(
+  repoRoot,
+  configPathAbs,
+  payload,
+  spawnImpl = spawn,
+  progress = null,
+) {
+  if (payload.confirmed !== true) {
+    return {
+      ok: false,
+      code: "CONFIRMATION_REQUIRED",
+      sqliteSync: emptySqlitePhase(),
+    };
+  }
+
+  if (pipelineBusy) {
+    return {
+      ok: false,
+      code: "PIPELINE_IN_FLIGHT",
+      sqliteSync: emptySqlitePhase(),
+    };
+  }
+
+  pipelineBusy = true;
+  const root = path.resolve(repoRoot);
+  const configAbs = path.resolve(configPathAbs);
+
+  try {
+    const sqlRes = await runPhase(spawnImpl, root, configAbs, "sqlite-sync", ["--snapshot-only"], progress);
+    const sqliteSync = {
+      exitCode: sqlRes.exitCode,
+      stdoutTail: sqlRes.stdoutTail,
+      stderrTail: sqlRes.stderrTail,
+      skipped: false,
+    };
+    if (sqlRes.spawnFailed) return { ok: false, code: "SPAWN_ERROR", sqliteSync };
+    if (sqlRes.exitCode !== 0) return { ok: false, code: "SQLITE_SYNC_FAILED", sqliteSync };
+    return { ok: true, code: "OK", sqliteSync };
+  } finally {
+    pipelineBusy = false;
+  }
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {"knowledge" | "wiki" | "raw" | null}
+ */
+function normalizeSourceScope(value) {
+  if (value == null || value === "") return "knowledge";
+  if (value === "knowledge" || value === "wiki" || value === "raw") return value;
+  return null;
+}
+
+/**
+ * Run the query CLI through a fixed subcommand and whitelisted options.
+ *
+ * @param {string} repoRoot
+ * @param {string} configPathAbs
+ * @param {{ question?: string, sourceScope?: string, confirmCapture?: string }} payload
+ * @param {typeof spawn} [spawnImpl]
+ */
+export async function runQueryWorkflow(repoRoot, configPathAbs, payload, spawnImpl = spawn) {
+  const root = path.resolve(repoRoot);
+  const configAbs = path.resolve(configPathAbs);
+  const query = emptyPhase();
+
+  const confirmCapture =
+    typeof payload.confirmCapture === "string" ? payload.confirmCapture.trim() : "";
+  const question = typeof payload.question === "string" ? payload.question.trim() : "";
+  const sourceScope = normalizeSourceScope(
+    typeof payload.sourceScope === "string" ? payload.sourceScope : undefined,
+  );
+  if (!sourceScope) {
+    return { ok: false, code: "BAD_REQUEST", message: "sourceScope must be knowledge, wiki, or raw", query };
+  }
+
+  /** @type {string[]} */
+  let extraArgv;
+  if (confirmCapture) {
+    extraArgv = ["--confirm-capture", confirmCapture];
+  } else {
+    if (!question) {
+      return { ok: false, code: "BAD_REQUEST", message: "question is required", query };
+    }
+    extraArgv = ["--source-scope", sourceScope, question];
+  }
+
+  const res = await runPhase(spawnImpl, root, configAbs, "query", extraArgv);
+  assignPhase(query, res);
+  if (res.spawnFailed) return { ok: false, code: "SPAWN_ERROR", query };
+  if (res.exitCode !== 0) return { ok: false, code: "QUERY_FAILED", query };
+  return { ok: true, code: "OK", query };
+}
+
+/**
+ * Run the lint CLI through a fixed subcommand.
+ *
+ * @param {string} repoRoot
+ * @param {string} configPathAbs
+ * @param {Record<string, unknown>} payload
+ * @param {typeof spawn} [spawnImpl]
+ */
+export async function runLintWorkflow(repoRoot, configPathAbs, payload, spawnImpl = spawn) {
+  void payload;
+  const root = path.resolve(repoRoot);
+  const configAbs = path.resolve(configPathAbs);
+  const lint = emptyPhase();
+  const res = await runPhase(spawnImpl, root, configAbs, "lint", []);
+  assignPhase(lint, res);
+  if (res.spawnFailed) return { ok: false, code: "SPAWN_ERROR", lint };
+  if (res.exitCode !== 0) return { ok: false, code: "LINT_FAILED", lint };
+  return { ok: true, code: "OK", lint };
 }
 
 /**

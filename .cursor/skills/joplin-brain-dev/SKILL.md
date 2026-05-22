@@ -17,6 +17,8 @@ metadata:
 - 本 repo 部分採用 `gatelynch/llm-knowledge-base` 的四層知識流：`raw/` 對應 `raw/`，`wiki/` 對應 `wiki/`，並保留 `brainstorming/` 與 `artifacts/`。
 - `raw/` 是 Joplin SQLite mirror/export 產物，預設視為唯讀證據；不要手動放入長期維護內容。
 - Notebook 篩選匯出使用 `raw/<joined-notebook-slug>/<safe-title>.md`。巢狀筆記本以 `-` 串接，例如 `工作/專案A/會議` → `工作-專案A-會議`。
+- `sqlite-sync` 正常模式匯出後會比對 snapshot，只有 raw 變更才依 `joplin_sqlite_sync.pipeline.compile_mode` 觸發 wiki 層同步：`local` 執行 `wiki-compile`，`agent` 執行 `agent-compile`，`off` 不編譯。第一次非 dry-run 只建立 baseline；`--export-only` 會更新 raw 與 snapshot state 但不編譯；`--snapshot-only` 只掃現有 `raw/` 建立 baseline，不開 SQLite、不刪檔、不編譯。舊 `run_wiki_compile` 只作為未設定 `compile_mode` 時的 fallback。
+- `sqlite-sync` summary 欄位要保持可觀測：`raw_changed`、`change_detection`、`changed_files`、`compile_mode`、`compile_triggered`。Health GUI 主要 tabs 應覆蓋 Health、Config、Notebooks、Pipeline、Query、Lint、LaunchAgent，並透過固定 IPC handler 執行 Query/Lint/snapshot-only。
 - 編譯輸出只能使用 `wiki/summaries/*.md`、`wiki/concepts/*.md`、`wiki/indexes/All-Sources.md`、`wiki/indexes/All-Concepts.md`；三個分類底下不得建立子資料夾。`summaries` 是每個來源一份摘要，`concepts` 是概念條目並交叉引用 summaries/concepts，`indexes` 是固定入口。
 - `query` 預設使用 `--source-scope=knowledge`：優先讀 `wiki/`，必要時補 `raw/` 原始素材；可用 `--source-scope=wiki|raw` 明確限制。成功回答不直接 file-back，會先建立 pending capture，確認後才寫 `brainstorming/chat/` 或 `artifacts/projects/<project>/`。`ask`、`index`、`watch`、RAG／Chroma／embedding vector 管線已移除。
 - 人可讀的知識管理輸出使用繁體中文；技術名詞、source path、filename 可保留原文。
@@ -70,6 +72,7 @@ joplin_wiki_writeback:
 |------|------|
 | 設定解析 | `src/config/load-config.js` |
 | Joplin SQLite schema / notebook tree / export | `src/joplin/sqlite/joplin-schema.js`、`src/joplin/sqlite/notebooks.js`、`src/joplin/sqlite/exporter.js` |
+| SQLite sync 變更偵測 / state | `src/joplin/sqlite/sync-state.js`、`src/commands/cmd-sqlite-sync.js` |
 | notebook/title path sanitizing | `src/joplin/sqlite/paths.js` |
 | Data API 傳輸／預檢／分頁 | `src/joplin/data-api-client.js` |
 | 寫回筆記本樹 + upsert | `src/joplin/wiki-writeback.js` |
@@ -89,3 +92,4 @@ joplin_wiki_writeback:
 - `README.md`（Desktop、Web Clipper／Data API、Profile、`--dry-run`、關閉寫回）
 - `config.yaml.example`
 - `docs/scheduling-examples.md`（排程與寫回／Data API 前提）
+- `docs/macos-launchd-stack.md`（LaunchAgent 下 `sqlite-sync` 與 `compile_mode` 的對齊）

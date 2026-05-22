@@ -1,11 +1,15 @@
 import assert from "node:assert";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
 import {
   runCorpusPipeline,
   runInitPipeline,
+  runLintWorkflow,
+  runQueryWorkflow,
+  runSnapshotPipeline,
 } from "../../src/health-gui/corpus/corpus-pipeline-runner.js";
 
 const repoRoot = "/repo/abs";
@@ -285,4 +289,139 @@ test("SCN-HGUI-INIT-05 overlapping init returns PIPELINE_IN_FLIGHT", async () =>
   assert.strictEqual(r2.code, "PIPELINE_IN_FLIGHT");
   children[0].emit("close", 0);
   await p1;
+});
+
+test("SCN-HGUI-TABS covers primary CLI workflows", () => {
+  const html = fs.readFileSync(
+    path.resolve("src/health-gui/renderer/index.html"),
+    "utf8",
+  );
+  for (const tab of ["health", "config", "notebooks", "pipeline", "query", "lint", "launchd"]) {
+    assert.match(html, new RegExp(`data-tab="${tab}"`));
+    assert.match(html, new RegExp(`data-panel="${tab}"`));
+  }
+});
+
+test("SCN-HGUI-SNAPSHOT rejects without confirmed — zero spawn", async () => {
+  let spawns = 0;
+  const spawnImpl = () => {
+    spawns++;
+    return makeChild();
+  };
+  const r = await runSnapshotPipeline(repoRoot, cfgAbs, { confirmed: false }, spawnImpl);
+  assert.strictEqual(spawns, 0);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, "CONFIRMATION_REQUIRED");
+  assert.strictEqual(r.sqliteSync.exitCode, null);
+});
+
+test("SCN-HGUI-SNAPSHOT argv and cwd for sqlite-sync --snapshot-only", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runSnapshotPipeline(repoRoot, cfgAbs, { confirmed: true }, spawnImpl);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.code, "OK");
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "sqlite-sync",
+    "--config",
+    path.resolve(cfgAbs),
+    "--snapshot-only",
+  ]);
+  assert.strictEqual(calls[0].cwd, path.resolve(repoRoot));
+});
+
+test("SCN-HGUI-QUERY runs fixed query argv", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runQueryWorkflow(
+    repoRoot,
+    cfgAbs,
+    { question: "這份 wiki 有哪些待追蹤？", sourceScope: "knowledge" },
+    spawnImpl,
+  );
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "query",
+    "--config",
+    path.resolve(cfgAbs),
+    "--source-scope",
+    "knowledge",
+    "這份 wiki 有哪些待追蹤？",
+  ]);
+});
+
+test("SCN-HGUI-QUERY confirm capture uses fixed argv", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runQueryWorkflow(
+    repoRoot,
+    cfgAbs,
+    { confirmCapture: "capture-123" },
+    spawnImpl,
+  );
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "query",
+    "--config",
+    path.resolve(cfgAbs),
+    "--confirm-capture",
+    "capture-123",
+  ]);
+});
+
+test("SCN-HGUI-QUERY rejects invalid source scope — zero spawn", async () => {
+  let spawns = 0;
+  const spawnImpl = () => {
+    spawns++;
+    return makeChild();
+  };
+  const r = await runQueryWorkflow(
+    repoRoot,
+    cfgAbs,
+    { question: "q", sourceScope: "shell" },
+    spawnImpl,
+  );
+  assert.strictEqual(spawns, 0);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, "BAD_REQUEST");
+});
+
+test("SCN-HGUI-LINT runs fixed lint argv", async () => {
+  const calls = [];
+  const spawnImpl = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], cwd: opts.cwd });
+    const c = makeChild();
+    queueMicrotask(() => c.emit("close", 0));
+    return c;
+  };
+  const r = await runLintWorkflow(repoRoot, cfgAbs, {}, spawnImpl);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(calls[0].args, [
+    "exec",
+    "joplin-llm-wiki",
+    "lint",
+    "--config",
+    path.resolve(cfgAbs),
+  ]);
 });

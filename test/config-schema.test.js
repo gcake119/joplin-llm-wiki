@@ -82,6 +82,85 @@ test("sqlite export_root must equal raw", async () => {
   await assert.rejects(() => loadConfig(p), /export_root must equal raw/);
 });
 
+test("sqlite compile_mode accepts local agent and off", async () => {
+  for (const mode of ["local", "agent", "off"]) {
+    const dir = tmpdir();
+    const p = minimal(
+      dir,
+      `joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  pipeline:
+    compile_mode: ${mode}
+`,
+    );
+    const cfg = await loadConfig(p);
+    assert.equal(cfg.joplin_sqlite_sync.pipeline.compile_mode, mode);
+  }
+});
+
+test("sqlite compile_mode rejects invalid values", async () => {
+  const dir = tmpdir();
+  const p = minimal(
+    dir,
+    `joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  pipeline:
+    compile_mode: shell
+`,
+  );
+  await assert.rejects(() => loadConfig(p), /compile_mode must be local, agent, or off/);
+});
+
+test("sqlite compile_mode falls back to legacy run_wiki_compile", async () => {
+  const enabledDir = tmpdir();
+  const enabled = await loadConfig(
+    minimal(
+      enabledDir,
+      `joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  pipeline:
+    run_wiki_compile: true
+`,
+    ),
+  );
+  assert.equal(enabled.joplin_sqlite_sync.pipeline.compile_mode, "local");
+
+  const disabledDir = tmpdir();
+  const disabled = await loadConfig(
+    minimal(
+      disabledDir,
+      `joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  pipeline:
+    run_wiki_compile: false
+`,
+    ),
+  );
+  assert.equal(disabled.joplin_sqlite_sync.pipeline.compile_mode, "off");
+});
+
+test("sqlite compile_mode overrides legacy run_wiki_compile", async () => {
+  const dir = tmpdir();
+  const cfg = await loadConfig(
+    minimal(
+      dir,
+      `joplin_sqlite_sync:
+  enabled: true
+  database_path: ./db.sqlite
+  pipeline:
+    compile_mode: agent
+    run_wiki_compile: false
+`,
+    ),
+  );
+  assert.equal(cfg.joplin_sqlite_sync.pipeline.run_wiki_compile, false);
+  assert.equal(cfg.joplin_sqlite_sync.pipeline.compile_mode, "agent");
+});
+
 test("writeback enabled requires token but not artifacts project notebook", async () => {
   const dir = tmpdir();
   const missingToken = writeCfg(

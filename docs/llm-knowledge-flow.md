@@ -49,11 +49,14 @@ artifacts/
 - Source filenames are title-based. Stable tracking belongs in frontmatter:
   `joplin_note_id`, `joplin_notebook_id`, `joplin_notebook_path`, and
   `joplin_notebook_slug`.
-- Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only` to refresh the raw/source layer from Joplin.
+- Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only` to refresh the raw/source layer from Joplin without compiling.
+- Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml` for scheduled sync: after export, it compares the raw snapshot and runs the configured wiki pipeline only when raw changed.
+- Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --snapshot-only` when `raw/` already has Markdown and you only want to create the baseline snapshot state.
 - Use `pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --select-notebooks` to update notebook selection in `config.yaml` without exporting immediately.
 - The legacy `index` command and vector/RAG pipeline have been removed; query reads filesystem Markdown directly, with `wiki/` as the priority layer and `raw/` as optional source evidence.
 - Use `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml` for local Ollama compilation into `wiki/`.
 - Use `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml` for Codex CLI agent compilation. This uses local `codex exec`, not an OpenAI API key. Both `wiki-compile` and `agent-compile` default to scanning every `raw/` source and requiring per-source summaries plus the two index pages; `--batch=true` is the explicit 10-15 page fallback. After a successful non-dry-run compile, enabled `joplin_wiki_writeback` writes selected wiki pages to `@llm-wiki/wiki/{summaries,concepts,indexes}` only.
+- `joplin_sqlite_sync.pipeline.compile_mode` controls automatic post-export compile: `local` runs `wiki-compile`, `agent` runs `agent-compile`, and `off` only maintains raw and snapshot state. If `compile_mode` is omitted, legacy `pipeline.run_wiki_compile: true` maps to `local`; `false` maps to `off`. The first sync records a baseline snapshot without compiling.
 - Use `pnpm exec joplin-llm-wiki query --config ./config.yaml "<question>"` to answer from the user knowledge base. The default `--source-scope=knowledge` uses `wiki/` first and supplements from `raw/`; `--source-scope=wiki` and `--source-scope=raw` are explicit restrictions.
 - Query capture is enabled by default but is staged: valuable Q&A becomes a pending capture under `.joplin-llm-wiki/pending-captures/`, and only `query --confirm-capture <id>` writes a formal note to `brainstorming/chat/` or `artifacts/projects/<project>/`.
 - Store exploratory Q&A, thinking notes, and compile/health observations in `brainstorming/chat/` or `brainstorming/health/`.

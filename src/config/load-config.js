@@ -67,7 +67,7 @@ import YAML from "yaml";
  *       notebook_path_separator: string,
  *       source_filename: string,
  *     },
- *     pipeline: { run_wiki_compile: boolean },
+ *     pipeline: { run_wiki_compile: boolean, compile_mode: 'local' | 'agent' | 'off' },
  *     schedule: { every_seconds: number | null },
  *   },
  * }} AppConfig
@@ -350,8 +350,11 @@ export async function loadConfig(configPath) {
   const notebook_filter = readNotebookFilter(syncNest);
 
   const pipeNest = nest(doc, "joplin_sqlite_sync", "pipeline");
+  const run_wiki_compile = bool(pipeNest, "run_wiki_compile", true);
+  const compile_mode = readSqliteSyncCompileMode(pipeNest, run_wiki_compile);
   const pipeline = {
-    run_wiki_compile: bool(pipeNest, "run_wiki_compile", true),
+    run_wiki_compile,
+    compile_mode,
   };
 
   const schedNest = nest(doc, "joplin_sqlite_sync", "schedule");
@@ -439,6 +442,22 @@ function readNotebookFilter(syncNest) {
     notebook_path_separator: sep,
     source_filename,
   };
+}
+
+/**
+ * @param {Record<string, unknown>} pipeNest
+ * @param {boolean} runWikiCompile
+ * @returns {'local' | 'agent' | 'off'}
+ */
+function readSqliteSyncCompileMode(pipeNest, runWikiCompile) {
+  if (!Object.prototype.hasOwnProperty.call(pipeNest, "compile_mode")) {
+    return runWikiCompile ? "local" : "off";
+  }
+  const v = pipeNest.compile_mode;
+  if (v === "local" || v === "agent" || v === "off") return v;
+  const err = new Error("joplin_sqlite_sync.pipeline.compile_mode must be local, agent, or off");
+  /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+  throw err;
 }
 
 /**
