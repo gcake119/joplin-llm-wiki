@@ -1,4 +1,4 @@
-import { listKnowledgeFlowTools } from "./tools.js";
+import { callKnowledgeFlowTool, listKnowledgeFlowTools } from "./tools.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -14,18 +14,21 @@ export function createKnowledgeFlowMcpServer() {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: listKnowledgeFlowTools(),
   }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => ({
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          error: "TOOL_NOT_IMPLEMENTED",
-          message: `tool handler not implemented yet: ${request.params.name}`,
-        }),
-      },
-    ],
-    isError: true,
-  }));
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const result = await callKnowledgeFlowTool(
+      request.params.name,
+      request.params.arguments ?? {},
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result),
+        },
+      ],
+      isError: !result.ok,
+    };
+  });
   return server;
 }
 

@@ -9,12 +9,13 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const binDir = path.join(root, "node_modules", ".bin");
-const cli = path.join(root, "bin", "joplin-llm-wiki.js");
-const shim = path.join(binDir, "joplin-llm-wiki");
 
 fs.mkdirSync(binDir, { recursive: true });
 
-const contents = `#!/usr/bin/env node
+function writeNodeShim(name, targetFile) {
+  const cli = path.join(root, "bin", targetFile);
+  const shim = path.join(binDir, name);
+  const contents = `#!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 const cli = ${JSON.stringify(cli)};
 const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], {
@@ -23,17 +24,9 @@ const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], {
 process.exit(result.status ?? 1);
 `;
 
-fs.writeFileSync(shim, contents, { mode: 0o755 });
+  fs.writeFileSync(shim, contents, { mode: 0o755 });
+}
 
-const cliHealth = path.join(root, "bin", "joplin-llm-wiki-health-gui.js");
-const shimHealth = path.join(binDir, "joplin-llm-wiki-health-gui");
-const contentsHealth = `#!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
-const cli = ${JSON.stringify(cliHealth)};
-const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-});
-process.exit(result.status ?? 1);
-`;
-
-fs.writeFileSync(shimHealth, contentsHealth, { mode: 0o755 });
+writeNodeShim("joplin-llm-wiki", "joplin-llm-wiki.js");
+writeNodeShim("joplin-llm-wiki-health-gui", "joplin-llm-wiki-health-gui.js");
+writeNodeShim("joplin-llm-wiki-mcp", "joplin-llm-wiki-mcp.js");
