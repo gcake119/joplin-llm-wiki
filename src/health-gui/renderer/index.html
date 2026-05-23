@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
-    <title>joplin-llm-wiki Health GUI</title>
+    <title>Joplin-LLM-wiki tool</title>
     <style>
       :root {
         font-family: system-ui, sans-serif;
@@ -207,7 +207,7 @@
     </style>
   </head>
   <body>
-    <h1>joplin-llm-wiki — 本機依賴與設定</h1>
+    <h1>Joplin-LLM-wiki tool</h1>
     <p class="muted" id="meta-line"></p>
     <p class="muted">
       管理 raw → wiki 編譯閉環；RAG、向量索引與 Chroma 已移除。
@@ -301,6 +301,19 @@
         <button type="button" id="btn-run-snapshot">僅建立 raw 快照</button>
         <button type="button" id="btn-run-corpus">僅編譯 Wiki</button>
         <span class="muted" id="corpus-status"></span>
+      </div>
+      <h2 style="margin-top: 14px">Concept / Writeback 接續</h2>
+      <div class="row">
+        <button type="button" id="btn-concept-dry">Local concept dry-run</button>
+        <button type="button" id="btn-concept-run">Local concept run</button>
+        <button type="button" id="btn-agent-concept-dry">Agent concept dry-run</button>
+        <button type="button" id="btn-agent-concept-run">Agent concept run</button>
+      </div>
+      <div class="row" style="margin-top: 8px">
+        <button type="button" id="btn-writeback-dry">Local writeback dry-run</button>
+        <button type="button" id="btn-writeback-run">Local writeback run</button>
+        <button type="button" id="btn-agent-writeback-dry">Agent writeback dry-run</button>
+        <button type="button" id="btn-agent-writeback-run">Agent writeback run</button>
       </div>
       <div id="pipeline-progress-wrap" class="pipeline-progress-wrap hidden">
         <p class="muted" id="pipeline-progress-hint" style="margin: 0 0 6px">

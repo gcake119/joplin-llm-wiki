@@ -221,10 +221,12 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
   }
   const comparison = deps.compareSnapshots(previousRead.snapshot, currentSnapshot, { dryRun });
   const compileMode = sync.pipeline.compile_mode;
+  const changedRawPaths = changedRawRelPaths(previousRead.snapshot, currentSnapshot);
   const baseSummary = {
     ...summary,
     ...comparison,
     compile_mode: compileMode,
+    changed_raw_paths: changedRawPaths,
     compile_triggered: false,
     downstream_status: "skipped",
     writeback_preflight_status: "skipped",
@@ -271,9 +273,18 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
       });
     }
   }
+  const downstreamCtx = {
+    ...ctx,
+    opts: new Map(ctx.opts),
+  };
+  downstreamCtx.opts.set("changed-raw-paths", changedRawPaths.join(","));
   if (compileMode === "agent") {
+    let downstreamSummary = {};
     try {
-      await deps.runAgentCompile(ctx);
+      downstreamSummary = normalizeDownstreamSummary(
+        await deps.runAgentCompile(downstreamCtx),
+        "agent",
+      );
     } catch (e) {
       throw withSqliteSyncSummary(e, {
         ...baseSummary,
@@ -286,6 +297,7 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     }
     return {
       ...baseSummary,
+      ...downstreamSummary,
       compile_triggered: true,
       writeback_preflight_status: writebackPreflightStatus,
       downstream_status: "succeeded",
@@ -293,8 +305,12 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     };
   }
   if (compileMode === "local") {
+    let downstreamSummary = {};
     try {
-      await deps.runWikiCompile(ctx);
+      downstreamSummary = normalizeDownstreamSummary(
+        await deps.runWikiCompile(downstreamCtx),
+        "local",
+      );
     } catch (e) {
       throw withSqliteSyncSummary(e, {
         ...baseSummary,
@@ -307,6 +323,7 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     }
     return {
       ...baseSummary,
+      ...downstreamSummary,
       compile_triggered: true,
       writeback_preflight_status: writebackPreflightStatus,
       downstream_status: "succeeded",
@@ -314,6 +331,47 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     };
   }
   return { ...baseSummary, ...commitState("compile_mode_unknown") };
+}
+
+/**
+ * @param {import('../joplin/sqlite/sync-state.js').SyncSnapshot | null} previous
+ * @param {import('../joplin/sqlite/sync-state.js').SyncSnapshot} current
+ */
+function changedRawRelPaths(previous, current) {
+  if (!previous) return [];
+  const out = [];
+  for (const [rel, cur] of Object.entries(current.files)) {
+    const prev = previous.files[rel];
+    if (!prev || prev.sha256 !== cur.sha256 || prev.joplin_note_id !== cur.joplin_note_id) {
+      out.push(rel);
+    }
+  }
+  for (const rel of Object.keys(previous.files)) {
+    if (!Object.prototype.hasOwnProperty.call(current.files, rel)) {
+      out.push(rel);
+    }
+  }
+  return [...new Set(out)].sort();
+}
+
+/**
+ * @param {unknown} value
+ * @param {"local" | "agent"} adapter
+ */
+function normalizeDownstreamSummary(value, adapter) {
+  const out = { compile_adapter: adapter };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  const src = /** @type {Record<string, unknown>} */ (value);
+  for (const key of [
+    "compile_adapter",
+    "changed_summary_paths",
+    "concept_paths_planned",
+    "concept_paths_written",
+    "writeback_relpaths",
+  ]) {
+    if (key in src) out[key] = src[key];
+  }
+  return out;
 }
 
 /**

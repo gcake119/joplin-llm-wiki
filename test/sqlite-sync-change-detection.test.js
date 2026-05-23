@@ -100,11 +100,13 @@ async function runSyncForTest({
         },
         runWikiCompile: async (compileCtx) => {
           wikiCalls++;
-          if (runWikiCompile) await runWikiCompile(compileCtx);
+          if (runWikiCompile) return await runWikiCompile(compileCtx);
+          return undefined;
         },
         runAgentCompile: async (compileCtx) => {
           agentCalls++;
-          if (runAgentCompile) await runAgentCompile(compileCtx);
+          if (runAgentCompile) return await runAgentCompile(compileCtx);
+          return undefined;
         },
         runJoplinDataApiPreflight,
       },
@@ -470,6 +472,52 @@ test("sqlite-sync agent mode invokes fixed agent compile runtime", async () => {
   assert.equal(wikiCalls, 0);
   assert.equal(agentCalls, 1);
 });
+
+for (const compileMode of ["local", "agent"]) {
+  test(`sqlite-sync ${compileMode} mode surfaces scoped concept downstream telemetry`, async () => {
+    const root = tmpdir();
+    const raw = path.join(root, "raw");
+    fs.mkdirSync(raw, { recursive: true });
+    await runSyncForTest({
+      root,
+      raw,
+      exportBody: "old",
+      pipeline: `    compile_mode: ${compileMode}`,
+    });
+
+    const runCompile = async (compileCtx) => {
+      assert.equal(compileCtx.opts.get("changed-raw-paths"), "Inbox/A.md");
+      return {
+        compile_adapter: compileMode === "agent" ? "agent" : "local",
+        changed_summary_paths: ["summaries/a.md"],
+        concept_paths_planned: ["concepts/topic.md"],
+        concept_paths_written: ["concepts/topic.md"],
+        writeback_relpaths: ["concepts/topic.md", "indexes/All-Concepts.md"],
+      };
+    };
+    const { summary } = await runSyncForTest({
+      root,
+      raw,
+      exportBody: "new",
+      pipeline: `    compile_mode: ${compileMode}`,
+      runWikiCompile: compileMode === "local" ? runCompile : undefined,
+      runAgentCompile: compileMode === "agent" ? runCompile : undefined,
+    });
+
+    assert.equal(summary.compile_mode, compileMode);
+    assert.equal(summary.compile_adapter, compileMode === "agent" ? "agent" : "local");
+    assert.deepEqual(summary.changed_raw_paths, ["Inbox/A.md"]);
+    assert.deepEqual(summary.changed_summary_paths, ["summaries/a.md"]);
+    assert.deepEqual(summary.concept_paths_planned, ["concepts/topic.md"]);
+    assert.deepEqual(summary.concept_paths_written, ["concepts/topic.md"]);
+    assert.deepEqual(summary.writeback_relpaths, [
+      "concepts/topic.md",
+      "indexes/All-Concepts.md",
+    ]);
+    assert.equal(summary.downstream_status, "succeeded");
+    assert.equal(summary.state_committed, true);
+  });
+}
 
 test("sqlite-sync keeps previous snapshot state when agent compile fails after raw changed", async () => {
   const root = tmpdir();

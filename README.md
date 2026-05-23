@@ -13,7 +13,7 @@
 
 ## GUI
 
-本 repo 內建一個本機 Health GUI，可以用圖形介面做常見操作：
+本 repo 內建一個本機 Joplin-LLM-wiki tool，可以用圖形介面做常見操作：
 
 - 檢查設定檔、`raw/`、`wiki/` 和 Ollama 連線狀態。
 - 編輯常用設定，並用 `loadConfig` 驗證後再儲存。
@@ -88,9 +88,13 @@ pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage con
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage concepts
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback --dry-run
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage concepts --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage concepts
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage writeback --dry-run
+pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage writeback
 ```
 
-Concept resume 只讀既有 `wiki/summaries/*.md`，讓本機 LLM 依 summary evidence 判斷 canonical concepts，然後只寫 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。Writeback resume 只處理 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`，不重送 summaries。
+Concept resume 只讀既有 `wiki/summaries/*.md`，local 模式用 Ollama、agent 模式用本機 `codex exec` 依 summary evidence 判斷 canonical concepts，然後只寫 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。Writeback resume 才會寫入 Joplin，且只處理 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`，不重送 summaries。
 
 Dry-run 不會改寫 wiki 或 Joplin。若 dry-run 顯示 Joplin concept collision 或 orphan candidates，先檢查輸出再決定是否修復；一般 writeback 只會 create/update，不會自動刪除舊 note。需要回復時，可先保留已暫停排程，手動移開錯誤的 `wiki/concepts/*.md` 或修正 Joplin duplicate note，再重跑 dry-run。
 
@@ -118,7 +122,7 @@ ollama:
 
 ```
 
-舊鍵 `notes_root`、`notes_glob`、`wiki_root`、`wiki.glob`、`ollama.embed_model`、`ollama.embed_batch_size`、`chroma`、`rag`、`watch`、`chunk`、`joplin_sqlite_sync.pipeline.run_index` 會被 `loadConfig` 以 `CONFIG_INVALID` 拒絕。Health GUI 會以 repair mode 載入舊 config，按儲存後移除這些 legacy 欄位。預設資料夾 `raw/` 與 `wiki/` 已列入 `.gitignore`。
+舊鍵 `notes_root`、`notes_glob`、`wiki_root`、`wiki.glob`、`ollama.embed_model`、`ollama.embed_batch_size`、`chroma`、`rag`、`watch`、`chunk`、`joplin_sqlite_sync.pipeline.run_index` 會被 `loadConfig` 以 `CONFIG_INVALID` 拒絕。Joplin-LLM-wiki tool 會以 repair mode 載入舊 config，按儲存後移除這些 legacy 欄位。預設資料夾 `raw/` 與 `wiki/` 已列入 `.gitignore`。
 
 ## SQLite Sync Change Gate
 

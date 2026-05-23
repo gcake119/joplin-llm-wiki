@@ -9,6 +9,7 @@ import {
   runWikiWriteback,
   summarizeWikiWritebackDry,
 } from "../src/joplin/wiki-writeback.js";
+import { runWikiCompileFlow } from "../src/wiki/wiki-compiler.js";
 
 function cfg() {
   return {
@@ -33,6 +34,56 @@ function cfg() {
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "jllw-wb-"));
+}
+
+function writeSchema(dir) {
+  const p = path.join(dir, "schema.yaml");
+  fs.writeFileSync(
+    p,
+    `schema_version: "1"
+page_types:
+  - id: concept
+    required_frontmatter_keys: [source_refs, compiled_at, compiler_revision]
+    required_outbound_link_patterns: []
+required_hub_pages:
+  - indexes/All-Sources.md
+  - indexes/All-Concepts.md
+`,
+  );
+  return p;
+}
+
+function writeCompileConfig(dir, raw, wiki, schema) {
+  const p = path.join(dir, "config.yaml");
+  fs.writeFileSync(
+    p,
+    `raw: ${JSON.stringify(raw)}
+raw_glob: "**/*.md"
+wiki: ${JSON.stringify(wiki)}
+wiki_glob: "**/*.md"
+wiki_schema:
+  path: ${JSON.stringify(schema)}
+  strict: false
+wiki_ingest:
+  max_pages_per_run: 15
+  min_pages_per_run: 1
+  min_topic_pages_per_run: 1
+ollama:
+  chat_model: test
+joplin_wiki_writeback:
+  enabled: true
+  parent_notebook_title: "@llm-wiki"
+  wiki_notebook_title: "wiki"
+  topic_frontmatter_key: domain
+  note_title_key: title
+  max_cli_attempts: 1
+joplin_data_api:
+  base_url: "http://127.0.0.1:41184"
+  token: "test"
+  timeout_ms: 1000
+`,
+  );
+  return p;
 }
 
 test("dry-run wiki writeback counts fixed summaries/concepts/indexes notebooks", () => {
@@ -83,6 +134,124 @@ test("wiki compile writeback ignores brainstorming and artifacts", async () => {
   });
   assert.equal(summary.writeback_would_write, 1);
   assert.equal("workflow_writeback_would_write" in summary, false);
+});
+
+test("writeback resume publishes only completed concepts and All-Concepts", async () => {
+  const dir = tmpdir();
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(raw, { recursive: true });
+  fs.mkdirSync(path.join(wiki, "summaries"), { recursive: true });
+  fs.mkdirSync(path.join(wiki, "concepts"), { recursive: true });
+  fs.mkdirSync(path.join(wiki, "indexes"), { recursive: true });
+  const schema = writeSchema(dir);
+  const configPath = writeCompileConfig(dir, raw, wiki, schema);
+  fs.writeFileSync(
+    path.join(wiki, "summaries", "unchanged.md"),
+    "---\ntitle: Unchanged\nsource_refs: []\ncompiled_at: now\ncompiler_revision: test\n---\n# Unchanged\n",
+  );
+  fs.writeFileSync(
+    path.join(wiki, "concepts", "topic.md"),
+    "---\ntitle: Topic\nsource_refs: []\ncompiled_at: now\ncompiler_revision: test\ndomain: concepts\n---\n# Topic\n",
+  );
+  fs.writeFileSync(
+    path.join(wiki, "indexes", "All-Concepts.md"),
+    "---\ntitle: All Concepts\nsource_refs: []\ncompiled_at: now\ncompiler_revision: test\ndomain: indexes\n---\n# All Concepts\n",
+  );
+
+  const dryLines = [];
+  const oldLog = console.log;
+  console.log = (s) => dryLines.push(String(s));
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath,
+        argv: [],
+        opts: new Map([
+          ["resume-stage", "writeback"],
+          ["dry-run", "true"],
+        ]),
+      },
+    });
+  } finally {
+    console.log = oldLog;
+  }
+
+  const dryPayload = JSON.parse(dryLines.at(-1));
+  assert.equal(dryPayload.compile_adapter, "local");
+  assert.equal(dryPayload.resume_stage, "writeback");
+  assert.equal(dryPayload.writeback_would_write, 2);
+  assert.deepEqual(dryPayload.writeback_relpaths, [
+    "concepts/topic.md",
+    "indexes/All-Concepts.md",
+  ]);
+
+  const requests = [];
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
+    const u = new URL(String(url));
+    if (u.pathname === "/ping") {
+      return textResponse("JoplinClipperServer");
+    }
+    if (u.pathname === "/folders") {
+      return jsonResponse({
+        items: [
+          {
+            id: "root",
+            parent_id: "",
+            title: "@llm-wiki",
+            children: [
+              {
+                id: "wiki",
+                parent_id: "root",
+                title: "wiki",
+                children: [
+                  { id: "concepts", parent_id: "wiki", title: "concepts" },
+                  { id: "indexes", parent_id: "wiki", title: "indexes" },
+                ],
+              },
+            ],
+          },
+        ],
+        has_more: false,
+      });
+    }
+    if (/\/folders\/.+\/notes$/.test(u.pathname)) {
+      return jsonResponse({ items: [], has_more: false });
+    }
+    if (u.pathname === "/notes" && init?.method === "POST") {
+      return jsonResponse({ id: "created" });
+    }
+    return jsonResponse({ items: [], has_more: false });
+  };
+  const runLines = [];
+  console.log = (s) => runLines.push(String(s));
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath,
+        argv: [],
+        opts: new Map([["resume-stage", "writeback"]]),
+      },
+    });
+  } finally {
+    console.log = oldLog;
+    globalThis.fetch = oldFetch;
+  }
+
+  const runPayload = JSON.parse(runLines.at(-1));
+  assert.equal(runPayload.compile_adapter, "local");
+  assert.deepEqual(runPayload.writeback_relpaths, [
+    "concepts/topic.md",
+    "indexes/All-Concepts.md",
+  ]);
+  const noteCreates = requests
+    .filter((req) => new URL(req.url).pathname === "/notes" && req.method === "POST")
+    .map((req) => JSON.parse(String(req.body)).title)
+    .sort();
+  assert.deepEqual(noteCreates, ["All Concepts", "Topic"]);
+  assert.equal(noteCreates.includes("Unchanged"), false);
 });
 
 test("wiki writeback preflight accepts a valid local Data API token without mutating", async () => {

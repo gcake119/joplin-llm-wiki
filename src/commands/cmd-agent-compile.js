@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown } from "../fs/note-discovery.js";
-import { runWikiWriteback } from "../joplin/wiki-writeback.js";
+import {
+  runWikiWriteback,
+  summarizeWikiWritebackDry,
+} from "../joplin/wiki-writeback.js";
 import {
   parseWikiMarkdown,
   assertSourceRefsResolvable,
@@ -16,14 +19,31 @@ import {
  *   argv: string[],
  *   opts: Map<string, string>,
  * }} ctx
- * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown, runWikiWriteback?: typeof runWikiWriteback }} [deps]
+ * @param {{ spawn?: typeof spawn, loadConfig?: typeof loadConfig, discoverMarkdown?: typeof discoverMarkdown, runWikiWriteback?: typeof runWikiWriteback, summarizeWikiWritebackDry?: typeof summarizeWikiWritebackDry }} [deps]
  */
 export async function runAgentCompile(ctx, deps = {}) {
   const load = deps.loadConfig ?? loadConfig;
   const discover = deps.discoverMarkdown ?? discoverMarkdown;
   const spawnImpl = deps.spawn ?? spawn;
   const writeback = deps.runWikiWriteback ?? runWikiWriteback;
+  const summarizeDry = deps.summarizeWikiWritebackDry ?? summarizeWikiWritebackDry;
   const cfg = await load(ctx.configPath);
+  const dryRun = ctx.opts.get("dry-run") === "true";
+  const resumeStage = ctx.opts.get("resume-stage") ?? "";
+  if (resumeStage === "concepts") {
+    return await runAgentConceptResume(ctx, cfg, {
+      discover,
+      spawn: spawnImpl,
+      summarizeWikiWritebackDry: summarizeDry,
+    });
+  }
+  if (resumeStage === "writeback") {
+    return await runAgentWritebackResume(ctx, cfg, {
+      discover,
+      runWikiWriteback: writeback,
+      summarizeWikiWritebackDry: summarizeDry,
+    });
+  }
   const batchFallback =
     ctx.opts.get("batch") === "true" ||
     ctx.opts.get("full-library") === "false" ||
@@ -31,7 +51,7 @@ export async function runAgentCompile(ctx, deps = {}) {
   const fullLibrary = !batchFallback;
   const task = await buildAgentCompileTask(cfg, ctx.configPath, discover, { fullLibrary });
   const { prompt, slugs } = task;
-  if (ctx.opts.get("dry-run") === "true") {
+  if (dryRun) {
     console.log(
       JSON.stringify({
         agent_compile: "dry_run",
@@ -78,6 +98,140 @@ export async function runAgentCompile(ctx, deps = {}) {
     }),
   );
   return 0;
+}
+
+/**
+ * @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {{ discover: typeof discoverMarkdown, spawn: typeof spawn, summarizeWikiWritebackDry: typeof summarizeWikiWritebackDry }} deps
+ */
+async function runAgentConceptResume(ctx, cfg, deps) {
+  const wikiRoot = path.resolve(cfg.wiki);
+  const summaryAbs = await deps.discover(wikiRoot, "summaries/*.md");
+  const summaryPaths = summaryAbs
+    .map((abs) => path.relative(wikiRoot, abs).replace(/\\/g, "/"))
+    .sort();
+  if (summaryPaths.length === 0) {
+    const err = new Error("agent concept resume requires existing wiki/summaries/*.md files");
+    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
+    throw err;
+  }
+  const prompt = buildAgentConceptResumePrompt(ctx.configPath, summaryPaths);
+  const dryRun = ctx.opts.get("dry-run") === "true";
+  const dryRelPaths = ["indexes/All-Concepts.md"];
+  if (dryRun) {
+    const payload = {
+      agent_compile: "dry_run",
+      compile_adapter: "agent",
+      resume_stage: "concepts",
+      summary_paths_read: summaryPaths,
+      changed_summary_paths: [],
+      concept_paths_planned: [],
+      concept_paths_written: [],
+      writeback_relpaths: dryRelPaths,
+      writeback_deferred: true,
+      prompt,
+    };
+    if (cfg.joplin_wiki_writeback?.enabled === true) {
+      Object.assign(payload, deps.summarizeWikiWritebackDry(cfg, wikiRoot, dryRelPaths));
+    }
+    console.log(JSON.stringify(payload));
+    return 0;
+  }
+
+  const res = await runCodexExec(deps.spawn, process.cwd(), prompt);
+  if (res.spawnFailed || res.exitCode !== 0) {
+    const text = `${res.stderrTail}\n${res.stdoutTail}`;
+    const err = new Error(
+      `codex exec failed: exit=${res.exitCode} stderr=${res.stderrTail || ""}`,
+    );
+    /** @type {Error & { code?: string }} */ (err).code =
+      isCodexUsageLimit(text) ? "CODEX_USAGE_LIMIT" : "CODEX_CLI_UNAVAILABLE";
+    throw err;
+  }
+  if (agentReportedFailure(res.finalMessage)) {
+    const err = new Error(`codex agent reported incomplete compile: ${res.finalMessage.slice(-1000)}`);
+    /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
+    throw err;
+  }
+  await validateAgentConceptOutputs(cfg, deps.discover);
+  const relPaths = await discoverDownstreamWritebackPaths(wikiRoot, deps.discover);
+  const conceptPaths = relPaths.filter((rel) => rel.startsWith("concepts/"));
+  const indexPaths = relPaths.filter((rel) => rel === "indexes/All-Concepts.md");
+  console.log(
+    JSON.stringify({
+      agent_compile: "ok",
+      compile_adapter: "agent",
+      resume_stage: "concepts",
+      summary_paths_read: summaryPaths,
+      changed_summary_paths: [],
+      concept_paths_planned: conceptPaths,
+      concept_paths_written: conceptPaths,
+      index_paths_written: indexPaths,
+      writeback_relpaths: relPaths,
+      writeback_deferred: true,
+      stdout_tail: res.stdoutTail,
+      final_tail: res.finalMessage.slice(-512),
+    }),
+  );
+  return 0;
+}
+
+/**
+ * @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {{ discover: typeof discoverMarkdown, runWikiWriteback: typeof runWikiWriteback, summarizeWikiWritebackDry: typeof summarizeWikiWritebackDry }} deps
+ */
+async function runAgentWritebackResume(ctx, cfg, deps) {
+  const wikiRoot = path.resolve(cfg.wiki);
+  const dryRun = ctx.opts.get("dry-run") === "true";
+  const relPaths = await discoverDownstreamWritebackPaths(wikiRoot, deps.discover);
+  const payload = {
+    dry_run: dryRun,
+    compile_adapter: "agent",
+    resume_stage: "writeback",
+    writeback_relpaths: relPaths,
+    writeback_created_count: 0,
+    writeback_updated_count: 0,
+    writeback_trashed_count: 0,
+    writeback_collision_count: 0,
+    writeback_orphan_candidate_count: 0,
+  };
+  if (cfg.joplin_wiki_writeback?.enabled === true) {
+    Object.assign(
+      payload,
+      dryRun
+        ? deps.summarizeWikiWritebackDry(cfg, wikiRoot, relPaths)
+        : await deps.runWikiWriteback(cfg, wikiRoot, relPaths, { dryRun: false }),
+    );
+  }
+  console.log(JSON.stringify(payload));
+  return 0;
+}
+
+/**
+ * @param {string} configPath
+ * @param {string[]} summaryPaths
+ */
+function buildAgentConceptResumePrompt(configPath, summaryPaths) {
+  const summaryLines = summaryPaths.map((rel) => `- ${rel}`).join("\n");
+  return `請執行 joplin-llm-wiki agent concept resume workflow。
+
+限制：
+- 不要執行 pnpm exec joplin-llm-wiki agent-compile。
+- 不要執行 pnpm exec joplin-llm-wiki wiki-compile。
+- 不要修改 raw/ 或 wiki/summaries/。
+- 讀取 AGENTS.md、docs/llm-knowledge-flow.md、${path.relative(process.cwd(), configPath)}。
+- 只讀 wiki/summaries/ 內下列摘要：
+${summaryLines}
+- 只寫 wiki/concepts/*.md 與 wiki/indexes/All-Concepts.md。
+- 不得在 summaries、concepts、indexes 底下建立子資料夾。
+- concepts 由 LLM 依照語意判斷主題相關性，不要用標題字串相符當作合併依據。
+- 每個 concept Markdown 必須使用繁體中文，且 frontmatter 包含 source_refs、summary_refs、compiled_at、compiler_revision、domain、title。
+- source_refs 必須是 raw/ 下存在的相對路徑。
+- concept 的 YAML title 必須和第一個 H1 完全一致。
+- 完成後回報寫入檔案清單與任何跳過原因。
+- 如果無法完成或沒有寫入任何 wiki/concepts/*.md，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
 }
 
 /**
@@ -150,6 +304,21 @@ async function runAgentCompileWriteback(cfg, configPath, discover, writeback, sl
   return writeback(cfg, wikiRoot, relPaths, {
     dryRun: false,
   });
+}
+
+/**
+ * @param {string} wikiRoot
+ * @param {typeof discoverMarkdown} discover
+ */
+async function discoverDownstreamWritebackPaths(wikiRoot, discover) {
+  const concepts = await discover(wikiRoot, "concepts/*.md");
+  const out = concepts
+    .map((abs) => path.relative(wikiRoot, abs).replace(/\\/g, "/"))
+    .filter(isDownstreamWritebackPath)
+    .sort();
+  const allConcepts = path.join(wikiRoot, "indexes", "All-Concepts.md");
+  if (fs.existsSync(allConcepts)) out.push("indexes/All-Concepts.md");
+  return out;
 }
 
 /** @param {string} rel */

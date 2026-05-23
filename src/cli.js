@@ -176,10 +176,14 @@ Options:
   --full-library=true|false  Full-library sweep is the default; false aliases --batch=true
   --batch=true|false         Fallback: run one Ollama planning/writing batch instead of a full-library sweep
   --corpus-sweep=false       Legacy alias for --batch=true
+  --resume-stage concepts|writeback
+                              concepts writes local concepts/index only; writeback publishes completed concepts to Joplin
 
 Configuration notes:
   wiki-compile defaults to a full-library corpus sweep. The 10-15 page single
   batch is only the Ollama fallback mode.
+  For staged repair, run concepts dry-run, concepts run, writeback dry-run,
+  then writeback run. Concept resume never mutates Joplin.
 
 Run with a valid config file; see config.yaml.example.
 `);
@@ -196,9 +200,13 @@ Options:
   --dry-run=true|false         Print the Codex task prompt without running codex exec
   --full-library=true|false    Full-library scan is the default; false aliases --batch=true
   --batch=true|false           Fallback: keep the 10-15 wiki-page batch limit
+  --resume-stage concepts|writeback
+                                concepts writes local concepts/index only; writeback publishes completed concepts to Joplin
 
 Runs local Codex CLI non-interactively. Requires Codex CLI installed and logged in.
 By default, scans every raw/ source and requires per-source summaries plus indexes.
+For staged repair, run concepts dry-run, concepts run, writeback dry-run, then
+writeback run. Concept resume never mutates Joplin.
 `);
     return;
   }

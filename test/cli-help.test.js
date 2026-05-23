@@ -23,3 +23,20 @@ test("wiki-compile --help mentions full-library default and batch fallback", () 
   assert.match(out, /defaults to a full-library corpus sweep/i);
   assert.match(out, /--batch=true\|false/);
 });
+
+test("wiki-compile and agent-compile help document staged concept and writeback resume", () => {
+  const wikiOut = execFileSync(process.execPath, [cli, "wiki-compile", "--help"], {
+    encoding: "utf8",
+    cwd: root,
+  });
+  const agentOut = execFileSync(process.execPath, [cli, "agent-compile", "--help"], {
+    encoding: "utf8",
+    cwd: root,
+  });
+
+  for (const out of [wikiOut, agentOut]) {
+    assert.match(out, /--resume-stage concepts\|writeback/);
+    assert.match(out, /concepts.*local/i);
+    assert.match(out, /writeback.*Joplin/i);
+  }
+});

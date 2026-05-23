@@ -26,7 +26,9 @@ test("agent-compile dry-run defaults to full-library prompt and does not spawn c
       {
         spawn: () => {
           spawns++;
-          return makeChild();
+          const c = makeChild();
+          queueMicrotask(() => c.emit("close", 0));
+          return c;
         },
         loadConfig: async () =>
           /** @type {any} */ ({
@@ -193,6 +195,157 @@ test("agent-compile writes generated wiki pages back to Joplin Data API when ena
     const parsed = JSON.parse(line);
     assert.strictEqual(parsed.agent_compile, "ok");
     assert.strictEqual(parsed.writeback_written, 2);
+  } finally {
+    console.log = origLog;
+  }
+});
+
+test("agent-compile concept resume writes local concepts and defers writeback", async () => {
+  const dir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-agent-resume-"));
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(raw, "src"), { recursive: true });
+  fs.mkdirSync(path.join(wiki, "summaries"), { recursive: true });
+  fs.writeFileSync(path.join(raw, "src", "a.md"), "# raw\n");
+  fs.writeFileSync(
+    path.join(wiki, "summaries", "a.md"),
+    "---\ntitle: Summary\nsource_refs:\n  - src/a.md\ncompiled_at: now\ncompiler_revision: test\ndomain: notes\n---\n# Summary\n",
+  );
+
+  let writebackCalled = false;
+  let line = "";
+  const origLog = console.log;
+  console.log = (x) => {
+    line = String(x);
+  };
+  try {
+    const code = await runAgentCompile(
+      {
+        configPath: path.join(dir, "config.yaml"),
+        argv: [],
+        opts: new Map([["resume-stage", "concepts"]]),
+      },
+      {
+        spawn: (_cmd, args) => {
+          const c = makeChild();
+          const outPath = args[args.indexOf("--output-last-message") + 1];
+          queueMicrotask(() => {
+            fs.mkdirSync(path.join(wiki, "concepts"), { recursive: true });
+            fs.mkdirSync(path.join(wiki, "indexes"), { recursive: true });
+            fs.writeFileSync(
+              path.join(wiki, "concepts", "topic.md"),
+              "---\ntitle: Topic\nsource_refs:\n  - src/a.md\ncompiled_at: now\ncompiler_revision: test\ndomain: concepts\n---\n# Topic\n",
+            );
+            fs.writeFileSync(
+              path.join(wiki, "indexes", "All-Concepts.md"),
+              "---\ntitle: All Concepts\nsource_refs:\n  - src/a.md\ncompiled_at: now\ncompiler_revision: test\ndomain: indexes\n---\n# All Concepts\n",
+            );
+            fs.writeFileSync(outPath, "寫入檔案清單：wiki/concepts/topic.md", "utf8");
+            c.emit("close", 0);
+          });
+          return c;
+        },
+        loadConfig: async () =>
+          /** @type {any} */ ({
+            raw,
+            raw_glob: "**/*.md",
+            wiki,
+            joplin_wiki_writeback: { enabled: true },
+          }),
+        discoverMarkdown: async (root, glob) => {
+          if (root === raw) return [path.join(raw, "src", "a.md")];
+          if (root === wiki && glob === "summaries/*.md") {
+            return [path.join(wiki, "summaries", "a.md")];
+          }
+          if (root === wiki && glob === "concepts/*.md") {
+            return [path.join(wiki, "concepts", "topic.md")];
+          }
+          if (root === wiki && glob === "**/*.md") {
+            return [
+              path.join(wiki, "summaries", "a.md"),
+              path.join(wiki, "concepts", "topic.md"),
+              path.join(wiki, "indexes", "All-Concepts.md"),
+            ];
+          }
+          return [];
+        },
+        runWikiWriteback: async () => {
+          writebackCalled = true;
+          return {};
+        },
+      },
+    );
+    assert.strictEqual(code, 0);
+    assert.strictEqual(writebackCalled, false);
+    const parsed = JSON.parse(line);
+    assert.strictEqual(parsed.agent_compile, "ok");
+    assert.strictEqual(parsed.compile_adapter, "agent");
+    assert.strictEqual(parsed.resume_stage, "concepts");
+    assert.strictEqual(parsed.writeback_deferred, true);
+    assert.deepStrictEqual(parsed.summary_paths_read, ["summaries/a.md"]);
+    assert.deepStrictEqual(parsed.changed_summary_paths, []);
+    assert.deepStrictEqual(parsed.concept_paths_written, ["concepts/topic.md"]);
+    assert.deepStrictEqual(parsed.writeback_relpaths, [
+      "concepts/topic.md",
+      "indexes/All-Concepts.md",
+    ]);
+  } finally {
+    console.log = origLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("agent-compile writeback resume uses shared writeback without spawning codex", async () => {
+  let spawns = 0;
+  let writebackCall = null;
+  let line = "";
+  const origLog = console.log;
+  console.log = (x) => {
+    line = String(x);
+  };
+  try {
+    const code = await runAgentCompile(
+      {
+        configPath: path.resolve("cfg.yaml"),
+        argv: [],
+        opts: new Map([["resume-stage", "writeback"]]),
+      },
+      {
+        spawn: () => {
+          spawns++;
+          return makeChild();
+        },
+        loadConfig: async () =>
+          /** @type {any} */ ({
+            raw: "/raw",
+            raw_glob: "**/*.md",
+            wiki: "/wiki",
+            joplin_wiki_writeback: { enabled: true },
+          }),
+        discoverMarkdown: async (root, glob) => {
+          if (root === "/wiki" && glob === "concepts/*.md") {
+            return ["/wiki/concepts/topic.md"];
+          }
+          return [];
+        },
+        runWikiWriteback: async (_cfg, wikiRoot, relPaths, options) => {
+          writebackCall = { wikiRoot, relPaths, options };
+          return { writeback_written: relPaths.length };
+        },
+      },
+    );
+    assert.strictEqual(code, 0);
+    assert.strictEqual(spawns, 0);
+    assert.deepStrictEqual(writebackCall, {
+      wikiRoot: "/wiki",
+      relPaths: ["concepts/topic.md"],
+      options: { dryRun: false },
+    });
+    const parsed = JSON.parse(line);
+    assert.strictEqual(parsed.compile_adapter, "agent");
+    assert.strictEqual(parsed.resume_stage, "writeback");
+    assert.deepStrictEqual(parsed.writeback_relpaths, ["concepts/topic.md"]);
+    assert.strictEqual(parsed.writeback_written, 1);
   } finally {
     console.log = origLog;
   }

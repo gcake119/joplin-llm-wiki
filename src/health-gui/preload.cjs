@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("jbHealth", {
   runInitPipeline: (payload) => ipcRenderer.invoke("run-init-pipeline", payload),
   runCorpusPipeline: (payload) => ipcRenderer.invoke("run-corpus-pipeline", payload),
   runSnapshotPipeline: (payload) => ipcRenderer.invoke("run-snapshot-pipeline", payload),
+  runStageAction: (payload) => ipcRenderer.invoke("run-stage-action", payload),
   runQuery: (payload) => ipcRenderer.invoke("run-query", payload),
   runLint: (payload) => ipcRenderer.invoke("run-lint", payload),
   subscribePipelineProgress: (handler) => {

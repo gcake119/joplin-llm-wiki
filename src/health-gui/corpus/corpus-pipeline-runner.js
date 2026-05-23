@@ -154,6 +154,137 @@ function assignPhase(target, res) {
   target.stderrTail = res.stderrTail;
 }
 
+const STAGE_ACTIONS = {
+  "concept-resume-dry-run": {
+    subcommand: "wiki-compile",
+    argv: ["--resume-stage", "concepts", "--dry-run"],
+  },
+  "concept-resume-run": {
+    subcommand: "wiki-compile",
+    argv: ["--resume-stage", "concepts"],
+  },
+  "agent-concept-resume-dry-run": {
+    subcommand: "agent-compile",
+    argv: ["--resume-stage", "concepts", "--dry-run"],
+  },
+  "agent-concept-resume-run": {
+    subcommand: "agent-compile",
+    argv: ["--resume-stage", "concepts"],
+  },
+  "writeback-resume-dry-run": {
+    subcommand: "wiki-compile",
+    argv: ["--resume-stage", "writeback", "--dry-run"],
+  },
+  "writeback-resume-run": {
+    subcommand: "wiki-compile",
+    argv: ["--resume-stage", "writeback"],
+  },
+  "agent-writeback-resume-dry-run": {
+    subcommand: "agent-compile",
+    argv: ["--resume-stage", "writeback", "--dry-run"],
+  },
+  "agent-writeback-resume-run": {
+    subcommand: "agent-compile",
+    argv: ["--resume-stage", "writeback"],
+  },
+};
+
+/**
+ * @param {string} text
+ */
+function parseLastJsonLine(text) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return /** @type {Record<string, unknown>} */ (parsed);
+      }
+    } catch {
+      /* keep scanning */
+    }
+  }
+  return {};
+}
+
+/**
+ * Run a fixed concept/writeback resume action through the same single-flight
+ * guard as corpus operations.
+ *
+ * @param {string} repoRoot
+ * @param {string} configPathAbs
+ * @param {{ kind?: string, confirmed?: boolean }} payload
+ * @param {typeof spawn} [spawnImpl]
+ * @param {null | ((e: PipelineProgressEvent) => void)} [progress]
+ */
+export async function runStageAction(
+  repoRoot,
+  configPathAbs,
+  payload,
+  spawnImpl = spawn,
+  progress = null,
+) {
+  if (payload.confirmed !== true) {
+    return {
+      ok: false,
+      code: "CONFIRMATION_REQUIRED",
+      stage: emptyPhase(),
+      stageJson: {},
+    };
+  }
+  const action = STAGE_ACTIONS[/** @type {keyof typeof STAGE_ACTIONS} */ (payload.kind)];
+  if (!action) {
+    return {
+      ok: false,
+      code: "UNKNOWN_STAGE_ACTION",
+      stage: emptyPhase(),
+      stageJson: {},
+    };
+  }
+  if (pipelineBusy) {
+    return {
+      ok: false,
+      code: "PIPELINE_IN_FLIGHT",
+      stage: emptyPhase(),
+      stageJson: {},
+    };
+  }
+
+  pipelineBusy = true;
+  const root = path.resolve(repoRoot);
+  const configAbs = path.resolve(configPathAbs);
+  try {
+    const res = await runPhase(
+      spawnImpl,
+      root,
+      configAbs,
+      /** @type {"wiki-compile" | "agent-compile"} */ (action.subcommand),
+      action.argv,
+      progress,
+    );
+    const stage = emptyPhase();
+    assignPhase(stage, res);
+    const stageJson = parseLastJsonLine(res.stdoutTail);
+    if (res.spawnFailed) return { ok: false, code: "SPAWN_ERROR", stage, stageJson };
+    if (res.exitCode !== 0) {
+      return {
+        ok: false,
+        code: classifyCompileFailure(
+          res,
+          action.subcommand === "agent-compile"
+            ? "AGENT_COMPILE_FAILED"
+            : "WIKI_COMPILE_FAILED",
+        ),
+        stage,
+        stageJson,
+      };
+    }
+    return { ok: true, code: "OK", stage, stageJson };
+  } finally {
+    pipelineBusy = false;
+  }
+}
+
 /**
  * @param {typeof spawn} spawnImpl
  * @param {string} root

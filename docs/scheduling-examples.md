@@ -39,7 +39,7 @@
 建議：
 
 - 長時間任務請確認本機 `ollama` 已在使用者 session 內啟動；Chroma／向量索引已移除。
-- 若 concept 產生或 Joplin 寫回事故需要手動修復，先暫停 launchd/cron 或常駐 `sqlite-sync`，再使用 `wiki-compile --resume-stage concepts --dry-run`、`wiki-compile --resume-stage concepts`、`wiki-compile --resume-stage writeback --dry-run` 檢查與接續。這不會重新產生 `wiki/summaries/*.md`，也不改變一般 sqlite-sync polling 語意。
+- 若 concept 產生或 Joplin 寫回事故需要手動修復，先暫停 launchd/cron 或常駐 `sqlite-sync`，再依目前模式使用 `wiki-compile` 或 `agent-compile` 的 staged resume：`--resume-stage concepts --dry-run`、`--resume-stage concepts`、`--resume-stage writeback --dry-run`、`--resume-stage writeback`。Concept stage 只寫本機 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`，writeback stage 才寫入 Joplin；這不會重新產生 `wiki/summaries/*.md`，也不改變一般 sqlite-sync polling 語意。
 - 若 `sqlite-sync` 使用 `compile_mode: agent`，排程環境只需可執行已登入的 `codex exec`，不需要 Ollama readiness；`compile_mode: local` 才需要 Ollama。
 - 若採用 `sqlite-sync` 自動編譯，第一次非 dry-run 會建立 snapshot baseline，不觸發 compile；第二次起才會根據 raw-relative path、Joplin note id 與內容 hash 判定是否變更。
 - raw 變更後若 compile 或 writeback preflight 失敗，snapshot state 不會提交；修復 token、Data API 或 downstream 問題後，下一輪會重試同一批 raw 變更。查看 `sqlite-sync.log` 的 `state_committed`、`state_commit_reason`、`downstream_status`、`writeback_preflight_status`，以及 `sqlite-sync.err.log` 的錯誤碼。

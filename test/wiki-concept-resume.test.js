@@ -360,6 +360,97 @@ title: 心理健康求助摘要
   }
 });
 
+test("concept resume run defers Joplin writeback even when writeback is enabled", async () => {
+  const dir = tmpdir();
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(wiki, "summaries"), { recursive: true });
+  fs.mkdirSync(path.join(raw, "counseling"), { recursive: true });
+  fs.writeFileSync(path.join(raw, "counseling", "depression.md"), "# raw\n");
+  const schema = writeSchema(dir);
+  const configPath = writeConfig(dir, raw, wiki, schema, {
+    writebackEnabled: true,
+  });
+  fs.writeFileSync(
+    path.join(wiki, "summaries", "depression-support.md"),
+    `---
+source_refs:
+  - counseling/depression.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: counseling
+title: 憂鬱症陪伴摘要
+---
+# 憂鬱症陪伴摘要
+
+諮商、心理衛教與求助資源。
+`,
+    "utf8",
+  );
+
+  const mutatingMethods = [];
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const method = init?.method ?? "GET";
+    if (method !== "GET" && String(url).includes("127.0.0.1:41184")) {
+      mutatingMethods.push(method);
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          message: {
+            content: JSON.stringify({
+              concepts: [
+                {
+                  slug: "depression-support",
+                  title: "憂鬱症陪伴",
+                  source_refs: ["counseling/depression.md"],
+                  summary_refs: ["summaries/depression-support.md"],
+                },
+              ],
+            }),
+          },
+        };
+      },
+    };
+  };
+
+  try {
+    const { runWikiCompileFlow } = await import("../src/wiki/wiki-compiler.js");
+    const lines = [];
+    const oldLog = console.log;
+    console.log = (s) => lines.push(String(s));
+    try {
+      await runWikiCompileFlow({
+        ctx: {
+          configPath,
+          argv: [],
+          opts: new Map([["resume-stage", "concepts"]]),
+        },
+      });
+    } finally {
+      console.log = oldLog;
+    }
+
+    const payload = JSON.parse(lines.at(-1));
+    assert.equal(payload.compile_adapter, "local");
+    assert.equal(payload.resume_stage, "concepts");
+    assert.equal(payload.writeback_deferred, true);
+    assert.deepEqual(payload.summary_paths_read, ["summaries/depression-support.md"]);
+    assert.deepEqual(payload.changed_summary_paths, []);
+    assert.deepEqual(payload.concept_paths_planned, ["concepts/depression-support.md"]);
+    assert.deepEqual(payload.concept_paths_written, ["concepts/depression-support.md"]);
+    assert.deepEqual(payload.writeback_relpaths, [
+      "concepts/depression-support.md",
+      "indexes/All-Concepts.md",
+    ]);
+    assert.deepEqual(mutatingMethods, []);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
 test("writeback resume dry-run uses only concepts and All-Concepts without Ollama", async () => {
   const dir = tmpdir();
   const raw = path.join(dir, "raw");
@@ -547,6 +638,99 @@ title: ${name}
     ]);
     assert.equal(payload.semantic_decision_count, 2);
     assert.equal(payload.canonical_merge_count, 1);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("concept resume changed summary scope filters planned concepts by summary refs and source refs", async () => {
+  const dir = tmpdir();
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(wiki, "summaries"), { recursive: true });
+  fs.mkdirSync(path.join(raw, "src"), { recursive: true });
+  fs.writeFileSync(path.join(raw, "src", "a.md"), "# A\n");
+  fs.writeFileSync(path.join(raw, "src", "b.md"), "# B\n");
+  const schema = writeSchema(dir);
+  const configPath = writeConfig(dir, raw, wiki, schema);
+  fs.writeFileSync(
+    path.join(wiki, "summaries", "a.md"),
+    `---
+source_refs:
+  - src/a.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: notes
+title: A
+---
+# A
+`,
+  );
+  fs.writeFileSync(
+    path.join(wiki, "summaries", "b.md"),
+    `---
+source_refs:
+  - src/b.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: notes
+title: B
+---
+# B
+`,
+  );
+
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        message: {
+          content: JSON.stringify({
+            concepts: [
+              {
+                slug: "topic-a",
+                title: "Topic A",
+                source_refs: ["src/a.md"],
+                summary_refs: ["summaries/a.md"],
+              },
+              {
+                slug: "topic-b",
+                title: "Topic B",
+                source_refs: ["src/b.md"],
+                summary_refs: [],
+              },
+            ],
+          }),
+        },
+      };
+    },
+  });
+
+  try {
+    const { runWikiCompileFlow } = await import("../src/wiki/wiki-compiler.js");
+    const lines = [];
+    const oldLog = console.log;
+    console.log = (s) => lines.push(String(s));
+    try {
+      await runWikiCompileFlow({
+        ctx: {
+          configPath,
+          argv: [],
+          opts: new Map([
+            ["dry-run", "true"],
+            ["resume-stage", "concepts"],
+            ["changed-summary-paths", "summaries/b.md"],
+          ]),
+        },
+      });
+    } finally {
+      console.log = oldLog;
+    }
+
+    const payload = JSON.parse(lines.at(-1));
+    assert.deepEqual(payload.changed_summary_paths, ["summaries/b.md"]);
+    assert.deepEqual(payload.concept_paths_planned, ["concepts/topic-b.md"]);
   } finally {
     globalThis.fetch = oldFetch;
   }

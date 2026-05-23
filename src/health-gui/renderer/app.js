@@ -572,6 +572,18 @@ async function init() {
     /** @type {HTMLButtonElement} */ (el("btn-run-init")).disabled = disabled;
     /** @type {HTMLButtonElement} */ (el("btn-run-snapshot")).disabled = disabled;
     /** @type {HTMLButtonElement} */ (el("btn-run-corpus")).disabled = disabled;
+    for (const id of [
+      "btn-concept-dry",
+      "btn-concept-run",
+      "btn-agent-concept-dry",
+      "btn-agent-concept-run",
+      "btn-writeback-dry",
+      "btn-writeback-run",
+      "btn-agent-writeback-dry",
+      "btn-agent-writeback-run",
+    ]) {
+      /** @type {HTMLButtonElement} */ (el(id)).disabled = disabled;
+    }
   }
 
   const selectedCompileMode = () =>
@@ -595,6 +607,18 @@ async function init() {
   const runSnapshot = createSingleFlight(() =>
     jb.runSnapshotPipeline({ confirmed: true }),
   );
+  const stageLabels = {
+    "concept-resume-dry-run": "local concept dry-run",
+    "concept-resume-run": "local concept run",
+    "agent-concept-resume-dry-run": "agent concept dry-run",
+    "agent-concept-resume-run": "agent concept run",
+    "writeback-resume-dry-run": "local writeback dry-run",
+    "writeback-resume-run": "local writeback run",
+    "agent-writeback-resume-dry-run": "agent writeback dry-run",
+    "agent-writeback-resume-run": "agent writeback run",
+  };
+  const runStage = (kind) =>
+    createSingleFlight(() => jb.runStageAction({ kind, confirmed: true }));
 
   el("btn-run-init").addEventListener("click", async () => {
     const mode = selectedCompileMode();
@@ -726,6 +750,66 @@ async function init() {
       setPipelineButtonsDisabled(false);
     }
   });
+
+  function appendStageLog(res, runLabel) {
+    const pre = el("corpus-log");
+    const rec = /** @type {{ ok?: boolean, code?: string, message?: string, stageJson?: Record<string, unknown>, stage?: { exitCode?: number | null, stdoutTail?: string, stderrTail?: string } }} */ (res);
+    const telemetry = rec.stageJson && Object.keys(rec.stageJson).length > 0
+      ? `telemetry:\n${JSON.stringify(rec.stageJson, null, 2)}\n`
+      : "";
+    const stage = rec.stage ?? {};
+    const chunk = `\n--- ${runLabel} ---\nok=${rec.ok} code=${rec.code ?? ""}${rec.message ? `\nmessage: ${rec.message}` : ""}\nexit=${stage.exitCode}\n${telemetry}stdout (tail):\n${stage.stdoutTail ?? ""}\nstderr (tail):\n${stage.stderrTail ?? ""}\n`;
+    pre.textContent = (pre.textContent + chunk).slice(-12000);
+  }
+
+  function bindStageButton(id, kind) {
+    const runner = runStage(kind);
+    el(id).addEventListener("click", async () => {
+      const label = stageLabels[kind] ?? kind;
+      if (!confirm(`將執行 ${label}。確定？`)) return;
+      const st = el("corpus-status");
+      let tearProgress = () => {};
+      st.textContent = `${label} 執行中…`;
+      setPipelineButtonsDisabled(true);
+      try {
+        tearProgress = bindPipelineProgressUi(jb, "corpus");
+        const r = await runner();
+        if (r.skipped) {
+          st.textContent = "略過（上一輪管線尚在進行）";
+          return;
+        }
+        appendStageLog(r.result, label);
+        st.textContent =
+          r.result && typeof r.result === "object" && r.result.ok === true
+            ? `${label} 完成。`
+            : `${label} 結束：${/** @type {{ code?: string }} */ (r.result).code ?? "錯誤"}（詳見下方日誌）`;
+      } catch (e) {
+        appendStageLog(
+          {
+            ok: false,
+            code: "EXCEPTION",
+            message: String(e),
+            stage: { exitCode: null, stdoutTail: "", stderrTail: "" },
+            stageJson: {},
+          },
+          label,
+        );
+        st.textContent = "執行時發生例外（見日誌）";
+      } finally {
+        tearProgress();
+        setPipelineButtonsDisabled(false);
+      }
+    });
+  }
+
+  bindStageButton("btn-concept-dry", "concept-resume-dry-run");
+  bindStageButton("btn-concept-run", "concept-resume-run");
+  bindStageButton("btn-agent-concept-dry", "agent-concept-resume-dry-run");
+  bindStageButton("btn-agent-concept-run", "agent-concept-resume-run");
+  bindStageButton("btn-writeback-dry", "writeback-resume-dry-run");
+  bindStageButton("btn-writeback-run", "writeback-resume-run");
+  bindStageButton("btn-agent-writeback-dry", "agent-writeback-resume-dry-run");
+  bindStageButton("btn-agent-writeback-run", "agent-writeback-resume-run");
 
   function appendCommandLog(targetId, title, res, phaseKey) {
     const pre = el(targetId);

@@ -52,8 +52,15 @@ wiki_ingest:
 #   wiki-compile --resume-stage concepts --dry-run
 #   wiki-compile --resume-stage concepts
 #   wiki-compile --resume-stage writeback --dry-run
-# They read existing wiki/summaries or wiki/concepts from the local filesystem
-# and still use only local Ollama plus the optional loopback Joplin Data API.
+#   wiki-compile --resume-stage writeback
+# Agent mode has the same stages:
+#   agent-compile --resume-stage concepts --dry-run
+#   agent-compile --resume-stage concepts
+#   agent-compile --resume-stage writeback --dry-run
+#   agent-compile --resume-stage writeback
+# They read existing wiki/summaries or wiki/concepts from the local filesystem.
+# Concept stages only write local files; writeback stages publish via loopback
+# Joplin Data API when enabled.
 # No Chroma, embeddings, or remote service is added for resume mode.
 
 write_back:

@@ -101,7 +101,12 @@ export async function runWikiCompileFlow(args) {
   fs.mkdirSync(wikiRoot, { recursive: true });
 
   if (resumeStage === "concepts") {
-    return await runConceptResumeFlow({ cfg, wikiRoot, dryRun });
+    return await runConceptResumeFlow({
+      cfg,
+      wikiRoot,
+      dryRun,
+      changedSummaryPaths: parseRelPathList(ctx.opts.get("changed-summary-paths")),
+    });
   }
   if (resumeStage === "writeback") {
     return await runWritebackResumeFlow({ cfg, wikiRoot, dryRun });
@@ -360,6 +365,7 @@ async function runWritebackResumeFlow(args) {
   const relPaths = await discoverDownstreamWritebackPaths(wikiRoot);
   const payload = {
     dry_run: dryRun,
+    compile_adapter: "local",
     resume_stage: "writeback",
     writeback_relpaths: relPaths,
     writeback_created_count: 0,
@@ -396,12 +402,17 @@ async function discoverDownstreamWritebackPaths(wikiRoot) {
  *   cfg: import('../config/load-config.js').AppConfig,
  *   wikiRoot: string,
  *   dryRun: boolean,
+ *   changedSummaryPaths?: string[],
  * }} args
  */
 async function runConceptResumeFlow(args) {
   const { cfg, wikiRoot, dryRun } = args;
   const summaryInventory = await readSummaryInventory(wikiRoot);
   const summaryPaths = summaryInventory.map((item) => item.path);
+  const changedSummaryPaths = normalizeChangedSummaryPaths(
+    args.changedSummaryPaths ?? [],
+    summaryPaths,
+  );
 
   if (summaryPaths.length === 0) {
     const err = new Error(
@@ -418,16 +429,27 @@ async function runConceptResumeFlow(args) {
     timeoutMs: cfg.ollama.timeout_ms,
     embedBatchSize: cfg.ollama.embed_batch_size,
   });
-  const conceptPlan = await planCanonicalConceptsFromSummaries({
+  const conceptPlanRaw = await planCanonicalConceptsFromSummaries({
     cfg,
     ollama,
     summaries: summaryInventory,
   });
+  const concepts = filterConceptsByChangedSummaryScope(
+    conceptPlanRaw.concepts,
+    summaryInventory,
+    changedSummaryPaths,
+  );
+  const conceptPlan = {
+    ...conceptPlanRaw,
+    concepts,
+  };
 
   const payload = {
     dry_run: dryRun,
+    compile_adapter: "local",
     resume_stage: "concepts",
     summary_paths_read: summaryPaths,
+    changed_summary_paths: changedSummaryPaths,
     concept_paths_planned: conceptPlan.concepts.map((item) => item.path),
     concept_paths_written: [],
     index_paths_written: [],
@@ -442,6 +464,7 @@ async function runConceptResumeFlow(args) {
     writeback_trashed_count: 0,
     writeback_collision_count: 0,
     writeback_orphan_candidate_count: 0,
+    writeback_deferred: true,
   };
   const downstreamRelPaths =
     conceptPlan.concepts.length > 0
@@ -466,15 +489,7 @@ async function runConceptResumeFlow(args) {
     });
     payload.concept_paths_written = conceptPathsWritten;
     payload.index_paths_written = indexPathsWritten;
-    if (cfg.joplin_wiki_writeback.enabled) {
-      payload.writeback_relpaths = [...conceptPathsWritten, ...indexPathsWritten];
-      Object.assign(
-        payload,
-        await runWikiWriteback(cfg, wikiRoot, payload.writeback_relpaths, {
-          dryRun: false,
-        }),
-      );
-    }
+    payload.writeback_relpaths = [...conceptPathsWritten, ...indexPathsWritten];
   }
   if (dryRun && cfg.joplin_wiki_writeback.enabled) {
     payload.writeback_relpaths = downstreamRelPaths;
@@ -507,6 +522,49 @@ async function readSummaryInventory(wikiRoot) {
         : [],
       body_excerpt: parsed.body.trim().slice(0, 1600),
     };
+  });
+}
+
+/**
+ * @param {string | undefined} raw
+ */
+function parseRelPathList(raw) {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((item) => item.trim().replace(/\\/g, "/"))
+    .filter(Boolean);
+}
+
+/**
+ * @param {string[]} requested
+ * @param {string[]} existing
+ */
+function normalizeChangedSummaryPaths(requested, existing) {
+  const existingSet = new Set(existing);
+  return dedupePathsPreserveOrder(
+    requested
+      .map((rel) => rel.replace(/\\/g, "/"))
+      .filter((rel) => rel.startsWith("summaries/") && existingSet.has(rel)),
+  );
+}
+
+/**
+ * @param {import('./wiki-planner.js').CanonicalConceptPlanItem[]} concepts
+ * @param {Awaited<ReturnType<typeof readSummaryInventory>>} summaries
+ * @param {string[]} changedSummaryPaths
+ */
+function filterConceptsByChangedSummaryScope(concepts, summaries, changedSummaryPaths) {
+  if (changedSummaryPaths.length === 0) return concepts;
+  const changed = new Set(changedSummaryPaths);
+  const changedSources = new Set(
+    summaries
+      .filter((summary) => changed.has(summary.path))
+      .flatMap((summary) => summary.source_refs),
+  );
+  return concepts.filter((concept) => {
+    if (concept.summary_refs.some((ref) => changed.has(ref))) return true;
+    return concept.source_refs.some((ref) => changedSources.has(ref));
   });
 }
 

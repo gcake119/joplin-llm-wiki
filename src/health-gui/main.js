@@ -23,6 +23,7 @@ import {
   runLintWorkflow,
   runQueryWorkflow,
   runSnapshotPipeline,
+  runStageAction,
 } from "./corpus/corpus-pipeline-runner.js";
 import { runStackScript } from "./stack/stack-script-runner.js";
 
@@ -293,6 +294,31 @@ function wireIpc() {
     }
     const sender = evt.sender;
     return runSnapshotPipeline(
+      repoRoot,
+      configPath,
+      /** @type {*} */ (payload),
+      spawn,
+      (p) => {
+        try {
+          sender.send("pipeline-progress", p);
+        } catch {
+          /* closed */
+        }
+      },
+    );
+  });
+
+  ipcMain.handle("run-stage-action", async (evt, payload) => {
+    if (!payload || typeof payload !== "object") {
+      return {
+        ok: false,
+        code: "BAD_REQUEST",
+        stage: { exitCode: null, stdoutTail: "", stderrTail: "" },
+        stageJson: {},
+      };
+    }
+    const sender = evt.sender;
+    return runStageAction(
       repoRoot,
       configPath,
       /** @type {*} */ (payload),

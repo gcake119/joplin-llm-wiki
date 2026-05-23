@@ -60,9 +60,16 @@ artifacts/
   source summaries:
   `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage concepts --dry-run`,
   `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage concepts`,
-  and `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback --dry-run`.
+  `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback --dry-run`,
+  and `pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback`.
+  Agent mode uses the same staged flow:
+  `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage concepts --dry-run`,
+  `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage concepts`,
+  `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage writeback --dry-run`,
+  and `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage writeback`.
   Concept resume reads `wiki/summaries/*.md`; writeback resume reads only
-  `wiki/concepts/*.md` and `wiki/indexes/All-Concepts.md`.
+  `wiki/concepts/*.md` and `wiki/indexes/All-Concepts.md`. Concept resume
+  writes local files only; writeback resume is the Joplin publication boundary.
 - Use `pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml` for Codex CLI agent compilation. This uses local `codex exec`, not an OpenAI API key. Both `wiki-compile` and `agent-compile` default to scanning every `raw/` source and requiring per-source summaries plus the two index pages; `--batch=true` is the explicit 10-15 page fallback. After a successful non-dry-run compile, enabled `joplin_wiki_writeback` writes selected wiki pages to `@llm-wiki/wiki/{summaries,concepts,indexes}` only.
 - `joplin_sqlite_sync.pipeline.compile_mode` controls automatic post-export compile: `local` runs `wiki-compile`, `agent` runs `agent-compile`, and `off` only maintains raw and snapshot state. If `compile_mode` is omitted, legacy `pipeline.run_wiki_compile: true` maps to `local`; `false` maps to `off`. The first sync records a baseline snapshot without compiling.
 - Periodic checking is polling, not a filesystem watcher. Keep `sqlite-sync` running with `schedule.every_seconds`, use `--every`, or run it repeatedly from launchd/cron when automatic follow-up compilation is desired.
