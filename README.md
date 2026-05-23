@@ -1,5 +1,7 @@
 # joplin-llm-wiki
 
+[English README](README.en.md)
+
 這是一套給 Joplin 用的本機知識庫整理工具。你可以把它想成：
 
 - 從 Joplin Desktop 的 `database.sqlite` 讀出筆記，轉成 `raw/` Markdown。
