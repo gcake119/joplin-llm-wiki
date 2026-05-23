@@ -110,7 +110,7 @@ joplin_wiki_writeback:
   artifacts_project_notebook_title: ProjectA # 僅 artifacts 按需寫回時需要
 ```
 
-`wiki-compile` / `agent-compile` 的 Joplin 寫回只在全庫掃描或偵測到新筆記後同步 wiki 層：
+`wiki-compile` / `agent-compile` 非 dry-run 成功後，若 `joplin_wiki_writeback.enabled` 為 true，會把本次寫入的 compiled wiki 頁面同步到 wiki 層；透過 `sqlite-sync` 自動編譯時，只有 raw snapshot 有變更才會觸發 compile/writeback：
 
 - `@llm-wiki/wiki/summaries`
 - `@llm-wiki/wiki/concepts`

@@ -2,556 +2,170 @@
 
 ## Purpose
 
-TBD - created by archiving change 'scheduled-joplin-sqlite-wiki'. Update Purpose after archive.
+`sqlite-sync` exports Joplin Desktop SQLite notes into `raw/`, compares a raw
+snapshot, and optionally triggers `wiki-compile` or `agent-compile` when raw
+content changed.
 
 ## Requirements
 
 ### Requirement: REQ-JSQ-LOCAL-FIRST Local execution and network boundary
 
-The system SHALL execute SQLite export, Markdown writes, Chroma persistence, and orchestration entirely on the local filesystem of the operator workstation.
+The system SHALL execute SQLite export, Markdown writes, snapshot comparison,
+and orchestration on the operator workstation.
 
-The system SHALL NOT open outbound HTTP connections except to `ollama.base_url` when `pipeline.run_index` or `pipeline.run_wiki_compile` is true.
+`sqlite-sync --export-only` and `sqlite-sync --snapshot-only` SHALL NOT require
+HTTP network access.
 
-The system SHALL NOT connect to remote vector databases, remote SQLite proxies, or third-party SaaS APIs as part of this capability.
+When changed raw content triggers downstream compile, `compile_mode: local` MAY
+contact `ollama.base_url` and the local Joplin Data API writeback preflight;
+`compile_mode: agent` MAY run local `codex exec` and the local Joplin Data API
+writeback preflight; `compile_mode: off` SHALL not compile.
 
-#### Scenario: SCN-JSQ-LF-01 Export-only run uses no HTTP
+The system SHALL NOT use Chroma, vector databases, or OpenAI API providers as
+part of `sqlite-sync`.
 
-- **WHEN** `joplin_sqlite_sync.enabled` is true
-- **AND** `joplin_sqlite_sync.pipeline.run_index` is false
-- **AND** `joplin_sqlite_sync.pipeline.run_wiki_compile` is false
-- **THEN** the `sqlite-sync` command SHALL complete without opening outbound HTTP connections
+#### Scenario: SCN-JSQ-LF-01 Export-only run uses no compile HTTP
 
-#### Scenario: SCN-JSQ-LF-02 Downstream uses localhost Ollama only
+- **WHEN** `sqlite-sync --export-only=true` runs
+- **THEN** it exports raw Markdown and updates snapshot state without running
+  compile.
 
-- **WHEN** `joplin_sqlite_sync.pipeline.run_index` is true
-- **AND** embeddings are required
-- **THEN** the system SHALL send embedding HTTP requests only to `ollama.base_url`
-
-
-<!-- @trace
-source: scheduled-joplin-sqlite-wiki
-updated: 2026-05-17
-code:
-  - src/joplin/sqlite/exporter.js
-  - src/cli.js
-  - src/config/load-config.js
-  - src/joplin/sqlite/paths.js
-  - README.md
-  - src/joplin/sqlite/joplin-schema.js
-  - config.yaml.example
-  - src/commands/cmd-sqlite-sync.js
-  - src/commands/index.js
-  - .npmrc
-  - pnpm-workspace.yaml
-  - my.config.yaml
-  - package.json
-tests:
-  - test/joplin-sqlite.test.js
--->
-
----
 ### Requirement: REQ-JSQ-CONFIG Configuration surface
 
-The system SHALL extend `config.yaml` with a `joplin_sqlite_sync` mapping containing at least:
+The system SHALL support `joplin_sqlite_sync` with at least:
 
 | Key | Type | Default | Required when enabled |
 | --- | ---- | ------- | ---------------------- |
 | `enabled` | boolean | false | — |
-| `database_path` | string | — | required |
+| `database_path` | string | `""` | required |
 | `export_root` | string | `""` | — |
-| `reconcile_mode` | string enum | `mirror` | — |
+| `reconcile_mode` | string enum `mirror`, `leave` | `mirror` | — |
 | `busy_timeout_ms` | integer | 5000 | — |
 | `max_export_attempts` | integer | 5 | — |
-| `pipeline.compile_mode` | string enum `local`, `agent`, `off` | derived from `pipeline.run_wiki_compile` | — |
+| `pipeline.compile_mode` | enum `local`, `agent`, `off` | derived from legacy `run_wiki_compile` | — |
 | `pipeline.run_wiki_compile` | boolean | true | legacy compatibility only |
-| `schedule.every_seconds` | integer or null | null | — |
+| `schedule.every_seconds` | positive integer or null | null | — |
 
-The system SHALL resolve relative `database_path` values relative to the config file directory, identical to `raw` resolution.
+Relative `database_path` SHALL resolve relative to the config file directory.
 
-The system SHALL treat `export_root` equal to `""` as "use `raw` as the export directory".
+Empty `export_root` SHALL mean resolved `raw`. When sync is enabled, resolved
+`export_root` SHALL equal resolved `raw`.
 
-The system SHALL reject invalid combinations at config load time with `CONFIG_INVALID` when `enabled` is true and `database_path` is missing or empty.
-
-The system SHALL reject configuration where resolved `export_root` is not identical to resolved `raw` after path normalization.
-
-The system SHALL reject `pipeline.compile_mode` values other than `local`, `agent`, and `off` with `CONFIG_INVALID`.
-
-When `pipeline.compile_mode` is absent, the system SHALL derive it from legacy `pipeline.run_wiki_compile`: `true` resolves to `local`, and `false` resolves to `off`.
-
-When both `pipeline.compile_mode` and `pipeline.run_wiki_compile` are present, the system SHALL use `pipeline.compile_mode` as the authoritative value.
+When `pipeline.compile_mode` is absent, the system SHALL derive it from legacy
+`pipeline.run_wiki_compile`: `true` resolves to `local`; `false` resolves to
+`off`. When both are present, `compile_mode` is authoritative.
 
 #### Scenario: SCN-JSQ-CFG-01 Missing database path fails fast
 
-- **WHEN** `joplin_sqlite_sync.enabled` is true
-- **AND** `database_path` is empty
-- **THEN** config loading SHALL fail with `CONFIG_INVALID`
-
-##### Example: relative database path resolution
-
-- **GIVEN** config file `/repo/my.config.yaml` sets `database_path: joplin/database.sqlite`
-- **WHEN** the loader resolves paths
-- **THEN** the resolved database path SHALL be `/repo/joplin/database.sqlite`
+- **WHEN** `joplin_sqlite_sync.enabled` is true and `database_path` is empty
+- **THEN** config loading fails with `CONFIG_INVALID`.
 
 #### Scenario: SCN-JSQ-CFG-02 Compile mode accepts fixed enum values
 
-- **WHEN** `joplin_sqlite_sync.pipeline.compile_mode` is `local`, `agent`, or `off`
-- **THEN** config loading SHALL succeed and expose that resolved compile mode to `sqlite-sync`
+- **WHEN** `compile_mode` is `local`, `agent`, or `off`
+- **THEN** config loading succeeds.
 
-#### Scenario: SCN-JSQ-CFG-03 Invalid compile mode fails fast
-
-- **WHEN** `joplin_sqlite_sync.pipeline.compile_mode` is `shell`
-- **THEN** config loading SHALL fail with `CONFIG_INVALID`
-
-#### Scenario: SCN-JSQ-CFG-04 Legacy run_wiki_compile maps to compile mode
-
-- **WHEN** `pipeline.compile_mode` is absent
-- **AND** `pipeline.run_wiki_compile` is `true`
-- **THEN** the resolved compile mode SHALL be `local`
-- **WHEN** `pipeline.compile_mode` is absent
-- **AND** `pipeline.run_wiki_compile` is `false`
-- **THEN** the resolved compile mode SHALL be `off`
-
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
-
----
 ### Requirement: REQ-JSQ-SQLITE-RO Read-only SQLite access with busy handling
 
-The system SHALL open the Joplin SQLite database using a read-only SQLite connection mode suitable for concurrent Joplin Desktop usage.
+The system SHALL open the Joplin SQLite database in read-only mode suitable for
+concurrent Joplin Desktop usage.
 
-The system SHALL retry open and read operations up to `max_export_attempts` when SQLITE_BUSY or equivalent transient errors occur, respecting `busy_timeout_ms` between attempts.
+The system SHALL retry open/read operations up to `max_export_attempts` when
+SQLite reports transient busy errors, respecting `busy_timeout_ms`.
 
-If all attempts fail, the system SHALL abort `sqlite-sync` with error code `SQLITE_OPEN_FAILED` and SHALL NOT run `pipeline.run_index` or `pipeline.run_wiki_compile` in the same invocation.
+If all attempts fail, the command SHALL abort with `SQLITE_OPEN_FAILED` and
+SHALL NOT update snapshot state or run compile.
 
 #### Scenario: SCN-JSQ-SQL-01 Busy database eventually succeeds
 
-- **WHEN** the first open attempt returns SQLITE_BUSY
-- **AND** a later attempt succeeds within retry limits
-- **THEN** export proceeds and the command exit code SHALL be 0 if downstream steps also succeed
+- **WHEN** the first open attempt returns SQLITE_BUSY and a later attempt
+  succeeds
+- **THEN** export proceeds.
 
-#### Scenario: SCN-JSQ-SQL-02 Permanent open failure stops the pipeline
-
-- **WHEN** the database file does not exist at the resolved path
-- **THEN** the command SHALL exit with code 1
-- **AND** stderr SHALL contain a single JSON object with `"error":"SQLITE_OPEN_FAILED"`
-
-
-<!-- @trace
-source: scheduled-joplin-sqlite-wiki
-updated: 2026-05-17
-code:
-  - src/joplin/sqlite/exporter.js
-  - src/cli.js
-  - src/config/load-config.js
-  - src/joplin/sqlite/paths.js
-  - README.md
-  - src/joplin/sqlite/joplin-schema.js
-  - config.yaml.example
-  - src/commands/cmd-sqlite-sync.js
-  - src/commands/index.js
-  - .npmrc
-  - pnpm-workspace.yaml
-  - my.config.yaml
-  - package.json
-tests:
-  - test/joplin-sqlite.test.js
--->
-
----
 ### Requirement: REQ-JSQ-EXPORT-MIRROR Markdown export and reconciliation
 
-The system SHALL read note records from the Joplin SQLite schema supported by this repository (documented in source as a pinned schema version) and SHALL write one UTF-8 Markdown file per exported note under the export directory.
+The system SHALL read note records from the supported Joplin SQLite schema and
+write one UTF-8 Markdown file per exported note under `raw`.
 
-The system SHALL skip notes that are not representable as UTF-8 Markdown body text without silent data corruption; skipped notes SHALL be counted in the export summary output.
+Notebook-filtered exports SHALL write files under
+`raw/<joined-notebook-slug>/<safe-title>.md`; nested notebook paths SHALL join
+levels with `joplin_sqlite_sync.notebook_filter.notebook_path_separator`, which
+defaults to `-`.
 
-The system SHALL sanitize file names and relative paths so that no output path escapes below the export directory; if a safe path cannot be constructed, the note SHALL be skipped with a recorded reason.
+Exported Markdown frontmatter SHALL preserve stable Joplin identity fields:
+`joplin_note_id`, `joplin_notebook_id`, `joplin_notebook_path`, and
+`joplin_notebook_slug`.
 
-When `reconcile_mode` is `mirror`, the system SHALL delete Markdown files under the export directory that no longer correspond to an exported note id from the current database snapshot after a successful export pass.
+When `reconcile_mode` is `mirror`, the system SHALL delete Markdown files under
+`raw` that no longer correspond to exported notes in the current database
+snapshot. When `reconcile_mode` is `leave`, the system SHALL not delete removed
+notes' files.
 
-When `reconcile_mode` is `leave`, the system SHALL NOT delete Markdown files for notes removed from the database.
+#### Scenario: SCN-JSQ-EXP-01 Joined notebook slug
 
-#### Scenario: SCN-JSQ-EXP-01 Mirror deletes stale files
+- **GIVEN** a Joplin note under notebook path `工作/專案A/會議`
+- **WHEN** notebook export runs with the default separator
+- **THEN** the note is written under `raw/工作-專案A-會議/`.
 
-- **GIVEN** export directory contains `aa111111111111111111111111111111.md` from a prior run
-- **WHEN** the current database snapshot contains no note with id `aa111111111111111111111111111111`
-- **AND** `reconcile_mode` is `mirror`
-- **THEN** that file SHALL be deleted during the reconcile phase
+### Requirement: REQ-JSQ-CHANGE-GATE Snapshot change detection and downstream gating
 
-##### Example: export counts
+Normal `sqlite-sync` SHALL:
 
-| exported_rows | skipped_invalid_utf8 | written_files |
-| ------------- | -------------------- | ------------- |
-| 1200 | 3 | 1197 |
+1. Export Joplin notes into `raw`.
+2. Build a raw snapshot from raw-relative path, Joplin note id, and Markdown
+   content hash.
+3. Compare the current snapshot with persisted state.
+4. Trigger downstream compile only when raw changed and compile mode is
+   `local` or `agent`.
+5. Commit snapshot state only after the applicable downstream work succeeds.
 
+The first non-dry-run sync SHALL record a baseline only and SHALL not compile.
 
-<!-- @trace
-source: scheduled-joplin-sqlite-wiki
-updated: 2026-05-17
-code:
-  - src/joplin/sqlite/exporter.js
-  - src/cli.js
-  - src/config/load-config.js
-  - src/joplin/sqlite/paths.js
-  - README.md
-  - src/joplin/sqlite/joplin-schema.js
-  - config.yaml.example
-  - src/commands/cmd-sqlite-sync.js
-  - src/commands/index.js
-  - .npmrc
-  - pnpm-workspace.yaml
-  - my.config.yaml
-  - package.json
-tests:
-  - test/joplin-sqlite.test.js
--->
+If downstream preflight or compile fails, snapshot state SHALL remain at the
+last successful snapshot so a later run retries the same raw change.
 
----
-### Requirement: REQ-JSQ-PIPELINE-ORDER Orchestration order and failure gating
+#### Scenario: SCN-JSQ-GATE-01 Baseline does not compile
 
-When `joplin_sqlite_sync.enabled` is false, the `sqlite-sync` command SHALL exit 0 without writing files and without running downstream pipelines, emitting a machine-readable "skipped" status on stdout.
+- **WHEN** no previous snapshot state exists and non-dry-run `sqlite-sync` runs
+- **THEN** state is committed with reason `baseline` and compile is not
+  triggered.
 
-When `enabled` is true, the system SHALL execute steps in order:
+#### Scenario: SCN-JSQ-GATE-02 Changed raw triggers local compile
 
-1. Export Markdown files, including reconcile when configured.
-2. Build a raw Markdown snapshot for files exported in the current successful cycle.
-3. Compare the current snapshot with the previous persisted snapshot state.
-4. Persist the current snapshot state when the command is not a dry-run.
-5. If raw Markdown changed and resolved `pipeline.compile_mode` is `local`, run the existing `wiki-compile` command runtime.
-6. If raw Markdown changed and resolved `pipeline.compile_mode` is `agent`, run the existing `agent-compile` command runtime.
-7. If raw Markdown did not change or resolved `pipeline.compile_mode` is `off`, skip compile.
+- **WHEN** raw changed and resolved `compile_mode` is `local`
+- **THEN** the system runs `wiki-compile` once and commits state only after it
+  succeeds.
 
-If export fails, the system SHALL NOT update snapshot state and SHALL NOT execute any compile step.
+#### Scenario: SCN-JSQ-GATE-03 Changed raw triggers agent compile
 
-If snapshot state cannot be written after a successful non-dry-run export, the system SHALL fail the invocation with a stable state I/O error and SHALL NOT execute any compile step.
+- **WHEN** raw changed and resolved `compile_mode` is `agent`
+- **THEN** the system runs `agent-compile` once and commits state only after it
+  succeeds.
 
-Failures from downstream compile steps SHALL preserve existing error codes. The local compile path SHALL preserve `wiki-compile` errors. The agent compile path SHALL preserve `CODEX_CLI_UNAVAILABLE`, `CODEX_USAGE_LIMIT`, and `AGENT_COMPILE_FAILED`.
+### Requirement: REQ-JSQ-SNAPSHOT-ONLY Snapshot-only mode
 
-#### Scenario: SCN-JSQ-PIPE-01 Export failure skips state and compile
+`sqlite-sync --snapshot-only=true` SHALL build and persist a baseline snapshot
+from existing `raw` Markdown without opening SQLite, deleting files, or running
+compile.
 
-- **WHEN** export terminates with `SQLITE_EXPORT_FAILED`
-- **THEN** snapshot state SHALL NOT be updated
-- **AND** no compile runner SHALL start in that invocation
-
-#### Scenario: SCN-JSQ-PIPE-02 Changed raw triggers local compile
-
-- **WHEN** a successful non-dry-run export detects at least one added, updated, or deleted exported Markdown file
-- **AND** resolved `pipeline.compile_mode` is `local`
-- **THEN** the system SHALL run `wiki-compile` once for that invocation
-
-#### Scenario: SCN-JSQ-PIPE-03 Changed raw triggers agent compile
-
-- **WHEN** a successful non-dry-run export detects at least one added, updated, or deleted exported Markdown file
-- **AND** resolved `pipeline.compile_mode` is `agent`
-- **THEN** the system SHALL run `agent-compile` once for that invocation
-
-#### Scenario: SCN-JSQ-PIPE-04 Unchanged raw skips compile
-
-- **WHEN** a successful non-dry-run export detects no added, updated, or deleted exported Markdown file
-- **THEN** the system SHALL skip local compile and agent compile for that invocation
-
-##### Example: unchanged snapshot
-
-- **GIVEN** previous snapshot contains `a.md` with Joplin note id `note-a` and SHA-256 hash `hash-a`
-- **AND** current snapshot contains `a.md` with Joplin note id `note-a` and SHA-256 hash `hash-a`
-- **WHEN** the export cycle reaches compile decision
-- **THEN** `raw_changed` SHALL be false
-- **AND** `compile_triggered` SHALL be false
-
-#### Scenario: SCN-JSQ-PIPE-05 Off mode skips compile even when raw changed
-
-- **WHEN** a successful non-dry-run export detects at least one raw Markdown change
-- **AND** resolved `pipeline.compile_mode` is `off`
-- **THEN** the system SHALL skip local compile and agent compile for that invocation
-
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
-
----
-### Requirement: REQ-JSQ-SCHEDULE Optional periodic re-run in-process
-
-When `schedule.every_seconds` is null and the operator does not pass a CLI override, the system SHALL run a single export, raw change detection, and conditional compile cycle, then exit.
-
-When `schedule.every_seconds` is a positive integer, the system SHALL repeat the cycle indefinitely with an interval of that many seconds until the process receives SIGINT or SIGTERM, where each cycle starts only after the previous cycle completes.
-
-The system SHALL log each completed cycle summary to stdout as one JSON line per cycle.
-
-The summary SHALL include `raw_changed`, `change_detection`, `changed_files`, `compile_mode`, and `compile_triggered`.
-
-#### Scenario: SCN-JSQ-SCH-01 Interval mode runs at least twice
-
-- **GIVEN** `schedule.every_seconds` is 3600
-- **WHEN** the operator starts the command and the first two cycles complete successfully
-- **THEN** stdout SHALL contain at least two JSON summary lines with monotonically increasing cycle counters
-
-#### Scenario: SCN-JSQ-SCH-02 Summary exposes compile decision
-
-- **WHEN** a scheduled cycle completes successfully
-- **THEN** the JSON summary SHALL include `raw_changed`, `change_detection`, `changed_files`, `compile_mode`, and `compile_triggered`
-
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
-
----
-### Requirement: REQ-JSQ-REPO-NOTES-LAYOUT Repository-local notes directory and version control exclusion
-
-The project layout for joplin-brain SHALL document a default `notes_root` path of `./notes_root` (a directory at the repository root) in `config.yaml.example`.
-
-The repository SHALL list `notes_root/` in `.gitignore` so Markdown note files under that directory are not tracked by Git by default.
-
-#### Scenario: SCN-JSQ-REPO-01 Note files under notes_root are ignored by Git
-
-- **GIVEN** the repository `.gitignore` contains a `notes_root/` entry
-- **WHEN** the operator creates a file `notes_root/example.md`
-- **THEN** `git check-ignore -q notes_root/example.md` SHALL exit with status 0 on systems where Git is available
-
-<!-- @trace
-source: scheduled-joplin-sqlite-wiki
-updated: 2026-05-17
-code:
-  - src/joplin/sqlite/exporter.js
-  - src/cli.js
-  - src/config/load-config.js
-  - src/joplin/sqlite/paths.js
-  - README.md
-  - src/joplin/sqlite/joplin-schema.js
-  - config.yaml.example
-  - src/commands/cmd-sqlite-sync.js
-  - src/commands/index.js
-  - .npmrc
-  - pnpm-workspace.yaml
-  - my.config.yaml
-  - package.json
-tests:
-  - test/joplin-sqlite.test.js
--->
-
----
-### Requirement: REQ-JSQ-RAW-CHANGE-DETECTION Raw snapshot change detection
-
-The system SHALL persist a JSON snapshot state for successful non-dry-run `sqlite-sync` exports outside the `raw` directory.
-
-The snapshot state SHALL record at minimum `schema_version`, `updated_at_ms`, the resolved export root, and one entry per exported Markdown file keyed by raw-relative path. Each file entry SHALL record the Joplin note id and a SHA-256 content hash.
-
-The system SHALL classify a raw Markdown file as added when its raw-relative path exists in the current snapshot and not in the previous snapshot.
-
-The system SHALL classify a raw Markdown file as updated when its raw-relative path exists in both snapshots and either the Joplin note id or SHA-256 content hash differs.
-
-The system SHALL classify a raw Markdown file as deleted when its raw-relative path exists in the previous snapshot and not in the current snapshot.
-
-When no previous valid snapshot state exists, the system SHALL establish a baseline snapshot, report `change_detection: "baseline"`, report `raw_changed: false`, and skip compile for that invocation.
-
-When the operator invokes `sqlite-sync --snapshot-only`, the system SHALL scan existing Markdown files under the configured `raw` directory using `raw_glob`, persist a baseline snapshot state, report `change_detection: "snapshot_created"`, report `snapshot_only: true`, and skip compile for that invocation.
-
-When the operator invokes `sqlite-sync --snapshot-only`, the system SHALL NOT open Joplin SQLite, SHALL NOT export notes, and SHALL NOT delete files from `raw`.
-
-When the operator invokes `sqlite-sync --snapshot-only` and no Markdown files match `raw_glob`, the system SHALL fail with `NO_SOURCE_MARKDOWN` and SHALL NOT write snapshot state.
-
-Dry-run invocations SHALL read existing snapshot state for comparison, SHALL report `change_detection: "dry_run"`, SHALL NOT persist snapshot state, and SHALL NOT trigger compile.
-
-#### Scenario: SCN-JSQ-RCD-01 First successful export establishes baseline
-
-- **WHEN** `sqlite-sync` completes a successful non-dry-run export and no previous valid snapshot state exists
-- **THEN** the system SHALL persist the current snapshot state
-- **AND** stdout summary SHALL report `change_detection: "baseline"`
-- **AND** stdout summary SHALL report `compile_triggered: false`
-
-#### Scenario: SCN-JSQ-RCD-02 Added markdown is detected
-
-- **GIVEN** previous snapshot state contains `a.md`
-- **WHEN** current snapshot contains `a.md` and `b.md`
-- **THEN** `changed_files.added` SHALL equal 1
-- **AND** `raw_changed` SHALL be true
-
-#### Scenario: SCN-JSQ-RCD-03 Updated markdown is detected
-
-- **GIVEN** previous snapshot state contains `a.md` with SHA-256 hash `old`
-- **WHEN** current snapshot contains `a.md` with SHA-256 hash `new`
-- **THEN** `changed_files.updated` SHALL equal 1
-- **AND** `raw_changed` SHALL be true
-
-#### Scenario: SCN-JSQ-RCD-04 Deleted markdown is detected
-
-- **GIVEN** previous snapshot state contains `a.md` and `b.md`
-- **WHEN** current snapshot contains only `a.md`
-- **THEN** `changed_files.deleted` SHALL equal 1
-- **AND** `raw_changed` SHALL be true
-
-#### Scenario: SCN-JSQ-RCD-05 Dry run does not persist state
-
-- **WHEN** `sqlite-sync --dry-run` computes raw changes against an existing snapshot
-- **THEN** the system SHALL NOT write snapshot state
-- **AND** the system SHALL NOT trigger local compile or agent compile
-
-#### Scenario: SCN-JSQ-RCD-06 Snapshot-only establishes baseline from existing raw
-
-- **GIVEN** configured `raw` contains `notes/a.md`
-- **WHEN** the operator runs `sqlite-sync --snapshot-only`
-- **THEN** the system SHALL persist snapshot state containing `notes/a.md`
-- **AND** stdout summary SHALL report `change_detection: "snapshot_created"`
-- **AND** stdout summary SHALL report `snapshot_only: true`
-- **AND** stdout summary SHALL report `compile_triggered: false`
-
-#### Scenario: SCN-JSQ-RCD-07 Snapshot-only does not touch SQLite or raw files
-
-- **WHEN** the operator runs `sqlite-sync --snapshot-only`
-- **THEN** the system SHALL NOT open the configured Joplin SQLite database
-- **AND** the system SHALL NOT export notes
-- **AND** the system SHALL NOT delete Markdown files from `raw`
-
-#### Scenario: SCN-JSQ-RCD-08 Snapshot-only rejects empty raw
-
-- **GIVEN** configured `raw` contains no Markdown matching `raw_glob`
-- **WHEN** the operator runs `sqlite-sync --snapshot-only`
-- **THEN** the command SHALL fail with `NO_SOURCE_MARKDOWN`
-- **AND** the system SHALL NOT write snapshot state
-
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
-
----
-### Requirement: REQ-JSQ-AGENT-COMPILE-ORCHESTRATION Agent compile as a fixed sqlite-sync downstream mode
-
-When resolved `joplin_sqlite_sync.pipeline.compile_mode` is `agent`, `sqlite-sync` SHALL invoke the same command runtime used by the `agent-compile` CLI command after a successful export detects raw Markdown changes.
-
-The system SHALL NOT implement agent mode by accepting or executing an arbitrary shell command from config.
-
-The system SHALL preserve existing `agent-compile` behavior: it SHALL use local `codex exec`, SHALL read raw Markdown sources, SHALL write only allowed wiki Markdown paths, and SHALL run enabled wiki writeback after successful compile.
-
-#### Scenario: SCN-JSQ-ACO-01 Agent mode uses fixed command runtime
-
-- **WHEN** resolved `pipeline.compile_mode` is `agent`
-- **AND** raw Markdown changes are detected
-- **THEN** `sqlite-sync` SHALL invoke the existing `agent-compile` command runtime once
-- **AND** it SHALL NOT evaluate a shell command string from config
-
-#### Scenario: SCN-JSQ-ACO-02 Agent failure preserves existing error families
-
-- **WHEN** the agent compile runtime fails with a Codex CLI unavailable, usage limit, or incomplete compile condition
-- **THEN** `sqlite-sync` SHALL surface the corresponding `CODEX_CLI_UNAVAILABLE`, `CODEX_USAGE_LIMIT`, or `AGENT_COMPILE_FAILED` error code
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
+If no matching raw Markdown exists, the command SHALL fail with
+`NO_SOURCE_MARKDOWN`.
+
+#### Scenario: SCN-JSQ-SNAP-01 Existing raw baseline
+
+- **WHEN** `raw` contains Markdown files and snapshot-only runs
+- **THEN** state is written and `snapshot_only: true` appears in stdout JSON.
+
+### Requirement: REQ-JSQ-POLLING Periodic checking is polling
+
+`sqlite-sync` periodic checking SHALL be polling, not a filesystem watcher.
+
+The system SHALL run once when `schedule.every_seconds` is null and `--every` is
+absent. The system SHALL run repeated cycles in one process when
+`schedule.every_seconds` or CLI `--every <seconds>` supplies a positive
+interval.
+
+#### Scenario: SCN-JSQ-POLL-01 One-shot default
+
+- **WHEN** `every_seconds` is null and no `--every` option is passed
+- **THEN** `sqlite-sync` runs one cycle and exits.

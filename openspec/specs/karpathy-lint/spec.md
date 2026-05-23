@@ -2,356 +2,67 @@
 
 ## Purpose
 
-TBD - created by archiving change 'joplin-brain-mvp'. Update Purpose after archive.
+The `lint` command performs filesystem checks over `raw/`, `wiki/`,
+`brainstorming/`, and schema metadata. It no longer depends on embeddings,
+Chroma, or vector indexes.
 
 ## Requirements
 
-### Requirement: REQ-KL-001 Duplicate embedding pairs
+### Requirement: REQ-KL-001 Duplicate wiki basename candidates
 
-The system SHALL emit candidate duplicate pairs from cosine similarity ≥ `lint.duplicate_similarity_threshold` across combined embeddings when configured, or per-layer when `lint.duplicate_scope` is `source|wiki|both` (default `both`).
+The system SHALL emit duplicate candidates for wiki files that share the same
+case-insensitive basename.
 
-#### Scenario: SCN-KL-DUP Still works
+#### Scenario: SCN-KL-DUP-01 Duplicate basename listed
 
-- **WHEN** lint runs with indexed sources and wiki
-- **THEN** JSON contains `duplicates` array
+- **WHEN** `wiki/concepts/foo.md` and `wiki/summaries/foo.md` both exist
+- **THEN** JSON `duplicates` contains an object with those paths.
 
+### Requirement: REQ-KL-002 Raw readability scan
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+The system SHALL scan Markdown files under resolved `raw` and report unreadable
+or invalid UTF-8 files under `skipped_notes`.
 
----
-### Requirement: REQ-KL-002 Source link orphans
+#### Scenario: SCN-KL-RAW-01 Invalid raw note listed
 
-The system SHALL detect markdown notes under `notes_root` with zero outbound internal links and no backlinks when `lint.source_link_check` is true (default).
+- **WHEN** a raw Markdown file decodes with replacement characters
+- **THEN** it appears under `skipped_notes` with reason `INVALID_UTF8`.
 
-#### Scenario: SCN-KL-SRC-ORPH Source orphan listed
+### Requirement: REQ-KL-003 Wiki link gaps
 
-- **WHEN** a source note matches orphan definition
-- **THEN** it appears under `orphans` with `layer: source`
+The system SHALL scan Markdown links in wiki files and report broken relative
+wiki links under `wiki_orphans`.
 
+External URL links SHALL NOT be treated as wiki link gaps.
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+#### Scenario: SCN-KL-WIKI-LINK-01 Broken wiki link
 
----
-### Requirement: REQ-KL-003 Wiki hub orphans
+- **WHEN** a wiki page links to a missing relative Markdown target
+- **THEN** JSON `wiki_orphans` contains `reason: broken_wiki_link`.
 
-The system SHALL detect wiki pages listed in `required_hub_pages` from schema that have zero inbound links from other wiki pages.
+### Requirement: REQ-KL-004 Schema and layout gaps
 
-#### Scenario: SCN-KL-WIKI-ORPH Hub orphan
+The system SHALL report wiki layout violations under `schema_gaps` when files
+are not flat under `summaries/`, `concepts/`, or `indexes/`.
 
-- **WHEN** a hub page exists but no wiki page links to it
-- **THEN** JSON `wiki_orphans` contains an object with `path` and `reason: hub_unlinked`
+The system SHALL report missing required index files for
+`indexes/All-Sources.md` and `indexes/All-Concepts.md`.
 
+When `wiki_schema.path` is configured, the system SHALL report wiki files that
+lack required frontmatter keys declared by the schema.
 
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+#### Scenario: SCN-KL-GAP-01 Missing index
 
----
-### Requirement: REQ-KL-004 Contradiction candidates via local LLM
+- **WHEN** `wiki/indexes/All-Sources.md` is absent
+- **THEN** `schema_gaps` contains a `missing_index` entry.
 
-The system SHALL select up to `lint.contradiction.max_pairs` pairs of excerpts (wiki-vs-wiki or wiki-vs-source) using heuristic scheduling (e.g. recent edits, shared entities).
+### Requirement: REQ-KL-005 Brainstorming follow-up candidates
 
-The system SHALL call Ollama chat with a JSON-schema-constrained prompt and SHALL parse verdict objects with keys `severity`, `claim_a`, `claim_b`, `explanation`.
+The system SHALL list Markdown files under `brainstorming/chat/` as
+`brainstorming_followups` so the operator can decide whether they should be
+promoted into future knowledge work.
 
-#### Scenario: SCN-KL-CONTRA Structured output
+#### Scenario: SCN-KL-BRAIN-01 Chat note listed
 
-- **WHEN** lint completes contradiction stage successfully
-- **THEN** `contradictions` array length ≥ 0 and every element contains `severity` and `explanation` strings
-
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
-
----
-### Requirement: REQ-KL-005 Schema gap detection
-
-The system SHALL list missing required hub pages, missing page types count below threshold, or pages lacking required frontmatter keys per schema.
-
-#### Scenario: SCN-KL-GAP Missing hub
-
-- **WHEN** schema declares a hub path absent on disk
-- **THEN** `schema_gaps` contains `{ "type":"missing_hub", "path":"..." }`
-
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
-
----
-### Requirement: REQ-KL-006 Report format
-
-The system SHALL write paired Markdown and JSON reports under `lint.out_dir` with ISO8601 UTC timestamps in filenames.
-
-The JSON SHALL contain arrays `duplicates`, `orphans`, `contradictions`, `wiki_orphans`, `schema_gaps`, `skipped_notes`.
-
-#### Scenario: SCN-LINT-KFULL Keys present
-
-- **WHEN** lint succeeds on fixture project
-- **THEN** JSON parses and includes all six array keys
-
-<!-- @trace
-source: joplin-brain-mvp
-updated: 2026-05-17
-code:
-  - src/wiki/wiki-compiler.js
-  - src/rag/rag-service.js
-  - src/vector/chroma-store.js
-  - src/commands/cmd-wiki-compile.js
-  - scripts/register-bin.mjs
-  - src/vector/store-factory.js
-  - src/wiki/frontmatter.js
-  - src/wiki/wiki-planner.js
-  - src/index/indexer.js
-  - test/helpers/chroma-server.mjs
-  - docs/scheduling-examples.md
-  - src/commands/index.js
-  - fixtures/full-karpathy.config.yaml
-  - src/lint/karpathy-lint-engine.js
-  - src/report/report-writer.js
-  - src/schema/schema-validator.js
-  - src/commands/cmd-watch.js
-  - bin/joplin-brain.js
-  - src/commands/cmd-ask.js
-  - src/commands/cmd-lint.js
-  - src/commands/cmd-index.js
-  - src/config/load-config.js
-  - src/joplin/data-api-client.js
-  - test/helpers/mock-ollama-fetch.mjs
-  - wiki-schema.example.yaml
-  - src/ollama/client.js
-  - src/vector/memory-vector-store.js
-  - README.md
-  - package.json
-  - src/cli.js
-  - src/index/chunker.js
-  - src/fs/note-discovery.js
-  - config.yaml.example
-  - src/index/state-store.js
-tests:
-  - test/cli-routing.test.js
-  - test/cli-help.test.js
-  - test/config-schema.test.js
-  - test/wiki-separation.test.js
-  - test/joplin-cli.test.js
-  - test/integration-index.test.js
--->
+- **WHEN** `brainstorming/chat/example.md` exists
+- **THEN** JSON `brainstorming_followups` contains `example.md`.

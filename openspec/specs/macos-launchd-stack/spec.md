@@ -2,254 +2,70 @@
 
 ## Purpose
 
-TBD - created by archiving change 'one-click-launchd-stack'. Update Purpose after archive.
+The launchd stack starts local Ollama and `joplin-llm-wiki sqlite-sync` on
+macOS. Chroma is no longer part of the stack.
 
 ## Requirements
 
-### Requirement: REQ-MLS-LOCAL-ONLY Launchd stack preserves local-first boundaries
+### Requirement: REQ-MLS-LOCAL-ONLY LaunchAgents stay local
 
-The system SHALL document and enforce that LaunchAgent definitions shipped for this capability only invoke locally installed programs (`node`, `pnpm`, `joplin`, `chroma` CLI as referenced in repository documentation) and the project CLI (`joplin-llm-wiki`). The system SHALL NOT configure LaunchAgents to start outbound HTTP listeners for joplin-llm-wiki, SHALL NOT add cloud vector database endpoints, and SHALL NOT bundle third-party SaaS credentials inside plist templates.
+LaunchAgent templates shipped for this capability SHALL only invoke locally
+installed programs and the project CLI.
 
-#### Scenario: Operator inspects plist template
+The stack SHALL NOT configure Chroma, vector databases, public HTTP listeners,
+cloud endpoints, or bundled third-party SaaS credentials.
 
-- **WHEN** an operator opens the shipped LaunchAgent plist example under `scripts/launchd/`
-- **THEN** the documented keys SHALL reference only local paths and standard launchd keys (for example `Label`, `WorkingDirectory`, `ProgramArguments`, `EnvironmentVariables`, `RunAtLoad`, `KeepAlive`, `StandardOutPath`, `StandardErrorPath`) and SHALL NOT declare `Sockets`, `inetd`-style listeners, or remote URLs as part of joplin-llm-wiki orchestration.
+#### Scenario: SCN-MLS-LOCAL-01 Local programs only
 
+- **WHEN** an operator installs the stack
+- **THEN** installed jobs are limited to Ollama and `sqlite-sync`.
 
-<!-- @trace
-source: one-click-launchd-stack
-updated: 2026-05-17
-code:
-  - scripts/launchd/run-ollama.sh
-  - scripts/launchd/run-sqlite-sync.sh
-  - scripts/launchd/README.md
-  - scripts/launchd/run-chroma.sh
-  - scripts/launchd/com.joplin-brain.chroma.plist.example
-  - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
-  - scripts/launchd/install-joplin-brain-stack.sh
-  - README.md
-  - docs/macos-launchd-stack.md
-  - scripts/launchd/com.joplin-brain.ollama.plist.example
-  - scripts/launchd/uninstall-joplin-brain-stack.sh
--->
+### Requirement: REQ-MLS-PLISTS Ollama and sqlite-sync plist templates
 
----
-### Requirement: REQ-MLS-LAUNCHD-ARTIFACTS Shipped plist and wrapper contracts
+The system SHALL ship LaunchAgent property list templates and paired wrapper
+scripts under `scripts/launchd/` for:
 
-The system SHALL ship LaunchAgent property list templates and paired wrapper scripts under `scripts/launchd/` for **Ollama** (`ollama serve` as the default foreground command, operator-customizable via plist `ProgramArguments`), **Chroma** (`pnpm exec chroma run` with `WorkingDirectory` at the repository root and arguments consistent with `README.md` for loopback host, port, and persist path), and **`joplin-llm-wiki sqlite-sync`** with repository `WorkingDirectory`, non-empty per-job `Label`, and `ProgramArguments` that resolve `pnpm`, `ollama`, and the project CLI via absolute or PATH-safe means. Each plist template SHALL declare `StandardOutPath` and `StandardErrorPath` under the operator home directory or another documented location outside the git index. The `sqlite-sync` wrapper SHALL change to the repository root, optionally load a documented local non-committed env file, perform dependency readiness checks required by **REQ-MLS-FULL-STACK**, and execute `pnpm exec joplin-llm-wiki sqlite-sync` with a config path provided by the installer or operator.
+- Ollama (`ollama serve`)
+- `joplin-llm-wiki sqlite-sync`
 
-#### Scenario: Template supports periodic sqlite-sync
+The `sqlite-sync` wrapper SHALL change to the repository root, optionally load a
+non-committed `.env.launchd`, resolve the configured `compile_mode`, wait for
+Ollama readiness only when `compile_mode` is `local`, and execute
+`pnpm exec joplin-llm-wiki sqlite-sync`.
 
-- **WHEN** the operator sets `joplin_sqlite_sync.schedule.every_seconds` to a positive integer (for example **600** for a ten-minute cadence) or passes the CLI override for the same semantics, and launches the job using the shipped wrapper
-- **THEN** the long-running `sqlite-sync` process SHALL remain compatible with the existing in-process scheduling loop (await between cycles) without requiring cron.
+#### Scenario: SCN-MLS-PLIST-01 Sqlite-sync skips Ollama for agent/off
 
+- **WHEN** resolved `compile_mode` is `agent` or `off`
+- **THEN** the wrapper does not wait for Ollama readiness before starting
+  `sqlite-sync`.
 
-<!-- @trace
-source: one-click-launchd-stack
-updated: 2026-05-17
-code:
-  - scripts/launchd/run-ollama.sh
-  - scripts/launchd/run-sqlite-sync.sh
-  - scripts/launchd/README.md
-  - scripts/launchd/run-chroma.sh
-  - scripts/launchd/com.joplin-brain.chroma.plist.example
-  - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
-  - scripts/launchd/install-joplin-brain-stack.sh
-  - README.md
-  - docs/macos-launchd-stack.md
-  - scripts/launchd/com.joplin-brain.ollama.plist.example
-  - scripts/launchd/uninstall-joplin-brain-stack.sh
--->
+### Requirement: REQ-MLS-INSTALL Install and uninstall scripts
 
----
-### Requirement: REQ-MLS-FULL-STACK Full-stack launchd registers Ollama Chroma and bounded sqlite-sync readiness
+The system SHALL provide install and uninstall shell scripts under
+`scripts/launchd/` that write or remove only the Ollama and sqlite-sync plist
+files under `${HOME}/Library/LaunchAgents/`.
 
-The default one-click install documented for this capability SHALL register three LaunchAgents: Ollama server, Chroma server, and `joplin-llm-wiki sqlite-sync`, each with shipped plist examples. The `run-sqlite-sync.sh` wrapper SHALL probe readiness of the Ollama HTTP service and the Chroma HTTP endpoint using default base URLs `http://127.0.0.1:11434` and `http://127.0.0.1:8000` unless overridden by environment variables documented in `docs/macos-launchd-stack.md`. The wrapper SHALL retry until success or until a documented wall-clock timeout is exceeded; on timeout the wrapper SHALL print one actionable line to standard error and exit non-zero.
+The scripts SHALL use modern `launchctl bootstrap` / `bootout` semantics where
+available and SHALL print actionable errors on failure.
 
-#### Scenario: Sqlite-sync starts after Ollama and Chroma accept connections
+#### Scenario: SCN-MLS-UNINSTALL-01 Removes installed jobs
 
-- **WHEN** Ollama and Chroma LaunchAgents are loaded and listening on the configured loopback ports and the operator loads the `sqlite-sync` LaunchAgent
-- **THEN** the `run-sqlite-sync.sh` wrapper SHALL pass its readiness phase without exiting and SHALL execute `pnpm exec joplin-llm-wiki sqlite-sync` with the configured config path.
+- **WHEN** the uninstall script completes successfully
+- **THEN** Ollama and sqlite-sync LaunchAgent plist files from this stack are
+  removed and their jobs are unloaded.
 
-#### Scenario: Sqlite-sync surfaces timeout when Chroma never becomes reachable
+### Requirement: REQ-MLS-DOCS Documentation and scheduling semantics
 
-- **WHEN** the Chroma process is not running or not listening on the configured Chroma port and the configured timeout elapses during readiness probes inside `run-sqlite-sync.sh`
-- **THEN** the wrapper SHALL exit non-zero after writing at least one error line to standard error that names Chroma readiness failure so operators can inspect the `sqlite-sync` LaunchAgent error log.
+`docs/macos-launchd-stack.md` SHALL document that the stack contains Ollama plus
+sqlite-sync, that sqlite-sync periodic checking is polling rather than a file
+watcher, and that operators SHOULD NOT combine plist `StartInterval` with a
+non-null `joplin_sqlite_sync.schedule.every_seconds`.
 
+The guide SHALL document that `compile_mode: local` waits for Ollama,
+`compile_mode: agent` requires an interactive local Codex CLI login, and
+`compile_mode: off` only exports/snapshots raw.
 
-<!-- @trace
-source: one-click-launchd-stack
-updated: 2026-05-17
-code:
-  - scripts/launchd/run-ollama.sh
-  - scripts/launchd/run-sqlite-sync.sh
-  - scripts/launchd/README.md
-  - scripts/launchd/run-chroma.sh
-  - scripts/launchd/com.joplin-brain.chroma.plist.example
-  - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
-  - scripts/launchd/install-joplin-brain-stack.sh
-  - README.md
-  - docs/macos-launchd-stack.md
-  - scripts/launchd/com.joplin-brain.ollama.plist.example
-  - scripts/launchd/uninstall-joplin-brain-stack.sh
--->
+#### Scenario: SCN-MLS-DOCS-01 No Chroma docs
 
----
-### Requirement: REQ-MLS-INSTALL-UNINSTALL One-step install and uninstall scripts
-
-The system SHALL provide an install shell script under `scripts/launchd/` that copies or links **all** LaunchAgent plists in the **full-stack** operator path (Ollama, Chroma, and `sqlite-sync`) into `${HOME}/Library/LaunchAgents/`, substitutes operator-specific placeholders (including repository root, config absolute path, and unique `Label` for each job), and loads **each** agent using `launchctl bootstrap gui/$(id -u)` or a documented equivalent for the target macOS version. The system SHALL provide an uninstall shell script that unloads **each** registered job using `launchctl bootout` or documented equivalent and removes **all** corresponding plist files from `${HOME}/Library/LaunchAgents/`. Both scripts SHALL exit non-zero on failure and SHALL print actionable error messages to standard error. The documentation MAY describe a reduced install path that registers only `sqlite-sync` for advanced troubleshooting, but the default documented one-click flow SHALL include Ollama and Chroma as specified in **REQ-MLS-FULL-STACK**.
-
-#### Scenario: Install then uninstall leaves no loaded job
-
-- **WHEN** the operator runs the install script successfully for the full-stack path, confirms the jobs are loaded, then runs the uninstall script
-- **THEN** every previously installed `Label` for Ollama, Chroma, and `sqlite-sync` SHALL no longer appear as active GUI LaunchAgents for that user and every plist file SHALL be removed from `${HOME}/Library/LaunchAgents/` when the uninstall script completes successfully.
-
-
-<!-- @trace
-source: one-click-launchd-stack
-updated: 2026-05-17
-code:
-  - scripts/launchd/run-ollama.sh
-  - scripts/launchd/run-sqlite-sync.sh
-  - scripts/launchd/README.md
-  - scripts/launchd/run-chroma.sh
-  - scripts/launchd/com.joplin-brain.chroma.plist.example
-  - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
-  - scripts/launchd/install-joplin-brain-stack.sh
-  - README.md
-  - docs/macos-launchd-stack.md
-  - scripts/launchd/com.joplin-brain.ollama.plist.example
-  - scripts/launchd/uninstall-joplin-brain-stack.sh
--->
-
----
-### Requirement: REQ-MLS-OBSERVABILITY Logging locations and Joplin Data API prerequisites
-
-The system SHALL document how operators satisfy Joplin Data API prerequisites for scheduled wiki write-back under launchd: `joplin_data_api.token` configured, `joplin_data_api.base_url` reachable from the agent environment with loopback hostname only, and awareness that Joplin Desktop must expose the Clipper service when write-back is enabled.
-
-The operator guide SHALL require that stdout and stderr from `sqlite-sync` are captured using `StandardOutPath` and `StandardErrorPath`, and SHALL require the same for Ollama jobs in the full-stack path, so periodic JSON summaries from `sqlite-sync` and server startup diagnostics remain available for troubleshooting.
-
-The operator guide SHALL document that scheduled `sqlite-sync` summaries include raw change detection fields: `raw_changed`, `change_detection`, `changed_files`, `compile_mode`, and `compile_triggered`.
-
-The operator guide SHALL document that `joplin_sqlite_sync.pipeline.compile_mode` controls scheduled wiki synchronization after raw changes: `local` runs `wiki-compile`, `agent` runs `agent-compile`, and `off` exports without compiling.
-
-#### Scenario: Write-back prerequisites are visible to operators
-
-- **WHEN** an operator enables Joplin wiki write-back in configuration (`joplin_wiki_writeback` enabled by default or explicitly)
-- **THEN** `docs/macos-launchd-stack.md` SHALL describe Data API and Clipper setup
-- **AND** it SHALL reference `README.md` for token acquisition
-- **AND** it SHALL call out headless launchd limitations
-
-#### Scenario: Raw change compile fields are visible in launchd guidance
-
-- **WHEN** an operator reads the launchd guide before enabling scheduled `sqlite-sync`
-- **THEN** the guide SHALL describe the JSON summary fields `raw_changed`, `change_detection`, `changed_files`, `compile_mode`, and `compile_triggered`
-- **AND** the guide SHALL state that `compile_mode: agent` requires a launchd environment where local `codex exec` is available and logged in
-
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
-
----
-### Requirement: REQ-MLS-DOC User guide links prerequisites
-
-The system SHALL add or extend documentation file `docs/macos-launchd-stack.md` describing prerequisites (Ollama and Chroma binaries installed per upstream instructions, Joplin Desktop SQLite path alignment), the **default full-stack** launchd layout (Ollama + Chroma + `sqlite-sync`), suggested log directories for all three jobs, rollback steps that unload every installed plist without deleting Joplin profiles, and upgrade notes when bootstrap verbs differ across macOS versions. The guide SHALL state that on a typical Joplin Desktop install using the default configuration directory layout, the notebook database file is located at **`~/.config/joplin-desktop/database.sqlite`**, and operators SHALL set `joplin_sqlite_sync.database_path` to the absolute path of that file (or to the correct path when using a non-default profile location). The system SHALL add a short pointer from `README.md` to this guide.
-
-#### Scenario: README points to launchd guide
-
-- **WHEN** a maintainer completes documentation tasks for this change
-- **THEN** `README.md` SHALL contain a link or section reference to `docs/macos-launchd-stack.md` so operators can discover the launchd workflow from the project entrypoint.
-
-#### Scenario: Default Joplin Desktop database path is documented for operators
-
-- **WHEN** an operator reads `docs/macos-launchd-stack.md` to configure `joplin-llm-wiki` against Joplin Desktop
-- **THEN** the guide SHALL name **`~/.config/joplin-desktop/database.sqlite`** as the conventional default location for `database.sqlite` under the default profile layout and SHALL instruct the operator to copy that path as an absolute `joplin_sqlite_sync.database_path` value unless their installation uses a different profile directory.
-
-<!-- @trace
-source: one-click-launchd-stack
-updated: 2026-05-17
-code:
-  - scripts/launchd/run-ollama.sh
-  - scripts/launchd/run-sqlite-sync.sh
-  - scripts/launchd/README.md
-  - scripts/launchd/run-chroma.sh
-  - scripts/launchd/com.joplin-brain.chroma.plist.example
-  - scripts/launchd/com.joplin-brain.sqlite-sync.plist.example
-  - scripts/launchd/install-joplin-brain-stack.sh
-  - README.md
-  - docs/macos-launchd-stack.md
-  - scripts/launchd/com.joplin-brain.ollama.plist.example
-  - scripts/launchd/uninstall-joplin-brain-stack.sh
--->
-
----
-### Requirement: REQ-MLS-SQLITE-SYNC-COMPILE-MODE Scheduled compile mode documentation
-
-The launchd documentation SHALL show a `joplin_sqlite_sync` config example that includes `pipeline.compile_mode`.
-
-The launchd documentation SHALL state that `compile_mode: local` is the default local Ollama route for scheduled wiki synchronization after raw changes.
-
-The launchd documentation SHALL state that `compile_mode: agent` uses local Codex CLI `agent-compile`, does not use an OpenAI API key, and is not automatically managed by the Ollama LaunchAgent.
-
-The launchd documentation SHALL state that operators can disable scheduled compile by setting `compile_mode: off` while retaining SQLite export.
-
-#### Scenario: Config example includes compile mode
-
-- **WHEN** an operator copies the launchd config example
-- **THEN** the example SHALL include `joplin_sqlite_sync.pipeline.compile_mode`
-
-#### Scenario: Agent mode prerequisites are documented
-
-- **WHEN** an operator chooses `compile_mode: agent`
-- **THEN** the launchd documentation SHALL instruct the operator to verify local `codex exec` availability in the scheduled user environment before enabling the job
-
-<!-- @trace
-source: sync-wiki-on-raw-changes
-updated: 2026-05-22
-code:
-  - src/health-gui/renderer/index.html
-  - src/health-gui/main.js
-  - docs/scheduling-examples.md
-  - docs/macos-launchd-stack.md
-  - src/health-gui/corpus/corpus-pipeline-runner.js
-  - scripts/launchd/README.md
-  - src/commands/cmd-sqlite-sync.js
-  - docs/llm-knowledge-flow.md
-  - src/joplin/sqlite/sync-state.js
-  - .cursorrules
-  - src/cli.js
-  - src/config/load-config.js
-  - config.yaml.example
-  - src/health-gui/preload.cjs
-  - src/health-gui/renderer/app.js
-  - README.md
-tests:
-  - test/cli-routing.test.js
-  - test/sqlite-sync-change-detection.test.js
-  - test/health-gui/corpus-pipeline-runner.test.js
-  - test/config-schema.test.js
--->
+- **WHEN** the launchd guide describes prerequisites and jobs
+- **THEN** it does not instruct the operator to install or start Chroma.
