@@ -37,6 +37,52 @@ cp config.yaml.example config.yaml
 pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 ```
 
+## Codex / Cursor MCP
+
+本 repo 也提供本機 MCP server，讓 Codex、Cursor 或其他 MCP client
+可以在對話中用 structured tools 操作同一套知識流。MCP 只透過 stdio
+包裝既有 CLI/service 行為，不開公網 HTTP listener，也不改變
+`raw/`、`wiki/`、`brainstorming/`、`artifacts/` 的資料邊界。
+
+Cursor 設定可參考 `.cursor/mcp.json.example`：
+
+```json
+{
+  "mcpServers": {
+    "joplin-llm-wiki": {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "joplin-llm-wiki-mcp"
+      ],
+      "cwd": "/Users/caiyijun/joplin-llm-wiki"
+    }
+  }
+}
+```
+
+可用 tools：
+
+| Tool | Purpose |
+| --- | --- |
+| `joplin_query` | 從 `wiki/` 優先、必要時補 `raw/` 回答問題，並可建立 pending capture。 |
+| `joplin_show_capture` | 讀取 pending capture，不修改檔案。 |
+| `joplin_confirm_capture` | 確認 pending capture，寫入 `brainstorming/chat/` 或 `artifacts/<project>/`。 |
+| `joplin_brainstorm` | 以 query 流程進行探索，預設偏向 brainstorming capture。 |
+| `joplin_suggest_archive_project` | Project 歸檔前提供 2-3 個 project 名稱建議。 |
+| `joplin_archive_project` | 使用已確認的 project 名稱，把成品寫入 `artifacts/<project>/`。 |
+| `joplin_sync_sources` | 包裝 `sqlite-sync` 的 normal、export-only、snapshot-only 模式。 |
+| `joplin_compile_wiki` | 包裝 `wiki-compile` 或 `agent-compile`。 |
+
+Project 歸檔必須先呼叫 `joplin_suggest_archive_project` 取得建議命名，
+再由使用者確認 project 名稱。`joplin_archive_project` 必須收到
+`confirmed_project: true` 才會寫入正式 artifact；未確認時會回傳
+`PROJECT_CONFIRMATION_REQUIRED` 且不寫檔。新 project artifact 路徑固定為
+`artifacts/<project>/<timestamp>-<slug>.md`，不要使用
+`artifacts/projects/<project>/`。
+
+完整 MCP 設定與工具語意見 `docs/codex-cursor-mcp.md`。
+
 ## Joplin Plugin: Jarvis
 
 本 repo 不內建向量索引，但很適合搭配 Joplin plugin [Jarvis](https://joplinapp.org/plugins/plugin/joplin.plugin.alondmnt.jarvis/) 使用。Jarvis 的 related notes / semantic search 可以在 Joplin 內即時找出與目前筆記、選取文字或搜尋語句語意相近的筆記；若 Jarvis 的向量化模型設定使用 `bge-m3` 這類多語、多粒度 embedding model，對中文與混合語言的全筆記庫 related notes 參照連結會更自然。

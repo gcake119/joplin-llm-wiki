@@ -38,6 +38,7 @@ indexes for query context.
 - **WHEN** `wiki/` has no Markdown but `raw/` does
 - **THEN** default `query` can still answer from raw context
 
+---
 ### Requirement: REQ-QUERY-002 Grounding prompt
 
 The query prompt SHALL state that `wiki/` is the preferred compiled knowledge
@@ -55,6 +56,7 @@ The prompt SHALL require the model to report insufficient knowledge when neither
 - **THEN** it does not say that raw is forbidden
 - **AND** it explains the wiki-first, raw-supplement rule
 
+---
 ### Requirement: REQ-QUERY-003 Pending capture before formal notes
 
 The system SHALL enable capture suggestion by default.
@@ -71,9 +73,19 @@ capture under `.joplin-llm-wiki/pending-captures/` and SHALL NOT write a formal
 
 Capture classification SHALL be exactly one of `brainstorming` or `artifacts`.
 
+Brainstorming captures SHALL confirm to `brainstorming/chat/`.
+
+Artifacts captures SHALL require a project name from an explicit option,
+configuration, or confirmed MCP archive input before formal note creation.
+
+Artifacts captures SHALL confirm to `artifacts/<project>/`.
+
+Artifacts captures SHALL NOT confirm to `artifacts/projects/<project>/` for new
+notes.
+
 #### Scenario: SCN-QUERY-CAPTURE-01 Pending only
 
-- **WHEN** the model returns `should_create: true`
+- **WHEN** the model returns a capture request marked true
 - **THEN** query writes a pending capture JSON
 - **AND** no formal note is written under `brainstorming/` or `artifacts/`
 
@@ -86,9 +98,40 @@ Capture classification SHALL be exactly one of `brainstorming` or `artifacts`.
 #### Scenario: SCN-QUERY-CAPTURE-03 Artifact project required
 
 - **WHEN** `query --confirm-capture <id>` confirms an artifacts capture
-- **AND** no artifact project is provided by option or config
+- **AND** no artifact project is provided by option, config, or confirmed MCP archive input
 - **THEN** the command exits 1 with `ARTIFACT_PROJECT_REQUIRED`
+- **AND** no formal artifacts note is written
 
+#### Scenario: SCN-QUERY-CAPTURE-04 Confirm artifact under project root
+
+- **WHEN** `query --confirm-capture <id>` confirms an artifacts capture with project `tainan-city`
+- **THEN** the system writes a Markdown note under `artifacts/tainan-city/`
+- **AND** the system does not write a note under `artifacts/projects/tainan-city/`
+
+
+<!-- @trace
+source: add-mcp-knowledge-flow-tools
+updated: 2026-05-23
+code:
+  - src/knowledge-flow/query-service.js
+  - src/commands/cmd-query.js
+  - package.json
+  - src/mcp/tools.js
+  - src/knowledge-flow/archive-service.js
+  - docs/codex-cursor-mcp.md
+  - src/mcp/server.js
+  - bin/joplin-llm-wiki-mcp.js
+  - src/mcp/schema.js
+  - src/joplin/wiki-writeback.js
+  - README.md
+  - src/knowledge-flow/orchestration-service.js
+tests:
+  - test/joplin-wiki-writeback.test.js
+  - test/mcp-server.test.js
+  - test/query.test.js
+-->
+
+---
 ### Requirement: REQ-QUERY-004 On-demand workflow writeback
 
 When confirmation is run with `--writeback-workflow=true`, the system SHALL write
@@ -99,7 +142,38 @@ The system SHALL map brainstorming captures to `@llm-wiki/brainstorming/chat`.
 The system SHALL map artifacts captures to
 `@llm-wiki/artifacts/<project-notebook>`.
 
+The project notebook name for artifacts captures SHALL match the confirmed
+project name used in the local `artifacts/<project>/` path.
+
 #### Scenario: SCN-QUERY-WRITEBACK-01 Selected note only
 
 - **WHEN** a pending capture is confirmed with `--writeback-workflow=true`
 - **THEN** writeback receives only the newly confirmed workflow note path
+
+#### Scenario: SCN-QUERY-WRITEBACK-02 Artifact writeback uses confirmed project
+
+- **WHEN** an artifacts capture is confirmed with project `tainan-city`
+- **AND** `--writeback-workflow=true` is set
+- **THEN** writeback maps the note under `@llm-wiki/artifacts/tainan-city`
+
+<!-- @trace
+source: add-mcp-knowledge-flow-tools
+updated: 2026-05-23
+code:
+  - src/knowledge-flow/query-service.js
+  - src/commands/cmd-query.js
+  - package.json
+  - src/mcp/tools.js
+  - src/knowledge-flow/archive-service.js
+  - docs/codex-cursor-mcp.md
+  - src/mcp/server.js
+  - bin/joplin-llm-wiki-mcp.js
+  - src/mcp/schema.js
+  - src/joplin/wiki-writeback.js
+  - README.md
+  - src/knowledge-flow/orchestration-service.js
+tests:
+  - test/joplin-wiki-writeback.test.js
+  - test/mcp-server.test.js
+  - test/query.test.js
+-->
