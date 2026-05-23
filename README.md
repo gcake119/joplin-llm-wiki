@@ -44,6 +44,26 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 包裝既有 CLI/service 行為，不開公網 HTTP listener，也不改變
 `raw/`、`wiki/`、`brainstorming/`、`artifacts/` 的資料邊界。
 
+快速安裝 MCP server：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gcake119/joplin-llm-wiki/main/scripts/install-mcp.sh | bash
+```
+
+若要同時寫入 Cursor 或 Codex 的 MCP 設定：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gcake119/joplin-llm-wiki/main/scripts/install-mcp.sh | bash -s -- --client cursor
+curl -fsSL https://raw.githubusercontent.com/gcake119/joplin-llm-wiki/main/scripts/install-mcp.sh | bash -s -- --client codex
+curl -fsSL https://raw.githubusercontent.com/gcake119/joplin-llm-wiki/main/scripts/install-mcp.sh | bash -s -- --client both
+```
+
+預設安裝到 `$HOME/.local/share/joplin-llm-wiki`。若要指定安裝位置：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gcake119/joplin-llm-wiki/main/scripts/install-mcp.sh | bash -s -- --client both "$HOME/.local/share/joplin-llm-wiki"
+```
+
 Cursor 設定可參考 `.cursor/mcp.json.example`：
 
 ```json
