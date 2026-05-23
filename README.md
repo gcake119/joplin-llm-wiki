@@ -18,7 +18,8 @@
 - 檢查設定檔、`raw/`、`wiki/` 和 Ollama 連線狀態。
 - 編輯常用設定，並用 `loadConfig` 驗證後再儲存。
 - 從 Joplin SQLite 載入筆記本清單，勾選要匯出的筆記本。
-- 執行初始化管線、只建立 raw 快照、或只重新編譯 wiki。
+- 執行初始化管線、只建立 raw 快照、重新編譯 wiki。
+- 從 concepts 或 writeback 階段接續，支援 local 與 agent 模式的 dry-run / run。
 - 查詢知識庫、確認 query capture、執行 lint。
 - 在 macOS 上安裝或解除 Ollama + `sqlite-sync` 的 LaunchAgent stack。
 
@@ -56,10 +57,12 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 閉環：
 
 1. **匯入**：Joplin 筆記先進 `raw/`。這層是原始資料，通常不要手動改。
-2. **整理**：`wiki-compile` 或 `agent-compile` 讀完整個 `raw/`，整理成 `wiki/`。
-3. **查詢**：`query` 先看整理好的 `wiki/`，必要時再補 `raw/` 原始內容。
-4. **沉澱**：有價值的 Q&A 先形成 pending capture，確認後才寫到 `brainstorming/chat/` 或 `artifacts/projects/<project>/`，不直接污染 `wiki/`。
-5. **Lint**：`lint` 以檔案系統檢查 wiki 佈局、frontmatter、連結、缺漏索引與未沉澱的 brainstorming。
+2. **摘要**：`wiki-compile` 或 `agent-compile` 先把 raw 轉成 `wiki/summaries/*.md` 與來源索引。
+3. **概念**：concept stage 讀 summaries，依語意整理 canonical concepts，寫到 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。
+4. **發布**：writeback stage 才把已完成的 wiki Markdown 寫回 Joplin 的 `@llm-wiki`。
+5. **查詢**：`query` 先看整理好的 `wiki/`，必要時再補 `raw/` 原始內容。
+6. **沉澱**：有價值的 Q&A 先形成 pending capture，確認後才寫到 `brainstorming/chat/` 或 `artifacts/projects/<project>/`，不直接污染 `wiki/`。
+7. **Lint**：`lint` 以檔案系統檢查 wiki 佈局、frontmatter、連結、缺漏索引與未沉澱的 brainstorming。
 
 ## CLI 指令
 
@@ -70,14 +73,10 @@ pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only
 pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --snapshot-only
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml
-pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --batch=true
-pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --batch=true
 pnpm exec joplin-llm-wiki query --config ./config.yaml "你的問題"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki lint --config ./config.yaml
 ```
-
-Removed commands: `index`, `watch`, and `ask`. The vector/RAG pipeline has been removed.
 
 ### Concept Resume Recovery
 
@@ -96,7 +95,7 @@ pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml --resume-stage wr
 
 Concept resume 只讀既有 `wiki/summaries/*.md`，local 模式用 Ollama、agent 模式用本機 `codex exec` 依 summary evidence 判斷 canonical concepts，然後只寫 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。Writeback resume 才會寫入 Joplin，且只處理 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`，不重送 summaries。
 
-Dry-run 不會改寫 wiki 或 Joplin。若 dry-run 顯示 Joplin concept collision 或 orphan candidates，先檢查輸出再決定是否修復；一般 writeback 只會 create/update，不會自動刪除舊 note。需要回復時，可先保留已暫停排程，手動移開錯誤的 `wiki/concepts/*.md` 或修正 Joplin duplicate note，再重跑 dry-run。
+完整編譯與 resume 都遵守同一個發布邊界：concepts 全部在本機寫完後，才進入 Joplin writeback。Dry-run 不會改寫 wiki 或 Joplin。若 dry-run 顯示 Joplin concept collision 或 orphan candidates，先檢查輸出再決定是否修復；一般 writeback 只會 create/update，不會自動刪除舊 note。需要回復時，可先保留已暫停排程，手動移開錯誤的 `wiki/concepts/*.md` 或修正 Joplin duplicate note，再重跑 dry-run。
 
 ## Config
 
@@ -122,7 +121,7 @@ ollama:
 
 ```
 
-舊鍵 `notes_root`、`notes_glob`、`wiki_root`、`wiki.glob`、`ollama.embed_model`、`ollama.embed_batch_size`、`chroma`、`rag`、`watch`、`chunk`、`joplin_sqlite_sync.pipeline.run_index` 會被 `loadConfig` 以 `CONFIG_INVALID` 拒絕。Joplin-LLM-wiki tool 會以 repair mode 載入舊 config，按儲存後移除這些 legacy 欄位。預設資料夾 `raw/` 與 `wiki/` 已列入 `.gitignore`。
+預設資料夾 `raw/` 與 `wiki/` 已列入 `.gitignore`。
 
 ## SQLite Sync Change Gate
 
@@ -142,13 +141,13 @@ joplin_sqlite_sync:
 - `agent`：偵測到 raw 變更後執行 `agent-compile`，走本機已登入的 `codex exec`。
 - `off`：只匯出與更新快照狀態，不自動編譯。
 
-相容舊設定：若省略 `compile_mode`，`pipeline.run_wiki_compile: true` 視為 `local`，`false` 視為 `off`。狀態檔預設寫在 config 同目錄下的 `.joplin-llm-wiki/sqlite-sync-state.json`，不放在 `raw/`，避免 `reconcile_mode: mirror` 清理。
+狀態檔預設寫在 config 同目錄下的 `.joplin-llm-wiki/sqlite-sync-state.json`，不放在 `raw/`，避免 `reconcile_mode: mirror` 清理。
 
 第一次非 dry-run 同步只建立 baseline，不觸發編譯；之後以 raw-relative path、`joplin_note_id` 與 Markdown 內容 SHA-256 判斷變更。`--export-only` 仍會匯出並更新狀態但不編譯；`--snapshot-only` 只掃現有 `raw/` 建立 baseline，不開 SQLite、不刪檔、不編譯，適合 `raw/` 已有資料時接上自動變更偵測。
 
 定時檢查不是檔案系統 watcher。要自動週期檢查 SQLite/raw snapshot，必須讓 `sqlite-sync` 以常駐輪詢或外部排程執行：設定 `joplin_sqlite_sync.schedule.every_seconds`、CLI 使用 `--every <seconds>`，或由 launchd/cron 定期啟動。若 `every_seconds: null` 且沒有 `--every`，`sqlite-sync` 只跑一輪後結束。
 
-狀態提交點在 downstream 成功之後：若 raw 已變更且 `compile_mode` 是 `local` 或 `agent`，`sqlite-sync` 會先執行 writeback preflight，再執行對應 compile；只有 preflight 與 compile/writeback 成功後才更新 `.joplin-llm-wiki/sqlite-sync-state.json`。若 token 無效、Data API 不通、`agent-compile` 或 `wiki-compile` 失敗，state 會保留在上一個已成功處理的 snapshot，下一輪仍會重試同一批 raw 變更。每輪 stdout JSON 會包含 `state_committed`、`state_commit_reason`、`downstream_status` 與 `writeback_preflight_status`。
+狀態提交點在 downstream 成功之後：若 raw 已變更且 `compile_mode` 是 `local` 或 `agent`，`sqlite-sync` 會把變動 raw 對應到變動 summaries，再只重編受影響 concepts，最後只把變動的 downstream relPaths 寫回 Joplin。只有 preflight、compile 與 writeback 全部成功後才更新 `.joplin-llm-wiki/sqlite-sync-state.json`。若 token 無效、Data API 不通、`agent-compile` 或 `wiki-compile` 失敗，state 會保留在上一個已成功處理的 snapshot，下一輪仍會重試同一批 raw 變更。每輪 stdout JSON 會包含 `state_committed`、`state_commit_reason`、`downstream_status`、`writeback_preflight_status`、`changed_summary_paths` 與 `writeback_relpaths`。
 
 macOS LaunchAgent 範本使用 `RunAtLoad` 啟動；正常週期仍建議由 `schedule.every_seconds` 的單一常駐行程負責。plist 的 `KeepAlive.SuccessfulExit=false` 只用來在非零退出時受控重啟，並搭配 `ThrottleInterval` 限速；不要再同時加 `StartInterval` 與非空 `every_seconds`，避免重疊執行。LaunchAgent wrapper 會依 resolved `compile_mode` 做 readiness：`agent` 與 `off` 不等待 Ollama，`local` 才等待 Ollama `/api/tags`。
 
@@ -170,7 +169,7 @@ joplin_wiki_writeback:
   artifacts_project_notebook_title: ProjectA # 僅 artifacts 按需寫回時需要
 ```
 
-`wiki-compile` / `agent-compile` 非 dry-run 成功後，若 `joplin_wiki_writeback.enabled` 為 true，會把本次寫入的 compiled wiki 頁面同步到 wiki 層；透過 `sqlite-sync` 自動編譯時，只有 raw snapshot 有變更才會觸發 compile/writeback：
+`wiki-compile` / `agent-compile` 非 dry-run 成功後，若 `joplin_wiki_writeback.enabled` 為 true，會在本機 wiki 編譯完成後才進入 Joplin writeback。透過 `sqlite-sync` 自動編譯時，只有 raw snapshot 有變更才會觸發 downstream compile/writeback，且只寫回本輪變動的 compiled wiki relPaths：
 
 - `@llm-wiki/wiki/summaries`
 - `@llm-wiki/wiki/concepts`
@@ -195,7 +194,7 @@ pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>" --artifact-project ProjectA
 ```
 
-`--capture=brainstorming` 或 `--capture=artifacts` 可強制提出指定分類的 capture；分類只會是 `brainstorming` 或 `artifacts`。`--file-back=false` 保留為相容選項，等同停用 capture。若加 `--writeback-workflow=true`，確認後只把該次確認的 note 按需寫回 Joplin。
+`--capture=brainstorming` 或 `--capture=artifacts` 可強制提出指定分類的 capture；分類只會是 `brainstorming` 或 `artifacts`。若加 `--writeback-workflow=true`，確認後只把該次確認的 note 按需寫回 Joplin。
 
 ## Development
 
