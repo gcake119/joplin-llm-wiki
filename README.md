@@ -183,5 +183,3 @@ pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>" 
 ```bash
 pnpm test
 ```
-
-人可讀的知識管理輸出使用繁體中文；技術名詞、source path、filename 可保留原文。
