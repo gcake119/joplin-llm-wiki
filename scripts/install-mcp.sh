@@ -85,6 +85,26 @@ pnpm --dir "$INSTALL_DIR" install
 echo "Registering local bin shims"
 node "$INSTALL_DIR/scripts/register-bin.mjs"
 
+install_global_skill() {
+  local source_skill="$INSTALL_DIR/.agents/skills/joplin-knowledge-flow/SKILL.md"
+  if [ ! -f "$source_skill" ]; then
+    echo "Global skill source not found: $source_skill" >&2
+    return 1
+  fi
+
+  local codex_skill="$HOME/.agents/skills/joplin-knowledge-flow"
+  local cursor_skill="$HOME/.cursor/skills/joplin-knowledge-flow"
+
+  mkdir -p "$codex_skill" "$cursor_skill"
+  cp "$source_skill" "$codex_skill/SKILL.md"
+  cp "$source_skill" "$cursor_skill/SKILL.md"
+
+  echo "Installed global Codex skill: $codex_skill/SKILL.md"
+  echo "Installed global Cursor skill: $cursor_skill/SKILL.md"
+}
+
+install_global_skill
+
 MCP_JSON="$(node -e '
 const installDir = process.argv[1];
 const cfg = {
@@ -163,6 +183,10 @@ cat <<EOF
 
 Installed joplin-llm-wiki MCP server at:
   $INSTALL_DIR
+
+Installed global skill:
+  $HOME/.agents/skills/joplin-knowledge-flow/SKILL.md
+  $HOME/.cursor/skills/joplin-knowledge-flow/SKILL.md
 
 MCP server command:
   pnpm --dir "$INSTALL_DIR" exec joplin-llm-wiki-mcp
