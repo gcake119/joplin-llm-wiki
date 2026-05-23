@@ -44,6 +44,24 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 包裝既有 CLI/service 行為，不開公網 HTTP listener，也不改變
 `raw/`、`wiki/`、`brainstorming/`、`artifacts/` 的資料邊界。
 
+MCP 的對話設計是「一個 skill 作為入口，LLM 判斷知識流階段，MCP tools
+執行確定性動作」。`joplin-knowledge-flow` skill 只提供操作規則與
+guardrails；真正讀寫檔案、同步 Joplin、編譯 wiki 或歸檔 project 的行為
+都由 MCP server tools 執行。
+
+常見意圖與 tool 對應：
+
+| Intent | Tool |
+| --- | --- |
+| 查詢本機知識庫 | `joplin_query` |
+| 發散、整理想法 | `joplin_brainstorm` |
+| 查看 pending capture | `joplin_show_capture` |
+| 確認保存 query/brainstorm 結果 | `joplin_confirm_capture` |
+| Project 歸檔前建議命名 | `joplin_suggest_archive_project` |
+| 使用者確認 project 名稱後歸檔 | `joplin_archive_project` |
+| 同步 Joplin sources | `joplin_sync_sources` |
+| 編譯 wiki | `joplin_compile_wiki` |
+
 快速安裝 MCP server：
 
 ```bash
