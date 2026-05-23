@@ -1,10 +1,48 @@
 # joplin-llm-wiki
 
-本專案是本機優先的 Joplin 個人知識庫管線。它把 Joplin Desktop 的 `database.sqlite` 以唯讀方式匯出成 `raw/` Markdown，再用本機 Ollama 或本機已登入的 Codex CLI 編譯成 `wiki/` 內的摘要、概念與索引。查詢預設以 `wiki/` 為優先知識層，必要時補 `raw/` 原始素材；不使用 RAG、向量資料庫或 Chroma。
+這是一套給 Joplin 用的本機知識庫整理工具。你可以把它想成：
 
-本專案部分引用 [karpathy/442a6bf555914893e9891c11519de94f](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 與 [gatelynch/llm-knowledge-base](https://github.com/gatelynch/llm-knowledge-base) 的流程概念與 skill 設計：前者影響知識庫健檢、缺口發現與維護習慣，後者提供 `raw/`、`wiki/`、`brainstorming/`、`artifacts/` 的四層知識流。此 repo 不是上述專案的 fork 或 runtime dependency，而是把這些概念實作成以 Joplin 作為主要檢視與筆記管理介面的版本。
+- 從 Joplin Desktop 的 `database.sqlite` 讀出筆記，轉成 `raw/` Markdown。
+- 用本機 Ollama 或本機已登入的 Codex CLI，把大量原始筆記整理成 `wiki/` 裡的摘要、概念和索引。
+- 把整理好的 wiki 寫回 Joplin 的 `@llm-wiki` 筆記本，方便直接在 Joplin 裡閱讀。
+- 需要問問題時，可以先查整理過的 `wiki/`，不夠再補看 `raw/` 原始筆記。
 
-## Knowledge Flow
+整套流程預設在本機跑；目前不使用 RAG、向量資料庫或 Chroma。若你只是想操作日常流程，可以先用 GUI，不一定要記 CLI 指令。
+
+本專案部分引用 [karpathy/442a6bf555914893e9891c11519de94f](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 與 [gatelynch/llm-knowledge-base](https://github.com/gatelynch/llm-knowledge-base) 的流程概念與 skill 設計。此 repo 不是上述專案的 fork 或 runtime dependency，而是把這些概念實作成以 Joplin 作為主要檢視與筆記管理介面的版本。
+
+## GUI
+
+本 repo 內建一個本機 Health GUI，可以用圖形介面做常見操作：
+
+- 檢查設定檔、`raw/`、`wiki/` 和 Ollama 連線狀態。
+- 編輯常用設定，並用 `loadConfig` 驗證後再儲存。
+- 從 Joplin SQLite 載入筆記本清單，勾選要匯出的筆記本。
+- 執行初始化管線、只建立 raw 快照、或只重新編譯 wiki。
+- 查詢知識庫、確認 query capture、執行 lint。
+- 在 macOS 上安裝或解除 Ollama + `sqlite-sync` 的 LaunchAgent stack。
+
+啟動方式：
+
+```bash
+pnpm install
+pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
+```
+
+如果你還沒有設定檔，先從 `config.yaml.example` 複製一份：
+
+```bash
+cp config.yaml.example config.yaml
+pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
+```
+
+## Joplin Plugin: Jarvis
+
+本 repo 不內建向量索引，但很適合搭配 Joplin plugin [Jarvis](https://joplinapp.org/plugins/plugin/joplin.plugin.alondmnt.jarvis/) 使用。Jarvis 的 related notes / semantic search 可以在 Joplin 內即時找出與目前筆記、選取文字或搜尋語句語意相近的筆記；若 Jarvis 的向量化模型設定使用 `bge-m3` 這類多語、多粒度 embedding model，對中文與混合語言的全筆記庫 related notes 參照連結會更自然。
+
+建議分工是：本 repo 負責從 Joplin SQLite 匯出 `raw/`、編譯 `wiki/`、並把整理後的 wiki 寫回 `@llm-wiki`；Jarvis 負責在 Joplin 使用介面中提供全筆記庫的即時語意相似筆記參照。這樣可保留本 repo 的可重建知識層，同時取得 Jarvis 在閱讀與寫作當下的 related notes 體驗。
+
+## 知識流
 
 | Layer | Path | Purpose |
 | --- | --- | --- |
@@ -17,12 +55,15 @@
 
 閉環：
 
-1. **Ingest**：新資料進 `raw/`，`wiki-compile` 與 `agent-compile` 預設都會掃完整個 `raw/` 筆記庫後更新 `wiki/`；10-15 頁單批次只作為 Ollama 本機 fallback。
-2. **Query**：`query` 預設從使用者知識庫回答：先用 `wiki/`，不足時補 `raw/`；可用 `--source-scope=wiki|raw` 明確限制。
-3. **File back**：有價值的 Q&A 先形成 pending capture，使用者確認後才寫回 `brainstorming/chat/` 或 `artifacts/projects/<project>/`，不直接污染 `wiki/`。
-4. **Lint**：`lint` 以檔案系統檢查 wiki 佈局、frontmatter、連結、缺漏索引與未沉澱的 brainstorming。
+1. **匯入**：Joplin 筆記先進 `raw/`。這層是原始資料，通常不要手動改。
+2. **整理**：`wiki-compile` 或 `agent-compile` 讀完整個 `raw/`，整理成 `wiki/`。
+3. **查詢**：`query` 先看整理好的 `wiki/`，必要時再補 `raw/` 原始內容。
+4. **沉澱**：有價值的 Q&A 先形成 pending capture，確認後才寫到 `brainstorming/chat/` 或 `artifacts/projects/<project>/`，不直接污染 `wiki/`。
+5. **Lint**：`lint` 以檔案系統檢查 wiki 佈局、frontmatter、連結、缺漏索引與未沉澱的 brainstorming。
 
-## Commands
+## CLI 指令
+
+GUI 之外，也可以用 CLI 做同樣的事，適合排程、自動化或除錯：
 
 ```bash
 pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only
