@@ -338,7 +338,7 @@ export async function runKnowledgeFlowWriteback(
         ? [wb.brainstorming_notebook_title, ...e.folderParts]
         : [
             wb.artifacts_notebook_title,
-            artifactsProjectTitle,
+            e.folderParts[0] || artifactsProjectTitle,
           ];
     const folderId = await ensureNestedFolders(client, parentId, folderPath);
     notebooksEnsured += folderPath.length;
@@ -565,7 +565,7 @@ function readWorkflowMarkdownEntries(workflowRoot, relPathFilter = null) {
       const folderParts =
         section === "brainstorming"
           ? brainstormingFolderParts(parts)
-          : [];
+          : artifactsFolderParts(parts);
       const raw = fs.readFileSync(abs, "utf8");
       const { data, body } = parseWikiMarkdownLenient(raw);
       const titleRaw = data.title;
@@ -594,6 +594,11 @@ function brainstormingFolderParts(parts) {
   const first = parts[0];
   if (first === "chat" || first === "health") return [first];
   return ["chat"];
+}
+
+/** @param {string[]} parts */
+function artifactsFolderParts(parts) {
+  return parts.length > 0 ? [parts[0]] : [];
 }
 
 /**

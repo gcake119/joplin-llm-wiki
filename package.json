@@ -4,7 +4,8 @@
   "type": "module",
   "bin": {
     "joplin-llm-wiki": "bin/joplin-llm-wiki.js",
-    "joplin-llm-wiki-health-gui": "bin/joplin-llm-wiki-health-gui.js"
+    "joplin-llm-wiki-health-gui": "bin/joplin-llm-wiki-health-gui.js",
+    "joplin-llm-wiki-mcp": "bin/joplin-llm-wiki-mcp.js"
   },
   "scripts": {
     "postinstall": "node scripts/register-bin.mjs",
@@ -15,6 +16,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "11.8.1",
     "fast-glob": "^3.3.3",
     "yaml": "^2.7.1"

@@ -583,3 +583,71 @@ test("knowledge-flow writeback can be limited to selected workflow note", async 
   assert.equal(summary.writeback_would_write, 1);
   assert.equal(summary.workflow_writeback_would_write, 1);
 });
+
+test("knowledge-flow writeback maps artifacts project directory to project notebook", async () => {
+  const dir = tmpdir();
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(wiki, { recursive: true });
+  fs.mkdirSync(path.join(dir, "artifacts", "tainan-city"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "artifacts", "tainan-city", "dispatch-plan.md"),
+    "---\ntitle: Dispatch Plan\n---\n# Dispatch Plan\n",
+  );
+
+  const requests = [];
+  const summary = await runKnowledgeFlowWriteback(cfg(), wiki, [], {
+    workflowRoot: dir,
+    workflowRelPaths: ["artifacts/tainan-city/dispatch-plan.md"],
+    fetch: async (url, init) => {
+      const u = new URL(String(url));
+      const method = init?.method ?? "GET";
+      requests.push({
+        pathname: u.pathname,
+        method,
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      if (u.pathname === "/ping") return textResponse("JoplinClipperServer");
+      if (u.pathname === "/folders") {
+        return jsonResponse({
+          items: [
+            {
+              id: "root",
+              parent_id: "",
+              title: "@llm-wiki",
+              children: [
+                {
+                  id: "artifacts",
+                  parent_id: "root",
+                  title: "artifacts",
+                  children: [
+                    { id: "project-a", parent_id: "artifacts", title: "ProjectA" },
+                    { id: "tainan", parent_id: "artifacts", title: "tainan-city" },
+                  ],
+                },
+              ],
+            },
+          ],
+          has_more: false,
+        });
+      }
+      if (u.pathname === "/folders/tainan/notes") {
+        return jsonResponse({ items: [], has_more: false });
+      }
+      if (u.pathname === "/folders/project-a/notes") {
+        return jsonResponse({ items: [], has_more: false });
+      }
+      if (u.pathname === "/notes" && method === "POST") {
+        return jsonResponse({ id: "created" });
+      }
+      return jsonResponse({ items: [], has_more: false });
+    },
+  });
+
+  assert.equal(summary.workflow_writeback_written, 1);
+  const created = requests.find((r) => r.method === "POST" && r.pathname === "/notes");
+  assert.deepEqual(created?.body, {
+    parent_id: "tainan",
+    title: "Dispatch Plan",
+    body: "# Dispatch Plan\n",
+  });
+});

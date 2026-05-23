@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "joplin-llm-wiki": {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "joplin-llm-wiki-mcp"
+      ],
+      "cwd": "/Users/caiyijun/joplin-llm-wiki"
+    }
+  }
+}

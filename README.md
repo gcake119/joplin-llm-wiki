@@ -61,7 +61,7 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 3. **概念**：concept stage 讀 summaries，依語意整理 canonical concepts，寫到 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。
 4. **發布**：writeback stage 才把已完成的 wiki Markdown 寫回 Joplin 的 `@llm-wiki`。
 5. **查詢**：`query` 先看整理好的 `wiki/`，必要時再補 `raw/` 原始內容。
-6. **沉澱**：有價值的 Q&A 先形成 pending capture，確認後才寫到 `brainstorming/chat/` 或 `artifacts/projects/<project>/`，不直接污染 `wiki/`。
+6. **沉澱**：有價值的 Q&A 先形成 pending capture，確認後才寫到 `brainstorming/chat/` 或 `artifacts/<project>/`，不直接污染 `wiki/`。
 7. **Lint**：`lint` 以檔案系統檢查 wiki 佈局、frontmatter、連結、缺漏索引與未沉澱的 brainstorming。
 
 ## CLI 指令

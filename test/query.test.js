@@ -214,4 +214,56 @@ CAPTURE_JSON:
     console.error = oldError;
   }
   assert.match(errors[0], /ARTIFACT_PROJECT_REQUIRED/);
+  assert.equal(fs.existsSync(path.join(dir, "artifacts")), false);
+  assert.equal(
+    fs.existsSync(path.join(dir, ".joplin-llm-wiki", "pending-captures", `${id}.json`)),
+    true,
+  );
+});
+
+test("confirm-capture writes artifacts under confirmed project root", async () => {
+  const dir = tmpdir();
+  writeKnowledge(dir);
+  const configPath = writeConfig(dir);
+  let id = "";
+
+  await withMockQuery(
+    `答案
+CAPTURE_JSON:
+\`\`\`json
+{"should_create":true,"classification":"artifacts","title":"作品草稿","content":"保存內容","knowledge_sources":[{"layer":"wiki","path":"concepts/topic.md"}]}
+\`\`\`
+`,
+    async ({ logs }) => {
+      const code = await runQuery({ configPath, argv: ["問題？"], opts: new Map() });
+      assert.equal(code, 0);
+      id = JSON.parse(logs[2].replace(/^CAPTURE_DRAFT /, "")).id;
+    },
+  );
+
+  const logs = [];
+  const oldLog = console.log;
+  console.log = (s) => logs.push(String(s));
+  try {
+    const code = await runQuery({
+      configPath,
+      argv: [],
+      opts: new Map([
+        ["confirm-capture", id],
+        ["artifact-project", "tainan-city"],
+      ]),
+    });
+    assert.equal(code, 0);
+  } finally {
+    console.log = oldLog;
+  }
+
+  const result = JSON.parse(logs[0]);
+  assert.match(result.capture_written, /^artifacts\/tainan-city\//);
+  assert.doesNotMatch(result.capture_written, /^artifacts\/projects\//);
+  assert.equal(fs.existsSync(path.join(dir, result.capture_written)), true);
+  assert.equal(fs.existsSync(path.join(dir, "artifacts", "projects", "tainan-city")), false);
+  const note = fs.readFileSync(path.join(dir, result.capture_written), "utf8");
+  assert.match(note, /capture_classification: "artifacts"/);
+  assert.match(note, /capture_path: "artifacts\/tainan-city\//);
 });
