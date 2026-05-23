@@ -25,6 +25,13 @@
   </dict>
   <key>RunAtLoad</key>
   <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
   <key>StandardOutPath</key>
   <string>__HOME__/Library/Logs/joplin-llm-wiki/sqlite-sync.log</string>
   <key>StandardErrorPath</key>

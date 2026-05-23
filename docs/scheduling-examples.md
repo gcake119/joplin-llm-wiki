@@ -6,6 +6,8 @@
 
 > **定時語意**：這不是檔案系統 watcher。每次 `sqlite-sync` 執行時才會匯出 SQLite、比對 raw snapshot，並依 `compile_mode` 決定是否編譯。可用 cron/launchd 反覆啟動單輪命令，也可在 config 設 `joplin_sqlite_sync.schedule.every_seconds` 或 CLI 傳 `--every <seconds>` 讓同一個行程常駐輪詢。
 
+> **LaunchAgent 語意**：repo 內 sqlite-sync plist 使用 `RunAtLoad` 啟動，並以 `KeepAlive.SuccessfulExit=false` + `ThrottleInterval` 只在非零退出時受控重啟。正常週期請由 `schedule.every_seconds` 或 `--every` 控制；不要同時加 plist `StartInterval` 與非空 `every_seconds`。LaunchAgent wrapper 會依 resolved `compile_mode` 分流：`agent` / `off` 不檢查 Ollama，`local` 才等待 Ollama `/api/tags`。
+
 以下假設儲存庫在 `/ABS/PATH/TO/joplin-llm-wiki`，且已在該目錄執行過 `pnpm install`。
 
 ```cron
@@ -37,6 +39,8 @@
 建議：
 
 - 長時間任務請確認本機 `ollama` 已在使用者 session 內啟動；Chroma／向量索引已移除。
+- 若 `sqlite-sync` 使用 `compile_mode: agent`，排程環境只需可執行已登入的 `codex exec`，不需要 Ollama readiness；`compile_mode: local` 才需要 Ollama。
 - 若採用 `sqlite-sync` 自動編譯，第一次非 dry-run 會建立 snapshot baseline，不觸發 compile；第二次起才會根據 raw-relative path、Joplin note id 與內容 hash 判定是否變更。
+- raw 變更後若 compile 或 writeback preflight 失敗，snapshot state 不會提交；修復 token、Data API 或 downstream 問題後，下一輪會重試同一批 raw 變更。查看 `sqlite-sync.log` 的 `state_committed`、`state_commit_reason`、`downstream_status`、`writeback_preflight_status`，以及 `sqlite-sync.err.log` 的錯誤碼。
 - 若排程使用 `agent-compile`，請先以互動式 session 驗證 `codex exec` 可用；若只想取得可手動貼給 Codex 的任務提示，先跑 `agent-compile --dry-run`。`--batch=true` 只適合本地模型資源不足時的 fallback，不是預設資料流。
 - macOS 可使用 `launchd` plist 將上述命令包成 `LaunchAgent`，並設定 `PATH` 包含 `pnpm` / `node`。

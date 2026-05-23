@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   runKnowledgeFlowWriteback,
+  runWikiWritebackPreflight,
   runWikiWriteback,
   summarizeWikiWritebackDry,
 } from "../src/joplin/wiki-writeback.js";
@@ -82,6 +83,64 @@ test("wiki compile writeback ignores brainstorming and artifacts", async () => {
   });
   assert.equal(summary.writeback_would_write, 1);
   assert.equal("workflow_writeback_would_write" in summary, false);
+});
+
+test("wiki writeback preflight accepts a valid local Data API token without mutating", async () => {
+  /** @type {string[]} */
+  const urls = [];
+  const summary = await runWikiWritebackPreflight(cfg(), {
+    fetch: async (url, init) => {
+      urls.push(String(url));
+      assert.equal(init?.method, "GET");
+      return /** @type {Response} */ ({
+        ok: true,
+        status: 200,
+        async text() {
+          return "JoplinClipperServer";
+        },
+      });
+    },
+  });
+
+  assert.equal(summary.writeback_preflight_status, "passed");
+  assert.equal(urls.length, 1);
+  assert.match(new URL(urls[0]).pathname, /\/ping$/);
+});
+
+test("wiki writeback preflight rejects invalid token with stable code and redacted message", async () => {
+  const invalidCfg = cfg();
+  invalidCfg.joplin_data_api.token = "secret-token-123";
+  await assert.rejects(
+    () =>
+      runWikiWritebackPreflight(invalidCfg, {
+        fetch: async () =>
+          /** @type {Response} */ ({
+            ok: false,
+            status: 403,
+            async text() {
+              return "invalid token secret-token-123";
+            },
+          }),
+      }),
+    /** @param {Error & { code?: string }} e */
+    (e) =>
+      e.code === "JOPLIN_DATA_API_FAILED" &&
+      /HTTP 403/.test(e.message) &&
+      !e.message.includes("secret-token-123"),
+  );
+});
+
+test("wiki writeback preflight maps unreachable Data API to stable preflight code", async () => {
+  await assert.rejects(
+    () =>
+      runWikiWritebackPreflight(cfg(), {
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      }),
+    /** @param {Error & { code?: string }} e */
+    (e) => e.code === "JOPLIN_DATA_API_FAILED" && /fetch failed/.test(e.message),
+  );
 });
 
 test("knowledge-flow writeback can be limited to selected workflow note", async () => {

@@ -18,6 +18,7 @@ import {
   writeSnapshotStateAtomic,
 } from "../joplin/sqlite/sync-state.js";
 import { runAgentCompile } from "./cmd-agent-compile.js";
+import { runWikiWritebackPreflight } from "../joplin/wiki-writeback.js";
 
 const defaultDeps = {
   loadConfig,
@@ -33,6 +34,8 @@ const defaultDeps = {
   runWikiCompile: (ctx) => runWikiCompile(ctx),
   /** @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx */
   runAgentCompile: (ctx) => runAgentCompile(ctx),
+  /** @param {import('../config/load-config.js').AppConfig} cfg */
+  runJoplinDataApiPreflight: (cfg) => runWikiWritebackPreflight(cfg),
 };
 
 /**
@@ -94,14 +97,12 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
   }
 
   if (dryRun) {
-    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, true, deps, exportOnlyCli);
-    console.log(JSON.stringify({ cycle: 1, ...summary }));
+    await runCycle(ctx, cfg, true, deps, exportOnlyCli, 1);
     return 0;
   }
 
   if (!intervalSec) {
-    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps, exportOnlyCli);
-    console.log(JSON.stringify({ cycle: 1, ...summary }));
+    await runCycle(ctx, cfg, false, deps, exportOnlyCli, 1);
     return 0;
   }
 
@@ -116,8 +117,7 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
     let cycle = 0;
     while (!shutdown) {
       cycle++;
-      const summary = await runOneExportAndOptionalPipeline(ctx, cfg, false, deps, exportOnlyCli);
-      console.log(JSON.stringify({ cycle, ...summary }));
+      await runCycle(ctx, cfg, false, deps, exportOnlyCli, cycle);
       if (shutdown) break;
       await delay(Number(intervalSec) * 1000);
     }
@@ -127,6 +127,27 @@ export async function runSqliteSync(ctx, deps = defaultDeps) {
   }
 
   return 0;
+}
+
+/**
+ * @param {{ configPath: string, argv: string[], opts: Map<string, string> }} ctx
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {boolean} dryRun
+ * @param {typeof defaultDeps} deps
+ * @param {boolean} exportOnlyCli
+ * @param {number} cycle
+ */
+async function runCycle(ctx, cfg, dryRun, deps, exportOnlyCli, cycle) {
+  try {
+    const summary = await runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnlyCli);
+    console.log(JSON.stringify({ cycle, ...summary }));
+  } catch (e) {
+    const summary = /** @type {{ sqliteSyncSummary?: Record<string, unknown> }} */ (e).sqliteSyncSummary;
+    if (summary) {
+      console.log(JSON.stringify({ cycle, ...summary }));
+    }
+    throw e;
+  }
 }
 
 /**
@@ -205,26 +226,105 @@ async function runOneExportAndOptionalPipeline(ctx, cfg, dryRun, deps, exportOnl
     ...comparison,
     compile_mode: compileMode,
     compile_triggered: false,
+    downstream_status: "skipped",
+    writeback_preflight_status: "skipped",
+  };
+  const commitState = (reason) => {
+    deps.writeSnapshotStateAtomic(statePath, currentSnapshot);
+    return {
+      state_committed: true,
+      state_commit_reason: reason,
+    };
   };
   if (dryRun) {
-    return { ...baseSummary, dry_run: true };
+    return {
+      ...baseSummary,
+      dry_run: true,
+      state_committed: false,
+      state_commit_reason: "dry_run",
+    };
   }
-  deps.writeSnapshotStateAtomic(statePath, currentSnapshot);
   if (exportOnlyCli) {
-    return { ...baseSummary, export_only: true };
+    return { ...baseSummary, export_only: true, ...commitState("export_only") };
   }
-  if (!comparison.raw_changed || comparison.change_detection === "baseline" || compileMode === "off") {
-    return baseSummary;
+  if (comparison.change_detection === "baseline") {
+    return { ...baseSummary, ...commitState("baseline") };
+  }
+  if (!comparison.raw_changed) {
+    return { ...baseSummary, ...commitState("unchanged") };
+  }
+  if (compileMode === "off") {
+    return { ...baseSummary, ...commitState("compile_mode_off") };
+  }
+  let writebackPreflightStatus = "skipped";
+  if (cfg.joplin_wiki_writeback.enabled) {
+    try {
+      await deps.runJoplinDataApiPreflight(cfg);
+      writebackPreflightStatus = "passed";
+    } catch (e) {
+      throw withSqliteSyncSummary(e, {
+        ...baseSummary,
+        writeback_preflight_status: "failed",
+        downstream_status: "skipped",
+        state_committed: false,
+        state_commit_reason: "preflight_failed",
+      });
+    }
   }
   if (compileMode === "agent") {
-    await deps.runAgentCompile(ctx);
-    return { ...baseSummary, compile_triggered: true };
+    try {
+      await deps.runAgentCompile(ctx);
+    } catch (e) {
+      throw withSqliteSyncSummary(e, {
+        ...baseSummary,
+        compile_triggered: true,
+        writeback_preflight_status: writebackPreflightStatus,
+        downstream_status: "failed",
+        state_committed: false,
+        state_commit_reason: "downstream_failed",
+      });
+    }
+    return {
+      ...baseSummary,
+      compile_triggered: true,
+      writeback_preflight_status: writebackPreflightStatus,
+      downstream_status: "succeeded",
+      ...commitState("downstream_succeeded"),
+    };
   }
   if (compileMode === "local") {
-    await deps.runWikiCompile(ctx);
-    return { ...baseSummary, compile_triggered: true };
+    try {
+      await deps.runWikiCompile(ctx);
+    } catch (e) {
+      throw withSqliteSyncSummary(e, {
+        ...baseSummary,
+        compile_triggered: true,
+        writeback_preflight_status: writebackPreflightStatus,
+        downstream_status: "failed",
+        state_committed: false,
+        state_commit_reason: "downstream_failed",
+      });
+    }
+    return {
+      ...baseSummary,
+      compile_triggered: true,
+      writeback_preflight_status: writebackPreflightStatus,
+      downstream_status: "succeeded",
+      ...commitState("downstream_succeeded"),
+    };
   }
-  return baseSummary;
+  return { ...baseSummary, ...commitState("compile_mode_unknown") };
+}
+
+/**
+ * @param {unknown} e
+ * @param {Record<string, unknown>} summary
+ */
+function withSqliteSyncSummary(e, summary) {
+  const err =
+    e instanceof Error ? e : new Error(String(e ?? "sqlite-sync downstream failed"));
+  err.sqliteSyncSummary = summary;
+  return err;
 }
 
 export { defaultDeps };

@@ -88,6 +88,10 @@ joplin_sqlite_sync:
 
 定時檢查不是檔案系統 watcher。要自動週期檢查 SQLite/raw snapshot，必須讓 `sqlite-sync` 以常駐輪詢或外部排程執行：設定 `joplin_sqlite_sync.schedule.every_seconds`、CLI 使用 `--every <seconds>`，或由 launchd/cron 定期啟動。若 `every_seconds: null` 且沒有 `--every`，`sqlite-sync` 只跑一輪後結束。
 
+狀態提交點在 downstream 成功之後：若 raw 已變更且 `compile_mode` 是 `local` 或 `agent`，`sqlite-sync` 會先執行 writeback preflight，再執行對應 compile；只有 preflight 與 compile/writeback 成功後才更新 `.joplin-llm-wiki/sqlite-sync-state.json`。若 token 無效、Data API 不通、`agent-compile` 或 `wiki-compile` 失敗，state 會保留在上一個已成功處理的 snapshot，下一輪仍會重試同一批 raw 變更。每輪 stdout JSON 會包含 `state_committed`、`state_commit_reason`、`downstream_status` 與 `writeback_preflight_status`。
+
+macOS LaunchAgent 範本使用 `RunAtLoad` 啟動；正常週期仍建議由 `schedule.every_seconds` 的單一常駐行程負責。plist 的 `KeepAlive.SuccessfulExit=false` 只用來在非零退出時受控重啟，並搭配 `ThrottleInterval` 限速；不要再同時加 `StartInterval` 與非空 `every_seconds`，避免重疊執行。LaunchAgent wrapper 會依 resolved `compile_mode` 做 readiness：`agent` 與 `off` 不等待 Ollama，`local` 才等待 Ollama `/api/tags`。
+
 ## Joplin Writeback
 
 啟用 `joplin_wiki_writeback` 時必須設定本機 Joplin Web Clipper / Data API token，且 `base_url` hostname 只能是 `127.0.0.1`、`localhost` 或 `::1`。
@@ -119,6 +123,8 @@ joplin_wiki_writeback:
 - `@llm-wiki/artifacts/<artifacts_project_notebook_title>`
 
 `wiki-compile --dry-run` 與 `agent-compile --dry-run` 不會對 Joplin 發送會變更資料的 HTTP。
+
+若 `sqlite-sync` 的 automatic compile 在 writeback preflight 顯示 `writeback_preflight_status: "failed"`，先確認 Joplin Desktop 的 Web Clipper 服務已啟用、`joplin_data_api.base_url` 是 loopback、`joplin_data_api.token` 是目前 Clipper token。修正後重新跑同一個 `sqlite-sync` 即可；因 state 未提交，raw 變更會被重試。
 
 ## Query Capture
 

@@ -44,7 +44,7 @@ joplin_wiki_writeback:
   return cfg;
 }
 
-function writeSyncConfig(dir, rawDir, pipeline = "") {
+function writeSyncConfig(dir, rawDir, pipeline = "", writebackYaml = "") {
   const cfg = path.join(dir, "config.yaml");
   fs.mkdirSync(path.join(dir, "wiki"), { recursive: true });
   fs.writeFileSync(
@@ -52,8 +52,8 @@ function writeSyncConfig(dir, rawDir, pipeline = "") {
     `raw: ${JSON.stringify(rawDir)}
 raw_glob: "**/*.md"
 wiki: ./wiki
-joplin_wiki_writeback:
-  enabled: false
+${writebackYaml || `joplin_wiki_writeback:
+  enabled: false`}
 joplin_sqlite_sync:
   enabled: true
   database_path: ./db.sqlite
@@ -65,8 +65,22 @@ ${pipeline || "    compile_mode: local"}
   return cfg;
 }
 
-async function runSyncForTest({ root, raw, pipeline, exportBody = "hello", opts = new Map() }) {
-  const configPath = writeSyncConfig(root, raw, pipeline);
+function sqliteSyncStatePath(root) {
+  return path.join(root, ".joplin-llm-wiki", "sqlite-sync-state.json");
+}
+
+async function runSyncForTest({
+  root,
+  raw,
+  pipeline,
+  exportBody = "hello",
+  opts = new Map(),
+  runWikiCompile,
+  runAgentCompile,
+  runJoplinDataApiPreflight,
+  writebackYaml,
+}) {
+  const configPath = writeSyncConfig(root, raw, pipeline, writebackYaml);
   let wikiCalls = 0;
   let agentCalls = 0;
   const { result, lines } = await captureStdout(() =>
@@ -84,12 +98,15 @@ async function runSyncForTest({ root, raw, pipeline, exportBody = "hello", opts 
             duration_ms: 5,
           };
         },
-        runWikiCompile: async () => {
+        runWikiCompile: async (compileCtx) => {
           wikiCalls++;
+          if (runWikiCompile) await runWikiCompile(compileCtx);
         },
-        runAgentCompile: async () => {
+        runAgentCompile: async (compileCtx) => {
           agentCalls++;
+          if (runAgentCompile) await runAgentCompile(compileCtx);
         },
+        runJoplinDataApiPreflight,
       },
     ),
   );
@@ -106,6 +123,26 @@ async function captureStdout(fn) {
   try {
     const result = await fn();
     return { result, lines };
+  } catch (e) {
+    e.stdoutLines = lines;
+    throw e;
+  } finally {
+    console.log = old;
+  }
+}
+
+async function captureStdoutAndError(fn) {
+  const old = console.log;
+  /** @type {string[]} */
+  const lines = [];
+  console.log = (line) => {
+    lines.push(String(line));
+  };
+  try {
+    const result = await fn();
+    return { result, lines, error: null };
+  } catch (e) {
+    return { result: undefined, lines, error: e };
   } finally {
     console.log = old;
   }
@@ -408,6 +445,8 @@ test("sqlite-sync off mode skips compile even when raw changed", async () => {
   assert.equal(summary.raw_changed, true);
   assert.equal(summary.compile_mode, "off");
   assert.equal(summary.compile_triggered, false);
+  assert.equal(summary.state_committed, true);
+  assert.equal(summary.state_commit_reason, "compile_mode_off");
   assert.equal(wikiCalls, 0);
   assert.equal(agentCalls, 0);
 });
@@ -430,6 +469,231 @@ test("sqlite-sync agent mode invokes fixed agent compile runtime", async () => {
   assert.equal(summary.compile_triggered, true);
   assert.equal(wikiCalls, 0);
   assert.equal(agentCalls, 1);
+});
+
+test("sqlite-sync keeps previous snapshot state when agent compile fails after raw changed", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  await runSyncForTest({ root, raw, exportBody: "old", pipeline: "    compile_mode: agent" });
+  const statePath = sqliteSyncStatePath(root);
+  const before = fs.readFileSync(statePath, "utf8");
+
+  await assert.rejects(
+    () =>
+      runSyncForTest({
+        root,
+        raw,
+        exportBody: "new",
+        pipeline: "    compile_mode: agent",
+        runAgentCompile: async () => {
+          const err = new Error("agent compile failed");
+          err.code = "AGENT_COMPILE_FAILED";
+          throw err;
+        },
+      }),
+    /** @param {Error & { code?: string }} e */
+    (e) => e.code === "AGENT_COMPILE_FAILED",
+  );
+
+  assert.equal(fs.readFileSync(statePath, "utf8"), before);
+});
+
+test("sqlite-sync retries changed raw after agent compile failure and commits after success", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  await runSyncForTest({ root, raw, exportBody: "old", pipeline: "    compile_mode: agent" });
+  const statePath = sqliteSyncStatePath(root);
+  const before = fs.readFileSync(statePath, "utf8");
+
+  await assert.rejects(
+    () =>
+      runSyncForTest({
+        root,
+        raw,
+        exportBody: "new",
+        pipeline: "    compile_mode: agent",
+        runAgentCompile: async () => {
+          const err = new Error("agent compile failed");
+          err.code = "AGENT_COMPILE_FAILED";
+          throw err;
+        },
+      }),
+    /** @param {Error & { code?: string }} e */
+    (e) => e.code === "AGENT_COMPILE_FAILED",
+  );
+  assert.equal(fs.readFileSync(statePath, "utf8"), before);
+
+  const { summary, agentCalls } = await runSyncForTest({
+    root,
+    raw,
+    exportBody: "new",
+    pipeline: "    compile_mode: agent",
+  });
+
+  assert.equal(summary.raw_changed, true);
+  assert.equal(summary.compile_triggered, true);
+  assert.equal(agentCalls, 1);
+  assert.equal(
+    readSnapshotState(statePath).snapshot?.files["Inbox/A.md"].sha256,
+    buildSnapshotFromMarkdown(raw, [path.join(raw, "Inbox", "A.md")]).files["Inbox/A.md"].sha256,
+  );
+});
+
+test("sqlite-sync stops before agent compile when writeback preflight rejects invalid token", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  const writebackYaml = `joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  base_url: http://127.0.0.1:41184
+  token: invalid-token
+  timeout_ms: 1000`;
+  await runSyncForTest({
+    root,
+    raw,
+    exportBody: "old",
+    pipeline: "    compile_mode: agent",
+    writebackYaml,
+  });
+  let agentCompileCalls = 0;
+
+  await assert.rejects(
+    () =>
+      runSyncForTest({
+        root,
+        raw,
+        exportBody: "new",
+        pipeline: "    compile_mode: agent",
+        writebackYaml,
+        runJoplinDataApiPreflight: async () => {
+          const err = new Error("HTTP 403: invalid token");
+          err.code = "JOPLIN_DATA_API_FAILED";
+          throw err;
+        },
+        runAgentCompile: async () => {
+          agentCompileCalls++;
+        },
+      }),
+    /** @param {Error & { code?: string }} e */
+    (e) => e.code === "JOPLIN_DATA_API_FAILED",
+  );
+
+  assert.equal(agentCompileCalls, 0);
+});
+
+test("sqlite-sync calls agent compile after writeback preflight passes and reports passed status", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  const writebackYaml = `joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  base_url: http://127.0.0.1:41184
+  token: valid-token
+  timeout_ms: 1000`;
+  await runSyncForTest({
+    root,
+    raw,
+    exportBody: "old",
+    pipeline: "    compile_mode: agent",
+    writebackYaml,
+  });
+  /** @type {string[]} */
+  const order = [];
+
+  const { summary, agentCalls } = await runSyncForTest({
+    root,
+    raw,
+    exportBody: "new",
+    pipeline: "    compile_mode: agent",
+    writebackYaml,
+    runJoplinDataApiPreflight: async () => {
+      order.push("preflight");
+    },
+    runAgentCompile: async () => {
+      order.push("compile");
+    },
+  });
+
+  assert.deepEqual(order, ["preflight", "compile"]);
+  assert.equal(agentCalls, 1);
+  assert.equal(summary.writeback_preflight_status, "passed");
+  assert.equal(summary.downstream_status, "succeeded");
+  assert.equal(summary.state_committed, true);
+});
+
+test("sqlite-sync prints failed downstream summary without committing state", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  await runSyncForTest({ root, raw, exportBody: "old", pipeline: "    compile_mode: agent" });
+
+  const { lines, error } = await captureStdoutAndError(() =>
+    runSyncForTest({
+      root,
+      raw,
+      exportBody: "new",
+      pipeline: "    compile_mode: agent",
+      runAgentCompile: async () => {
+        const err = new Error("agent compile failed");
+        err.code = "AGENT_COMPILE_FAILED";
+        throw err;
+      },
+    }),
+  );
+
+  assert.equal(error?.code, "AGENT_COMPILE_FAILED");
+  const summary = JSON.parse((error?.stdoutLines ?? lines).at(-1) ?? "{}");
+  assert.equal(summary.downstream_status, "failed");
+  assert.equal(summary.state_committed, false);
+  assert.equal(summary.state_commit_reason, "downstream_failed");
+  assert.deepEqual(fs.readdirSync(path.join(root, ".joplin-llm-wiki")), [
+    "sqlite-sync-state.json",
+  ]);
+});
+
+test("sqlite-sync prints failed preflight summary without committing state", async () => {
+  const root = tmpdir();
+  const raw = path.join(root, "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  const writebackYaml = `joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  base_url: http://127.0.0.1:41184
+  token: invalid-token
+  timeout_ms: 1000`;
+  await runSyncForTest({
+    root,
+    raw,
+    exportBody: "old",
+    pipeline: "    compile_mode: agent",
+    writebackYaml,
+  });
+
+  const { lines, error } = await captureStdoutAndError(() =>
+    runSyncForTest({
+      root,
+      raw,
+      exportBody: "new",
+      pipeline: "    compile_mode: agent",
+      writebackYaml,
+      runJoplinDataApiPreflight: async () => {
+        const err = new Error("HTTP 403: invalid token");
+        err.code = "JOPLIN_DATA_API_FAILED";
+        throw err;
+      },
+    }),
+  );
+
+  assert.equal(error?.code, "JOPLIN_DATA_API_FAILED");
+  const summary = JSON.parse((error?.stdoutLines ?? lines).at(-1) ?? "{}");
+  assert.equal(summary.writeback_preflight_status, "failed");
+  assert.equal(summary.downstream_status, "skipped");
+  assert.equal(summary.state_committed, false);
+  assert.equal(summary.state_commit_reason, "preflight_failed");
 });
 
 test("sqlite-sync summary exposes raw change and compile decision fields", async () => {
@@ -466,6 +730,8 @@ test("sqlite-sync export-only updates state but skips compile", async () => {
   assert.equal(summary.export_only, true);
   assert.equal(summary.raw_changed, true);
   assert.equal(summary.compile_triggered, false);
+  assert.equal(summary.state_committed, true);
+  assert.equal(summary.state_commit_reason, "export_only");
   assert.equal(wikiCalls, 0);
   assert.equal(agentCalls, 0);
   const state = readSnapshotState(

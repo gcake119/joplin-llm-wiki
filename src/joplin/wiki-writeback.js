@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseWikiMarkdown, parseWikiMarkdownLenient } from "../wiki/frontmatter.js";
-import { createJoplinDataApiClient } from "./data-api-client.js";
+import { createJoplinDataApiClient, runJoplinDataApiPreflight } from "./data-api-client.js";
 
 /**
  * Topic string for Joplin notebook title: NFC trim, strip path/control chars, max 128 units.
@@ -75,6 +75,29 @@ export function summarizeKnowledgeFlowWritebackDry(
     writeback_collision_count: base.writeback_collision_count + workflow.collisions,
     workflow_writeback_would_write: workflow.entries.length,
   };
+}
+
+/**
+ * Non-mutating preflight for automatic wiki writeback orchestration.
+ *
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {{ fetch?: typeof fetch }} [options]
+ */
+export async function runWikiWritebackPreflight(cfg, options = {}) {
+  try {
+    await runJoplinDataApiPreflight(cfg, options);
+    return { writeback_preflight_status: "passed" };
+  } catch (e) {
+    const errIn = /** @type {Error & { code?: string }} */ (e);
+    const token = cfg.joplin_data_api?.token;
+    const message =
+      typeof token === "string" && token.length >= 4 ?
+        errIn.message.split(token).join("[redacted-token]")
+      : errIn.message;
+    const err = new Error(message);
+    err.code = errIn.code ?? "JOPLIN_DATA_API_FAILED";
+    throw err;
+  }
 }
 
 /**

@@ -190,3 +190,23 @@ joplin_data_api:
   assert.equal(cfg.joplin_wiki_writeback.enabled, true);
   assert.equal(cfg.joplin_wiki_writeback.artifacts_project_notebook_title, "");
 });
+
+test("writeback enabled rejects non-loopback Joplin Data API URL", async () => {
+  const dir = tmpdir();
+  const cfgPath = writeCfg(
+    dir,
+    `raw: ./raw
+wiki: ./wiki
+joplin_wiki_writeback:
+  enabled: true
+joplin_data_api:
+  base_url: http://example.com:41184
+  token: t
+`,
+  );
+
+  await assert.rejects(
+    () => loadConfig(cfgPath),
+    /hostname must be 127\.0\.0\.1, localhost, or ::1/,
+  );
+});
