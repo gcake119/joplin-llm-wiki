@@ -106,7 +106,7 @@ export async function runWikiWritebackPreflight(cfg, options = {}) {
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs
  * @param {string[]} relPaths relative paths under `wiki` touched this run
- * @param {{ fetch?: typeof fetch, dryRun?: boolean }} [options]
+ * @param {{ fetch?: typeof fetch, dryRun?: boolean, cleanupOrphans?: boolean }} [options]
  */
 export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {}) {
   const wb = cfg.joplin_wiki_writeback;
@@ -133,12 +133,24 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
 
   if (options.dryRun) {
     const topics = new Set(entries.map((e) => e.topic));
-    return {
+    const localSummary = {
       writeback_written: 0,
       writeback_skipped: 0,
       writeback_would_write: entries.length,
       writeback_would_create_notebooks: topics.size + (entries.length > 0 ? 1 : 0),
       writeback_collision_count: collisions,
+    };
+    if (!options.fetch) return localSummary;
+    const remoteSummary = await inspectWikiWritebackDryRemote(
+      cfg,
+      entries,
+      fetchImpl,
+    );
+    return {
+      ...localSummary,
+      ...remoteSummary,
+      writeback_collision_count:
+        collisions + remoteSummary.writeback_collision_count,
     };
   }
 
@@ -165,13 +177,21 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
   }
 
   let written = 0;
+  let created = 0;
+  let updated = 0;
   for (const e of entries) {
     const topicId = topicNotebookIds.get(e.topic);
     if (!topicId)
       throw writePhaseFail(`internal: missing notebook id for topic: ${e.topic}`);
-    await upsertNoteInTopic(client, topicId, e.noteTitle, e.body);
+    const result = await upsertNoteInTopic(client, topicId, e.noteTitle, e.body);
+    if (result.created) created++;
+    if (result.updated) updated++;
     written++;
   }
+
+  const trashed = options.cleanupOrphans
+    ? await trashOrphanConceptNotes(client, topicNotebookIds, entries)
+    : 0;
 
   return {
     writeback_written: written,
@@ -179,6 +199,77 @@ export async function runWikiWriteback(cfg, wikiRootAbs, relPaths, options = {})
     writeback_notebooks_ensured: topicsTouched.length,
     writeback_notebooks_created: notebooksCreated,
     writeback_collision_count: collisions,
+    writeback_created_count: created,
+    writeback_updated_count: updated,
+    writeback_trashed_count: trashed,
+  };
+}
+
+/**
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {{ rel: string, topic: string, noteTitle: string, body: string }[]} entries
+ * @param {typeof fetch} fetchImpl
+ */
+async function inspectWikiWritebackDryRemote(cfg, entries, fetchImpl) {
+  const wb = cfg.joplin_wiki_writeback;
+  const client = createJoplinDataApiClient(cfg, { fetch: fetchImpl });
+  const root = (await client.listRootFolders()).find(
+    (f) => f.title === wb.parent_notebook_title,
+  );
+  if (!root?.id) return emptyRemoteInspection();
+  const wikiSection = (await client.listChildFolders(root.id)).find(
+    (f) => f.title === wb.wiki_notebook_title,
+  );
+  if (!wikiSection?.id) return emptyRemoteInspection();
+
+  /** @type {{ topic: string, title: string, note_ids: string[] }[]} */
+  const collisionDetails = [];
+  /** @type {{ topic: string, title: string, note_id: string }[]} */
+  const orphanCandidates = [];
+  const topics = [...new Set(entries.map((e) => e.topic))];
+  for (const topic of topics) {
+    const folder = (await client.listChildFolders(wikiSection.id)).find(
+      (f) => f.title === topic,
+    );
+    if (!folder?.id) continue;
+    const notes = await client.listNotesInFolder(folder.id);
+    const currentTitles = new Set(
+      entries.filter((e) => e.topic === topic).map((e) => e.noteTitle),
+    );
+    const byTitle = new Map();
+    for (const note of notes) {
+      const title = note.title ?? "";
+      if (!title) continue;
+      const arr = byTitle.get(title) ?? [];
+      arr.push(note.id);
+      byTitle.set(title, arr);
+    }
+    for (const [title, noteIds] of byTitle) {
+      if (currentTitles.has(title) && noteIds.length > 1) {
+        collisionDetails.push({ topic, title, note_ids: noteIds });
+      }
+      if (topic === "concepts" && !currentTitles.has(title)) {
+        for (const noteId of noteIds) {
+          orphanCandidates.push({ topic, title, note_id: noteId });
+        }
+      }
+    }
+  }
+
+  return {
+    writeback_collision_count: collisionDetails.length,
+    writeback_collision_details: collisionDetails,
+    writeback_orphan_candidate_count: orphanCandidates.length,
+    writeback_orphan_candidates: orphanCandidates,
+  };
+}
+
+function emptyRemoteInspection() {
+  return {
+    writeback_collision_count: 0,
+    writeback_collision_details: [],
+    writeback_orphan_candidate_count: 0,
+    writeback_orphan_candidates: [],
   };
 }
 
@@ -412,10 +503,37 @@ async function upsertNoteInTopic(client, topicNotebookId, noteTitle, body) {
   const bodyText = body.trimEnd() + "\n";
   if (matches.length === 1) {
     const id = matches[0].id;
-    await client.updateNoteBody(id, bodyText);
-    return;
+    await client.updateNote(id, {
+      body: bodyText,
+      title: noteTitle,
+      parent_id: topicNotebookId,
+    });
+    return { created: false, updated: true };
   }
   await client.createNote(topicNotebookId, noteTitle, bodyText);
+  return { created: true, updated: false };
+}
+
+/**
+ * @param {ReturnType<typeof createJoplinDataApiClient>} client
+ * @param {Map<string, string>} topicNotebookIds
+ * @param {{ rel: string, topic: string, noteTitle: string, body: string }[]} entries
+ */
+async function trashOrphanConceptNotes(client, topicNotebookIds, entries) {
+  const topicId = topicNotebookIds.get("concepts");
+  if (!topicId) return 0;
+  const currentTitles = new Set(
+    entries.filter((e) => e.topic === "concepts").map((e) => e.noteTitle),
+  );
+  const notes = await client.listNotesInFolder(topicId);
+  let trashed = 0;
+  for (const note of notes) {
+    const title = note.title ?? "";
+    if (!title || currentTitles.has(title)) continue;
+    await client.deleteNote(note.id);
+    trashed++;
+  }
+  return trashed;
 }
 
 /**

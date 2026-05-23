@@ -71,6 +71,11 @@ import YAML from "yaml";
  *     schedule: { every_seconds: number | null },
  *   },
  * }} AppConfig
+ *
+ * Resume stages (`wiki-compile --resume-stage concepts|writeback`) are CLI
+ * recovery controls. They intentionally add no config keys and no Chroma,
+ * embedding, or remote-service dependency beyond the existing local Ollama and
+ * loopback Joplin Data API settings.
  */
 
 /**

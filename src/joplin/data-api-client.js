@@ -352,12 +352,35 @@ export function createJoplinDataApiClient(cfg, options = {}) {
      * @param {string} body
      */
     async updateNoteBody(noteId, body) {
+      await this.updateNote(noteId, { body });
+    },
+
+    /**
+     * @param {string} noteId
+     * @param {{ body?: string, title?: string, parent_id?: string }} fields
+     */
+    async updateNote(noteId, fields) {
       await requestJson(
         "write",
         "PUT",
         `/notes/${encodeURIComponent(noteId)}`,
         {},
-        { body },
+        fields,
+      );
+    },
+
+    /**
+     * Trash a note using Joplin's default DELETE behavior. Do not pass
+     * permanent=1 here; permanent deletion must stay outside normal writeback.
+     *
+     * @param {string} noteId
+     */
+    async deleteNote(noteId) {
+      await requestJson(
+        "write",
+        "DELETE",
+        `/notes/${encodeURIComponent(noteId)}`,
+        {},
       );
     },
   };

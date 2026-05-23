@@ -187,15 +187,71 @@ test("agent-compile writes generated wiki pages back to Joplin Data API when ena
     assert.strictEqual(code, 0);
     assert.deepStrictEqual(writebackCall, {
       wikiRoot: "/wiki",
-      relPaths: ["concepts/a.md", "concepts/nested.md", "summaries/a.md"],
+      relPaths: ["concepts/a.md", "concepts/nested.md"],
       options: { dryRun: false },
     });
     const parsed = JSON.parse(line);
     assert.strictEqual(parsed.agent_compile, "ok");
-    assert.strictEqual(parsed.writeback_written, 3);
+    assert.strictEqual(parsed.writeback_written, 2);
   } finally {
     console.log = origLog;
   }
+});
+
+test("agent-compile fails before writeback when concept title and H1 mismatch", async () => {
+  const dir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-agent-"));
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(raw, "src"), { recursive: true });
+  fs.mkdirSync(path.join(wiki, "concepts"), { recursive: true });
+  fs.writeFileSync(path.join(raw, "src", "a.md"), "# raw\n");
+  fs.writeFileSync(
+    path.join(wiki, "concepts", "bad.md"),
+    `---
+source_refs:
+  - src/a.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: concepts
+title: 正確標題
+---
+# 錯誤標題
+`,
+  );
+
+  await assert.rejects(
+    () =>
+      runAgentCompile(
+        { configPath: "cfg.yaml", argv: [], opts: new Map() },
+        {
+          spawn: (_cmd, args) => {
+            const c = makeChild();
+            const outPath = args[args.indexOf("--output-last-message") + 1];
+            queueMicrotask(() => {
+              fs.writeFileSync(outPath, "寫入檔案清單：wiki/concepts/bad.md", "utf8");
+              c.emit("close", 0);
+            });
+            return c;
+          },
+          loadConfig: async () =>
+            /** @type {any} */ ({
+              raw,
+              raw_glob: "**/*.md",
+              wiki,
+              joplin_wiki_writeback: { enabled: true },
+            }),
+          discoverMarkdown: async (root) => {
+            if (root === raw) return [path.join(raw, "src", "a.md")];
+            if (root === wiki) return [path.join(wiki, "concepts", "bad.md")];
+            return [];
+          },
+          runWikiWriteback: async () => {
+            throw new Error("writeback should not run after invalid agent concept");
+          },
+        },
+      ),
+    (e) => /** @type {{ code?: string }} */ (e).code === "AGENT_COMPILE_FAILED",
+  );
 });
 
 test("agent-compile fails when codex final message reports no writes", async () => {

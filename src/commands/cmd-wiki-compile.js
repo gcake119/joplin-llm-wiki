@@ -21,6 +21,11 @@ import {
  */
 export async function runWikiCompile(ctx) {
   const cfgBase = await loadConfig(ctx.configPath);
+  if (ctx.opts.has("resume-stage")) {
+    await runWikiCompileFlow({ ctx, cfg: cfgBase });
+    return 0;
+  }
+
   const batchFallback =
     ctx.opts.get("batch") === "true" ||
     ctx.opts.get("full-library") === "false" ||

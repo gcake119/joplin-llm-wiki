@@ -79,6 +79,21 @@ pnpm exec joplin-llm-wiki lint --config ./config.yaml
 
 Removed commands: `index`, `watch`, and `ask`. The vector/RAG pipeline has been removed.
 
+### Concept Resume Recovery
+
+若已完成 `wiki/summaries/*.md`，但 concept 產生或 Joplin 寫回出現錯誤，可以先暫停 `sqlite-sync` 排程，從下游階段接續，不必重新為所有 raw 筆記產生單篇摘要。
+
+```bash
+pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage concepts --dry-run
+pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage concepts
+pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback --dry-run
+pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml --resume-stage writeback
+```
+
+Concept resume 只讀既有 `wiki/summaries/*.md`，讓本機 LLM 依 summary evidence 判斷 canonical concepts，然後只寫 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`。Writeback resume 只處理 `wiki/concepts/*.md` 與 `wiki/indexes/All-Concepts.md`，不重送 summaries。
+
+Dry-run 不會改寫 wiki 或 Joplin。若 dry-run 顯示 Joplin concept collision 或 orphan candidates，先檢查輸出再決定是否修復；一般 writeback 只會 create/update，不會自動刪除舊 note。需要回復時，可先保留已暫停排程，手動移開錯誤的 `wiki/concepts/*.md` 或修正 Joplin duplicate note，再重跑 dry-run。
+
 ## Config
 
 Minimal config:

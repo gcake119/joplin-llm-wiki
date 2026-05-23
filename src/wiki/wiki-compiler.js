@@ -7,11 +7,16 @@ import {
   assertHubCoverage,
 } from "../schema/schema-validator.js";
 import { OllamaClient } from "../ollama/client.js";
-import { summarizeSourcesForPlanner, planWikiPaths } from "./wiki-planner.js";
+import {
+  summarizeSourcesForPlanner,
+  planWikiPaths,
+  planCanonicalConceptsFromSummaries,
+} from "./wiki-planner.js";
 import { isTopicWikiPath } from "./topic-path-heuristic.js";
 import { rotatedSlice } from "./corpus-slice.js";
 import {
   serializeWikiPage,
+  parseWikiMarkdownLenient,
   validateCompiledFrontmatter,
   assertSourceRefsResolvable,
 } from "./frontmatter.js";
@@ -90,9 +95,17 @@ export async function runWikiCompileFlow(args) {
   }
 
   const dryRun = ctx.opts.get("dry-run") === "true";
+  const resumeStage = ctx.opts.get("resume-stage") ?? "";
 
   const wikiRoot = path.resolve(cfg.wiki);
   fs.mkdirSync(wikiRoot, { recursive: true });
+
+  if (resumeStage === "concepts") {
+    return await runConceptResumeFlow({ cfg, wikiRoot, dryRun });
+  }
+  if (resumeStage === "writeback") {
+    return await runWritebackResumeFlow({ cfg, wikiRoot, dryRun });
+  }
 
   const schema = loadWikiSchema(cfg.wiki_schema.path);
   const ollama = new OllamaClient({
@@ -333,6 +346,255 @@ export async function runWikiCompileFlow(args) {
 
   console.log(JSON.stringify(compileSummary));
   return { dryRun: false, paths, truncated };
+}
+
+/**
+ * @param {{
+ *   cfg: import('../config/load-config.js').AppConfig,
+ *   wikiRoot: string,
+ *   dryRun: boolean,
+ * }} args
+ */
+async function runWritebackResumeFlow(args) {
+  const { cfg, wikiRoot, dryRun } = args;
+  const relPaths = await discoverDownstreamWritebackPaths(wikiRoot);
+  const payload = {
+    dry_run: dryRun,
+    resume_stage: "writeback",
+    writeback_relpaths: relPaths,
+    writeback_created_count: 0,
+    writeback_updated_count: 0,
+    writeback_trashed_count: 0,
+    writeback_collision_count: 0,
+    writeback_orphan_candidate_count: 0,
+  };
+
+  if (cfg.joplin_wiki_writeback.enabled) {
+    Object.assign(
+      payload,
+      dryRun
+        ? summarizeWikiWritebackDry(cfg, wikiRoot, relPaths)
+        : await runWikiWriteback(cfg, wikiRoot, relPaths, { dryRun: false }),
+    );
+  }
+
+  console.log(JSON.stringify(payload));
+  return { dryRun, paths: relPaths, truncated: false, resumeStage: "writeback" };
+}
+
+/** @param {string} wikiRoot */
+async function discoverDownstreamWritebackPaths(wikiRoot) {
+  const concepts = await discoverMarkdown(wikiRoot, "concepts/*.md");
+  const out = concepts.map((abs) => relativeUnder(wikiRoot, abs));
+  const allConcepts = path.join(wikiRoot, "indexes", "All-Concepts.md");
+  if (fs.existsSync(allConcepts)) out.push("indexes/All-Concepts.md");
+  return out;
+}
+
+/**
+ * @param {{
+ *   cfg: import('../config/load-config.js').AppConfig,
+ *   wikiRoot: string,
+ *   dryRun: boolean,
+ * }} args
+ */
+async function runConceptResumeFlow(args) {
+  const { cfg, wikiRoot, dryRun } = args;
+  const summaryInventory = await readSummaryInventory(wikiRoot);
+  const summaryPaths = summaryInventory.map((item) => item.path);
+
+  if (summaryPaths.length === 0) {
+    const err = new Error(
+      "concept resume requires existing wiki/summaries/*.md files",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "WIKI_COMPILE_ABORT";
+    throw err;
+  }
+
+  const ollama = new OllamaClient({
+    baseUrl: cfg.ollama.base_url,
+    embedModel: cfg.ollama.embed_model,
+    chatModel: cfg.ollama.chat_model,
+    timeoutMs: cfg.ollama.timeout_ms,
+    embedBatchSize: cfg.ollama.embed_batch_size,
+  });
+  const conceptPlan = await planCanonicalConceptsFromSummaries({
+    cfg,
+    ollama,
+    summaries: summaryInventory,
+  });
+
+  const payload = {
+    dry_run: dryRun,
+    resume_stage: "concepts",
+    summary_paths_read: summaryPaths,
+    concept_paths_planned: conceptPlan.concepts.map((item) => item.path),
+    concept_paths_written: [],
+    index_paths_written: [],
+    canonical_merge_count: conceptPlan.canonical_merge_count,
+    semantic_decision_count: conceptPlan.semantic_decision_count,
+    low_confidence_semantic_decision_count:
+      conceptPlan.low_confidence_semantic_decision_count,
+    concept_collision_count: 0,
+    writeback_relpaths: [],
+    writeback_created_count: 0,
+    writeback_updated_count: 0,
+    writeback_trashed_count: 0,
+    writeback_collision_count: 0,
+    writeback_orphan_candidate_count: 0,
+  };
+  const downstreamRelPaths =
+    conceptPlan.concepts.length > 0
+      ? [
+          ...conceptPlan.concepts.map((item) => item.path),
+          "indexes/All-Concepts.md",
+        ]
+      : [];
+
+  if (!dryRun) {
+    const revision = `concept-resume-${new Date().toISOString()}`;
+    const conceptPathsWritten = writeCanonicalConcepts({
+      cfg,
+      wikiRoot,
+      concepts: conceptPlan.concepts,
+      revision,
+    });
+    const indexPathsWritten = writeAllConceptsIndex({
+      wikiRoot,
+      concepts: conceptPlan.concepts,
+      revision,
+    });
+    payload.concept_paths_written = conceptPathsWritten;
+    payload.index_paths_written = indexPathsWritten;
+    if (cfg.joplin_wiki_writeback.enabled) {
+      payload.writeback_relpaths = [...conceptPathsWritten, ...indexPathsWritten];
+      Object.assign(
+        payload,
+        await runWikiWriteback(cfg, wikiRoot, payload.writeback_relpaths, {
+          dryRun: false,
+        }),
+      );
+    }
+  }
+  if (dryRun && cfg.joplin_wiki_writeback.enabled) {
+    payload.writeback_relpaths = downstreamRelPaths;
+    Object.assign(payload, summarizeWikiWritebackDry(cfg, wikiRoot, downstreamRelPaths));
+  }
+  console.log(JSON.stringify(payload));
+  return {
+    dryRun,
+    paths: payload.concept_paths_written,
+    truncated: false,
+    resumeStage: "concepts",
+  };
+}
+
+/**
+ * @param {string} wikiRoot
+ */
+async function readSummaryInventory(wikiRoot) {
+  const summaryAbs = await discoverMarkdown(wikiRoot, "summaries/*.md");
+  return summaryAbs.map((abs) => {
+    const rel = relativeUnder(wikiRoot, abs);
+    const parsed = parseWikiMarkdownLenient(fs.readFileSync(abs, "utf8"));
+    const data = parsed.data;
+    return {
+      path: rel,
+      title: String(data.title ?? path.basename(rel, ".md")),
+      domain: String(data.domain ?? "_uncategorized"),
+      source_refs: Array.isArray(data.source_refs)
+        ? data.source_refs.map((x) => String(x)).filter(Boolean)
+        : [],
+      body_excerpt: parsed.body.trim().slice(0, 1600),
+    };
+  });
+}
+
+/**
+ * @param {{
+ *   cfg: import('../config/load-config.js').AppConfig,
+ *   wikiRoot: string,
+ *   concepts: import('./wiki-planner.js').CanonicalConceptPlanItem[],
+ *   revision: string,
+ * }} args
+ */
+function writeCanonicalConcepts(args) {
+  const { cfg, wikiRoot, concepts, revision } = args;
+  /** @type {string[]} */
+  const written = [];
+  for (const concept of concepts) {
+    const data = {
+      source_refs: concept.source_refs,
+      compiled_at: new Date().toISOString(),
+      compiler_revision: revision,
+      domain: "concepts",
+      title: concept.title,
+      summary_refs: concept.summary_refs,
+      merged_from: concept.merged_from,
+    };
+    validateCompiledFrontmatter(data);
+    assertSourceRefsResolvable(data, cfg.raw);
+    const body = conceptBody(concept);
+    const outAbs = path.join(wikiRoot, concept.path);
+    fs.mkdirSync(path.dirname(outAbs), { recursive: true });
+    fs.writeFileSync(outAbs, serializeWikiPage(data, body), "utf8");
+    written.push(concept.path);
+  }
+  return written;
+}
+
+/**
+ * @param {{
+ *   wikiRoot: string,
+ *   concepts: import('./wiki-planner.js').CanonicalConceptPlanItem[],
+ *   revision: string,
+ * }} args
+ */
+function writeAllConceptsIndex(args) {
+  const { wikiRoot, concepts, revision } = args;
+  const rel = "indexes/All-Concepts.md";
+  const sourceRefs = dedupePathsPreserveOrder(
+    concepts.flatMap((concept) => concept.source_refs),
+  );
+  const lines = [
+    "# All Concepts",
+    "",
+    ...concepts.map(
+      (concept) => `- [${concept.title}](../${concept.path})`,
+    ),
+    "",
+  ];
+  const data = {
+    source_refs: sourceRefs,
+    compiled_at: new Date().toISOString(),
+    compiler_revision: revision,
+    domain: "indexes",
+    title: "All Concepts",
+  };
+  validateCompiledFrontmatter(data);
+  const outAbs = path.join(wikiRoot, rel);
+  fs.mkdirSync(path.dirname(outAbs), { recursive: true });
+  fs.writeFileSync(outAbs, serializeWikiPage(data, lines.join("\n")), "utf8");
+  return [rel];
+}
+
+/**
+ * @param {import('./wiki-planner.js').CanonicalConceptPlanItem} concept
+ */
+function conceptBody(concept) {
+  const lines = [
+    `# ${concept.title}`,
+    "",
+    "## 關鍵證據",
+    "",
+    ...concept.summary_refs.map((ref) => `- [${ref}](../${ref})`),
+    "",
+    "## 來源",
+    "",
+    ...concept.source_refs.map((ref) => `- ${ref}`),
+    "",
+  ];
+  return lines.join("\n");
 }
 
 /**

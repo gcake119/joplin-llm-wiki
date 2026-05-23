@@ -143,6 +143,261 @@ test("wiki writeback preflight maps unreachable Data API to stable preflight cod
   );
 });
 
+test("wiki writeback dry-run reports concept title collisions and orphan candidates without mutating", async () => {
+  const dir = tmpdir();
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(wiki, "concepts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(wiki, "concepts", "depression-support.md"),
+    `---
+source_refs:
+  - raw/a.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: concepts
+title: 憂鬱症陪伴、心理衛教與求助
+---
+# 憂鬱症陪伴、心理衛教與求助
+`,
+  );
+
+  const mutatingMethods = [];
+  const summary = await runWikiWriteback(
+    cfg(),
+    wiki,
+    ["concepts/depression-support.md"],
+    {
+      dryRun: true,
+      fetch: async (url, init) => {
+        const method = init?.method ?? "GET";
+        if (method !== "GET") mutatingMethods.push(method);
+        const u = new URL(String(url));
+        if (u.pathname === "/folders") {
+          return jsonResponse({
+            items: [
+              {
+                id: "root",
+                parent_id: "",
+                title: "@llm-wiki",
+                children: [
+                  {
+                    id: "wiki",
+                    parent_id: "root",
+                    title: "wiki",
+                    children: [
+                      {
+                        id: "concepts",
+                        parent_id: "wiki",
+                        title: "concepts",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            has_more: false,
+          });
+        }
+        if (u.pathname === "/folders/concepts/notes") {
+          return jsonResponse({
+            items: [
+              {
+                id: "n1",
+                parent_id: "concepts",
+                title: "憂鬱症陪伴、心理衛教與求助",
+              },
+              {
+                id: "n2",
+                parent_id: "concepts",
+                title: "憂鬱症陪伴、心理衛教與求助",
+              },
+              {
+                id: "old",
+                parent_id: "concepts",
+                title: "舊的錯誤 concept",
+              },
+            ],
+            has_more: false,
+          });
+        }
+        return jsonResponse({ items: [], has_more: false });
+      },
+    },
+  );
+
+  assert.equal(summary.writeback_collision_count, 1);
+  assert.deepEqual(summary.writeback_collision_details, [
+    {
+      topic: "concepts",
+      title: "憂鬱症陪伴、心理衛教與求助",
+      note_ids: ["n1", "n2"],
+    },
+  ]);
+  assert.equal(summary.writeback_orphan_candidate_count, 1);
+  assert.deepEqual(summary.writeback_orphan_candidates, [
+    {
+      topic: "concepts",
+      title: "舊的錯誤 concept",
+      note_id: "old",
+    },
+  ]);
+  assert.deepEqual(mutatingMethods, []);
+});
+
+test("wiki writeback updates existing notes, creates missing notes, and trashes orphans only with explicit cleanup", async () => {
+  const dir = tmpdir();
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(path.join(wiki, "concepts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(wiki, "concepts", "managed-existing.md"),
+    `---
+source_refs: []
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: concepts
+title: Managed Existing
+---
+# Managed Existing
+`,
+  );
+  fs.writeFileSync(
+    path.join(wiki, "concepts", "new-concept.md"),
+    `---
+source_refs: []
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: concepts
+title: New Concept
+---
+# New Concept
+`,
+  );
+
+  const requests = [];
+  const summary = await runWikiWriteback(
+    cfg(),
+    wiki,
+    ["concepts/managed-existing.md", "concepts/new-concept.md"],
+    {
+      dryRun: false,
+      cleanupOrphans: true,
+      fetch: async (url, init) => {
+        const u = new URL(String(url));
+        const method = init?.method ?? "GET";
+        requests.push({
+          method,
+          pathname: u.pathname,
+          search: u.search,
+          body: init?.body ? JSON.parse(String(init.body)) : null,
+        });
+        if (u.pathname === "/ping") {
+          return textResponse("JoplinClipperServer");
+        }
+        if (u.pathname === "/folders") {
+          return jsonResponse({
+            items: [
+              {
+                id: "root",
+                parent_id: "",
+                title: "@llm-wiki",
+                children: [
+                  {
+                    id: "wiki",
+                    parent_id: "root",
+                    title: "wiki",
+                    children: [
+                      {
+                        id: "concepts",
+                        parent_id: "wiki",
+                        title: "concepts",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            has_more: false,
+          });
+        }
+        if (u.pathname === "/folders/concepts/notes") {
+          return jsonResponse({
+            items: [
+              {
+                id: "existing-note",
+                parent_id: "concepts",
+                title: "Managed Existing",
+              },
+              {
+                id: "orphan-note",
+                parent_id: "concepts",
+                title: "Old Concept",
+              },
+            ],
+            has_more: false,
+          });
+        }
+        if (method === "PUT" || method === "POST") {
+          return jsonResponse({ id: "ok" });
+        }
+        if (method === "DELETE") {
+          return { ok: true, status: 204, async text() { return ""; } };
+        }
+        return jsonResponse({ items: [], has_more: false });
+      },
+    },
+  );
+
+  const put = requests.find(
+    (r) => r.method === "PUT" && r.pathname === "/notes/existing-note",
+  );
+  assert.deepEqual(put?.body, {
+    body: "# Managed Existing\n",
+    title: "Managed Existing",
+    parent_id: "concepts",
+  });
+
+  const post = requests.find(
+    (r) => r.method === "POST" && r.pathname === "/notes",
+  );
+  assert.deepEqual(post?.body, {
+    parent_id: "concepts",
+    title: "New Concept",
+    body: "# New Concept\n",
+  });
+
+  const del = requests.find(
+    (r) => r.method === "DELETE" && r.pathname === "/notes/orphan-note",
+  );
+  assert.ok(del);
+  assert.equal(del.search.includes("permanent=1"), false);
+  assert.equal(summary.writeback_updated_count, 1);
+  assert.equal(summary.writeback_created_count, 1);
+  assert.equal(summary.writeback_trashed_count, 1);
+});
+
+function textResponse(text) {
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return text;
+    },
+  };
+}
+
+function jsonResponse(body) {
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return JSON.stringify(body);
+    },
+    async json() {
+      return body;
+    },
+  };
+}
+
 test("knowledge-flow writeback can be limited to selected workflow note", async () => {
   const dir = tmpdir();
   const wiki = path.join(dir, "wiki");

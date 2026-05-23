@@ -5,6 +5,10 @@ import path from "node:path";
 import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown } from "../fs/note-discovery.js";
 import { runWikiWriteback } from "../joplin/wiki-writeback.js";
+import {
+  parseWikiMarkdown,
+  assertSourceRefsResolvable,
+} from "../wiki/frontmatter.js";
 
 /**
  * @param {{
@@ -54,6 +58,7 @@ export async function runAgentCompile(ctx, deps = {}) {
     /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
     throw err;
   }
+  await validateAgentConceptOutputs(cfg, discover);
   const writebackSummary = await runAgentCompileWriteback(
     cfg,
     ctx.configPath,
@@ -140,7 +145,7 @@ async function runAgentCompileWriteback(cfg, configPath, discover, writeback, sl
   const wikiFiles = await discover(wikiRoot, "**/*.md");
   const relPaths = wikiFiles
     .map((abs) => path.relative(wikiRoot, abs).replace(/\\/g, "/"))
-    .filter(isAllowedWikiKnowledgePath)
+    .filter(isDownstreamWritebackPath)
     .sort();
   return writeback(cfg, wikiRoot, relPaths, {
     dryRun: false,
@@ -148,15 +153,45 @@ async function runAgentCompileWriteback(cfg, configPath, discover, writeback, sl
 }
 
 /** @param {string} rel */
-function isAllowedWikiKnowledgePath(rel) {
+function isDownstreamWritebackPath(rel) {
   const parts = rel.split("/").filter(Boolean);
   if (parts.length !== 2) return false;
-  if (!["summaries", "concepts", "indexes"].includes(parts[0])) return false;
   if (!parts[1].endsWith(".md")) return false;
-  if (parts[0] === "indexes") {
-    return parts[1] === "All-Sources.md" || parts[1] === "All-Concepts.md";
+  if (parts[0] === "concepts") return true;
+  return parts[0] === "indexes" && parts[1] === "All-Concepts.md";
+}
+
+/**
+ * @param {import('../config/load-config.js').AppConfig} cfg
+ * @param {typeof discoverMarkdown} discover
+ */
+async function validateAgentConceptOutputs(cfg, discover) {
+  const wikiRoot = path.resolve(cfg.wiki);
+  if (!fs.existsSync(wikiRoot)) return;
+  const conceptFiles = await discover(wikiRoot, "concepts/*.md");
+  try {
+    for (const abs of conceptFiles) {
+      const parsed = parseWikiMarkdown(fs.readFileSync(abs, "utf8"));
+      assertSourceRefsResolvable(parsed.data, cfg.raw);
+      const title = String(parsed.data.title ?? "").trim();
+      const h1 = firstMarkdownH1(parsed.body);
+      if (!title || !h1 || title !== h1) {
+        throw new Error(
+          `concept title/H1 mismatch: ${path.relative(wikiRoot, abs).replace(/\\/g, "/")}`,
+        );
+      }
+    }
+  } catch (e) {
+    const err = new Error(String(e?.message ?? e));
+    /** @type {Error & { code?: string }} */ (err).code = "AGENT_COMPILE_FAILED";
+    throw err;
   }
-  return true;
+}
+
+/** @param {string} body */
+function firstMarkdownH1(body) {
+  const line = body.split(/\r?\n/).find((l) => /^#\s+/.test(l));
+  return line ? line.replace(/^#\s+/, "").trim() : "";
 }
 
 /**

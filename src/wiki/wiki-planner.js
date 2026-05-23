@@ -341,6 +341,200 @@ Constraints:
 }
 
 /**
+ * @typedef {{
+ *   path: string,
+ *   title: string,
+ *   domain: string,
+ *   source_refs: string[],
+ *   body_excerpt: string,
+ * }} SummaryInventoryItem
+ *
+ * @typedef {{
+ *   slug: string,
+ *   title: string,
+ *   path: string,
+ *   source_refs: string[],
+ *   summary_refs: string[],
+ *   merged_from: string[],
+ *   semantic_decisions: Array<Record<string, unknown>>,
+ * }} CanonicalConceptPlanItem
+ */
+
+/**
+ * Ask the local LLM to produce canonical concept identities from summary
+ * inventory. Slug/title similarity is deliberately not used as the merge
+ * decision; the model must emit the same_topic/distinct_topic decision data.
+ *
+ * @param {{
+ *   cfg: import('../config/load-config.js').AppConfig,
+ *   ollama: import('../ollama/client.js').OllamaClient,
+ *   summaries: SummaryInventoryItem[],
+ * }} args
+ * @returns {Promise<{
+ *   concepts: CanonicalConceptPlanItem[],
+ *   raw: string,
+ *   canonical_merge_count: number,
+ *   semantic_decision_count: number,
+ *   low_confidence_semantic_decision_count: number,
+ * }>}
+ */
+export async function planCanonicalConceptsFromSummaries(args) {
+  const { cfg, ollama, summaries } = args;
+  const prompt = `Plan canonical concept pages from compiled summary inventory.
+
+Return ONLY compact JSON with this shape:
+{
+  "concepts": [
+    {
+      "slug": "stable-readable-slug",
+      "title": "Traditional Chinese canonical title",
+      "source_refs": ["raw/source.md"],
+      "summary_refs": ["summaries/source-summary.md"],
+      "merged_from": ["old or alias title"],
+      "semantic_decisions": [
+        {"relation":"same_topic","confidence":"high","reason":"..."}
+      ]
+    }
+  ]
+}
+
+Rules:
+- Use Traditional Chinese titles.
+- Determine concept identity by semantic topic judgment from summaries/source_refs.
+- Do not merge concepts merely because titles or slugs look similar.
+- If a candidate is merged, include the semantic_decisions entry.
+- Use low confidence only when the semantic relation is uncertain.
+
+Summary inventory:
+${JSON.stringify(summaries, null, 2)}`;
+
+  const raw = await ollama.chatComplete({
+    prompt,
+    jsonMode: true,
+    timeoutMs: cfg.ollama.timeout_ms,
+  });
+  const parsed = parsePlannerJson(raw);
+  const conceptsRaw = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  const concepts = conceptsRaw
+    .map(normalizeConceptPlanItem)
+    .filter(/** @returns {x is CanonicalConceptPlanItem} */ (x) => x !== null);
+
+  let canonicalMergeCount = 0;
+  let semanticDecisionCount = 0;
+  let lowConfidenceSemanticDecisionCount = 0;
+  for (const concept of concepts) {
+    if (hasSameTopicDecision(concept.semantic_decisions)) {
+      canonicalMergeCount += concept.merged_from.length;
+    }
+    semanticDecisionCount += concept.semantic_decisions.length;
+    for (const decision of concept.semantic_decisions) {
+      const confidence = String(decision.confidence ?? "").toLowerCase();
+      if (confidence === "low") lowConfidenceSemanticDecisionCount += 1;
+    }
+  }
+
+  return {
+    concepts,
+    raw,
+    canonical_merge_count: canonicalMergeCount,
+    semantic_decision_count: semanticDecisionCount,
+    low_confidence_semantic_decision_count:
+      lowConfidenceSemanticDecisionCount,
+  };
+}
+
+/**
+ * @param {Array<Record<string, unknown>>} decisions
+ */
+function hasSameTopicDecision(decisions) {
+  return decisions.some(
+    (decision) => String(decision.relation ?? "") === "same_topic",
+  );
+}
+
+/**
+ * @param {string} raw
+ * @returns {Record<string, unknown>}
+ */
+function parsePlannerJson(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object"
+      ? /** @type {Record<string, unknown>} */ (parsed)
+      : {};
+  } catch {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        return parsed && typeof parsed === "object"
+          ? /** @type {Record<string, unknown>} */ (parsed)
+          : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+}
+
+/**
+ * @param {unknown} item
+ * @returns {CanonicalConceptPlanItem | null}
+ */
+function normalizeConceptPlanItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const record = /** @type {Record<string, unknown>} */ (item);
+  const title = String(record.title ?? "").trim();
+  const rawSlug = String(record.slug ?? "").trim();
+  const slug = normalizeSlug(rawSlug || title);
+  if (!title || !slug) return null;
+  const sourceRefs = stringArray(record.source_refs);
+  const summaryRefs = stringArray(record.summary_refs).filter((p) =>
+    p.startsWith("summaries/"),
+  );
+  const semanticDecisions = Array.isArray(record.semantic_decisions)
+    ? record.semantic_decisions.filter(
+        (d) => d && typeof d === "object",
+      ).map((d) => /** @type {Record<string, unknown>} */ (d))
+    : record.semantic_decision && typeof record.semantic_decision === "object"
+      ? [/** @type {Record<string, unknown>} */ (record.semantic_decision)]
+      : [];
+
+  return {
+    slug,
+    title,
+    path: `concepts/${slug}.md`,
+    source_refs: sourceRefs,
+    summary_refs: summaryRefs,
+    merged_from: stringArray(record.merged_from),
+    semantic_decisions: semanticDecisions,
+  };
+}
+
+/**
+ * @param {unknown} val
+ * @returns {string[]}
+ */
+function stringArray(val) {
+  if (!Array.isArray(val)) return [];
+  return val.map((x) => String(x).trim()).filter(Boolean);
+}
+
+/**
+ * @param {string} input
+ */
+function normalizeSlug(input) {
+  return input
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+}
+
+/**
  * @param {{
  *   paths: string[],
  *   raw: string,
