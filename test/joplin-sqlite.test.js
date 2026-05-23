@@ -46,6 +46,86 @@ test("sqlite exporter writes markdown under raw export root", async () => {
   assert.ok(fs.existsSync(path.join(outDir, "Inbox", "Hello.md")));
 });
 
+test("sqlite exporter preserves literal replacement characters", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jllw-sqlite-"));
+  const dbPath = path.join(tmp, "joplin.sqlite");
+  const outDir = path.join(tmp, "raw");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE notes (id TEXT PRIMARY KEY, parent_id TEXT, title TEXT, body TEXT, deleted_time INTEGER DEFAULT 0);
+    CREATE TABLE folders (id TEXT PRIMARY KEY, parent_id TEXT, title TEXT, deleted_time INTEGER DEFAULT 0);
+  `);
+  db.prepare("INSERT INTO folders (id, parent_id, title) VALUES (?, ?, ?)").run("f1", "", "Inbox");
+  db.prepare("INSERT INTO notes (id, parent_id, title, body) VALUES (?, ?, ?, ?)").run("n1", "f1", "Replacement", "A literal � character");
+  db.close();
+
+  const summary = await exportNotesFromSqlite({
+    databasePath: dbPath,
+    exportRootAbs: outDir,
+    reconcileMode: "mirror",
+    busyTimeoutMs: 1000,
+    maxExportAttempts: 1,
+    dryRun: false,
+    notebookFilter: {
+      enabled: false,
+      include_notebook_ids: [],
+      include_notebook_paths: [],
+      include_descendants: true,
+      notebook_path_style: "joined_slug",
+      notebook_path_separator: "-",
+      source_filename: "title",
+    },
+  });
+
+  assert.equal(summary.written_files, 1);
+  assert.deepEqual(summary.skipped_notes, []);
+  assert.match(
+    fs.readFileSync(path.join(outDir, "Inbox", "Replacement.md"), "utf8"),
+    /A literal � character/,
+  );
+});
+
+test("sqlite exporter skips truly invalid UTF-8 note bodies", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jllw-sqlite-"));
+  const dbPath = path.join(tmp, "joplin.sqlite");
+  const outDir = path.join(tmp, "raw");
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE notes (id TEXT PRIMARY KEY, parent_id TEXT, title TEXT, body TEXT, deleted_time INTEGER DEFAULT 0);
+    CREATE TABLE folders (id TEXT PRIMARY KEY, parent_id TEXT, title TEXT, deleted_time INTEGER DEFAULT 0);
+  `);
+  db.prepare("INSERT INTO folders (id, parent_id, title) VALUES (?, ?, ?)").run("f1", "", "Inbox");
+  db.prepare("INSERT INTO notes (id, parent_id, title, body) VALUES (?, ?, ?, CAST(? AS TEXT))").run(
+    "n1",
+    "f1",
+    "Broken",
+    Buffer.from([0x80]),
+  );
+  db.close();
+
+  const summary = await exportNotesFromSqlite({
+    databasePath: dbPath,
+    exportRootAbs: outDir,
+    reconcileMode: "mirror",
+    busyTimeoutMs: 1000,
+    maxExportAttempts: 1,
+    dryRun: false,
+    notebookFilter: {
+      enabled: false,
+      include_notebook_ids: [],
+      include_notebook_paths: [],
+      include_descendants: true,
+      notebook_path_style: "joined_slug",
+      notebook_path_separator: "-",
+      source_filename: "title",
+    },
+  });
+
+  assert.equal(summary.written_files, 0);
+  assert.deepEqual(summary.skipped_notes, [{ id: "n1", reason: "INVALID_UTF8" }]);
+  assert.equal(fs.existsSync(path.join(outDir, "Inbox", "Broken.md")), false);
+});
+
 test("raw/ is gitignored", () => {
   const gi = fs.readFileSync(path.join(rootDir, ".gitignore"), "utf8");
   assert.ok(gi.split("\n").some((l) => l.trim() === "raw/"));

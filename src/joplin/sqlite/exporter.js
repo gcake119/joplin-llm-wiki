@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { TextDecoder } from "node:util";
 import Database from "better-sqlite3";
 import { NOTE_COL, NOTES_TABLE } from "./joplin-schema.js";
 import {
@@ -12,6 +13,8 @@ import {
   resolveIncludedNotebookIds,
   safePathSegment,
 } from "./notebooks.js";
+
+const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 /**
  * @param {string} dbPath
@@ -151,8 +154,8 @@ export async function exportNotesFromSqlite(args) {
         bind.push(...includedNotebookIds);
       }
     }
-    const sql = `SELECT ${NOTE_COL.id} AS id, ${NOTE_COL.parent_id} AS parent_id, ${NOTE_COL.title} AS title, ${NOTE_COL.body} AS body FROM ${NOTES_TABLE} WHERE ${where.join(" AND ")} ORDER BY ${NOTE_COL.parent_id}, ${NOTE_COL.title}, ${NOTE_COL.id}`;
-    const rows = /** @type {{ id: string, title: string, body: string | null }[]} */ (
+    const sql = `SELECT ${NOTE_COL.id} AS id, ${NOTE_COL.parent_id} AS parent_id, ${NOTE_COL.title} AS title, ${NOTE_COL.body} AS body, CAST(${NOTE_COL.body} AS BLOB) AS body_blob FROM ${NOTES_TABLE} WHERE ${where.join(" AND ")} ORDER BY ${NOTE_COL.parent_id}, ${NOTE_COL.title}, ${NOTE_COL.id}`;
+    const rows = /** @type {{ id: string, title: string, body: string | null, body_blob: Buffer | null }[]} */ (
       db.prepare(sql).all(...bind)
     );
 
@@ -164,8 +167,8 @@ export async function exportNotesFromSqlite(args) {
 
     for (const row of rows) {
       const id = row.id;
-      const body = row.body ?? "";
-      if (containsReplacementUtf8(body)) {
+      const body = decodeUtf8Body(row.body_blob, row.body);
+      if (body === null) {
         skipped_notes.push({ id, reason: "INVALID_UTF8" });
         continue;
       }
@@ -225,8 +228,20 @@ function noteFrontmatter(args) {
   return `---\njoplin_note_id: ${args.id}\njoplin_notebook_id: ${args.notebookId}\njoplin_notebook_path: ${JSON.stringify(args.notebookPath)}\njoplin_notebook_slug: ${JSON.stringify(args.notebookSlug)}\n---\n\n`;
 }
 
-function containsReplacementUtf8(s) {
-  return /\uFFFD/.test(s);
+/**
+ * Decode SQLite TEXT from its bytes so a literal U+FFFD character is not
+ * confused with malformed UTF-8 that better-sqlite3 already replaced.
+ * @param {Buffer | null} bodyBlob
+ * @param {string | null} fallbackBody
+ * @returns {string | null}
+ */
+function decodeUtf8Body(bodyBlob, fallbackBody) {
+  if (!bodyBlob) return fallbackBody ?? "";
+  try {
+    return UTF8_DECODER.decode(bodyBlob);
+  } catch {
+    return null;
+  }
 }
 
 function defaultNotebookFilter() {
