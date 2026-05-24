@@ -596,3 +596,48 @@ tests:
   - test/sqlite-sync-change-detection.test.js
   - test/wiki-concept-resume.test.js
 -->
+
+---
+### Requirement: REQ-JWKB-WORKFLOW-PULL Workflow notes support explicit pull sync
+
+The system SHALL document and expose workflow notes as a bidirectional-on-demand workflow: workspace files can be written to Joplin through workflow writeback, and Joplin workflow notebook edits can be pulled back to workspace files through workflow pull sync.
+
+Compiled wiki writeback SHALL remain one-way from `wiki/` to Joplin.
+
+Automatic compile writeback SHALL NOT trigger workflow pull sync.
+
+#### Scenario: SCN-JWKB-WP-01 Workflow writeback remains separate from pull sync
+
+- **WHEN** `wiki-compile` or `agent-compile` completes with automatic writeback enabled
+- **THEN** compiled wiki notes are written to the configured Joplin wiki notebooks
+- **AND** workflow pull sync is not executed.
+
+#### Scenario: SCN-JWKB-WP-02 Documentation distinguishes sync directions
+
+- **WHEN** an operator reads the writeback documentation
+- **THEN** it identifies workspace-to-Joplin workflow writeback and Joplin-to-workspace workflow pull sync as separate explicit operations
+- **AND** it states that `raw/` and compiled `wiki/` are not bidirectionally synchronized.
+
+<!-- @trace
+source: sync-joplin-workflow-edits
+updated: 2026-05-24
+code:
+  - vitest.config.js
+  - config.yaml.example
+  - README.md
+  - src/joplin/workflow-sync.js
+  - package.json
+  - .agents/skills/joplin-knowledge-flow/SKILL.md
+  - src/joplin/wiki-writeback.js
+  - src/mcp/tools.js
+  - src/cli.js
+  - test/joplin-workflow-sync.vitest.js
+  - src/mcp/schema.js
+  - docs/llm-knowledge-flow.md
+  - src/commands/cmd-workflow-sync.js
+  - src/joplin/data-api-client.js
+  - src/commands/index.js
+  - test/mcp-workflow-sync.vitest.js
+tests:
+  - test/mcp-server.test.js
+-->
