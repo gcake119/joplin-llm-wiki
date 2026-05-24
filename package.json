@@ -10,8 +10,8 @@
   "scripts": {
     "postinstall": "node scripts/register-bin.mjs",
     "health-gui": "electron src/health-gui/main.js",
-    "test": "node --test \"test/**/*.test.js\"",
-    "test:vitest": "vitest run --passWithNoTests"
+    "test": "vitest run",
+    "test:vitest": "vitest run"
   },
   "engines": {
     "node": ">=20"

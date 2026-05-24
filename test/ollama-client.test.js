@@ -1,6 +1,12 @@
-import { test } from "node:test";
+import { afterEach, test } from "vitest";
 import assert from "node:assert";
 import { OllamaClient } from "../src/ollama/client.js";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 test("OllamaClient chatComplete uses configured chat model", async () => {
   const calls = [];
@@ -18,17 +24,13 @@ test("OllamaClient chatComplete uses configured chat model", async () => {
     }
     return new Response("unexpected", { status: 500 });
   };
-  try {
-    const c = new OllamaClient({
-      baseUrl: "http://127.0.0.1:11434",
-      chatModel: "c",
-      timeoutMs: 5000,
-    });
-    const out = await c.chatComplete({ prompt: "問題" });
-    assert.strictEqual(calls.length, 1);
-    assert.ok(calls[0].includes("/api/chat"));
-    assert.strictEqual(out, "回答");
-  } finally {
-    delete globalThis.fetch;
-  }
+  const c = new OllamaClient({
+    baseUrl: "http://127.0.0.1:11434",
+    chatModel: "c",
+    timeoutMs: 5000,
+  });
+  const out = await c.chatComplete({ prompt: "問題" });
+  assert.strictEqual(calls.length, 1);
+  assert.ok(calls[0].includes("/api/chat"));
+  assert.strictEqual(out, "回答");
 });

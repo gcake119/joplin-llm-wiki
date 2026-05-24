@@ -1,0 +1,26 @@
+## 1. Runner contract and first migrations
+
+- [x] 1.1 交付 Vitest is the primary test runner 與 Decision: Use Vitest as the single primary runner：調整 package.json scripts 與 vitest.config.js，讓 pnpm test 由 Vitest 收 committed migrated suite，pnpm test:vitest 仍是相容 Vitest 入口，且不以 node --test 作為主要 runner；驗收：pnpm test -- --runInBand 或等價 Vitest full-suite command 顯示 Vitest runner，並且 package.json 中 test script 不再呼叫 node --test。
+- [x] 1.2 交付 Runner configuration prevents duplicate and missing execution 與 Decision: Preserve file names unless a runner boundary requires a suffix change：定義 Vitest include/exclude 邊界，收 test/**/*.test.js 與 test/**/*.vitest.test.js，避免同一 committed test case 被兩個 primary runners 重複執行；驗收：pnpm vitest run --list 或等價收檔檢查顯示 migrated files 被 Vitest 收到一次，且 .vitest.test.js 檔仍在收檔範圍。
+- [x] 1.3 [P] 交付 Migrated tests preserve behavioral coverage 與 Decision: Migrate tests in behavior groups before switching full-suite ownership 的低風險純邏輯第一批：將 test/config-schema.test.js、test/corpus-sweep-state.test.js、test/joplin-sqlite.test.js 的 node:test import/assertion 改為 Vitest 等價語意，保留 config validation、state IO、sqlite path/export assertions；驗收：pnpm vitest run test/config-schema.test.js test/corpus-sweep-state.test.js test/joplin-sqlite.test.js 通過。
+- [x] 1.4 [P] 交付 Migrated tests preserve behavioral coverage 的 CLI routing 第一批：將 test/cli-routing.test.js 與 test/cli-help.test.js 遷移到 Vitest，保留 exit code、help text、removed command assertions；驗收：pnpm vitest run test/cli-routing.test.js test/cli-help.test.js 通過。
+
+## 2. Mock lifecycle and local boundary migrations
+
+- [x] 2.1 交付 Tests remain local and offline 與 Decision: Make local/offline boundaries explicit in migrated mocks：建立遷移用 cleanup pattern，讓 global.fetch、console、process.env、cwd、temporary directories、child process doubles 在 Vitest afterEach 中還原；驗收：至少一個 mock-heavy migrated file 使用該 cleanup pattern，且 targeted Vitest run 重複執行兩次仍通過。
+- [x] 2.2 [P] 交付 Observable Behavior 中的 no real Joplin/Ollama/network boundary：遷移 test/joplin-data-api-client.test.js、test/ollama-client.test.js、test/joplin-wiki-writeback.test.js，使用 Vitest mock/spy 保留 loopback allowlist、mock fetch、dry-run/no mutation、writeback error assertions；驗收：pnpm vitest run test/joplin-data-api-client.test.js test/ollama-client.test.js test/joplin-wiki-writeback.test.js 通過且不需要真實 Joplin/Ollama。
+- [x] 2.3 [P] 交付 Interfaces and Files 中 test files no node:test imports 的 subprocess 類測試遷移：遷移 test/launchd-plist.test.js、test/launchd-run-sqlite-sync.test.js、test/agent-compile.test.js，保留 spawn argv、stdout/stderr tail、exit code 與 agent dry-run assertions；驗收：pnpm vitest run test/launchd-plist.test.js test/launchd-run-sqlite-sync.test.js test/agent-compile.test.js 通過。
+- [x] 2.4 交付 Failure Modes 中 true product bug handling contract：遷移 test/sqlite-sync-change-detection.test.js，若 Vitest 揭露 state commit、compile failure、writeback preflight 或 summary output 的真實回歸，保留 failing assertion 並以最小產品修正處理；驗收：pnpm vitest run test/sqlite-sync-change-detection.test.js 通過，且 apply summary 記錄是否有產品修正。
+
+## 3. Service, MCP, and Health GUI suites
+
+- [x] 3.1 [P] 交付 Migrated tests preserve behavioral coverage 的 knowledge-flow service tests：遷移 test/query.test.js、test/wiki-separation.test.js、test/wiki-concept-resume.test.js，保留 pending capture、source scope、wiki compile/resume、filesystem output assertions；驗收：pnpm vitest run test/query.test.js test/wiki-separation.test.js test/wiki-concept-resume.test.js 通過。
+- [x] 3.2 [P] 交付 Tests remain local and offline 的 MCP handler tests：遷移 test/mcp-server.test.js，保留 schema validation、structured result、orchestration argv mapping、token redaction assertions，且不啟動外部 MCP client 或遠端服務；驗收：pnpm vitest run test/mcp-server.test.js 通過。
+- [x] 3.3 [P] 交付 Scope Boundaries 中不引入瀏覽器 runner 的 Health GUI helper tests：遷移 test/health-gui/concept-resume-actions.test.js、test/health-gui/corpus-pipeline-runner.test.js、test/health-gui/ollama-probe.test.js、test/health-gui/raw-wiki-health.test.js、test/health-gui/refresh-single-flight.test.js、test/health-gui/stack-runner.test.js，維持 node environment mock 與本機 filesystem/subprocess assertions；驗收：pnpm vitest run test/health-gui/*.test.js 通過。
+
+## 4. Documentation and verification
+
+- [x] 4.1 交付 Developer documentation reflects Vitest workflow 與 Interfaces and Files：更新 README.md 或等價 developer docs，說明 pnpm test 是 full-suite Vitest workflow，並提供 pnpm vitest run test/config-schema.test.js 作為 targeted-file 範例，不再把 node --test 寫成新開發主要流程；驗收：文件審查確認包含 full-suite 與 targeted Vitest commands，且沒有 primary node --test 指引。
+- [x] 4.2 交付 Acceptance Criteria：確認 committed migrated tests 中不再有 import from node:test，並排除 openspec archive/proposal 等歷史文字；驗收：rg "from ['\"]node:test['\"]|import test from ['\"]node:test['\"]" test 回傳空結果。
+- [x] 4.3 交付 Vitest is the primary test runner、Runner configuration prevents duplicate and missing execution、Tests remain local and offline 的整體驗收：執行 pnpm test，確認 full suite 由 Vitest 通過且不需要 Joplin Cloud、真實 Joplin profile、真實 Ollama 或外網；驗收：pnpm test 通過，若環境限制導致無法執行，apply summary 必須記錄未驗證範圍與阻塞原因。
+- [x] 4.4 交付 design Traceability 與 Spectra artifact 一致性：檢查 proposal、design、specs、tasks 的 requirement/design heading references 對齊，且沒有 placeholders 或 file-path-only tasks；驗收：spectra analyze migrate-tests-to-vitest --json 無 Critical/Warning，spectra validate migrate-tests-to-vitest 通過。

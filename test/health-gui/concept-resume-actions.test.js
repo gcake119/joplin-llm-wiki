@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import { runStageAction } from "../../src/health-gui/corpus/corpus-pipeline-runner.js";
 

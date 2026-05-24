@@ -328,4 +328,8 @@ pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>" 
 
 ```bash
 pnpm test
+pnpm vitest run test/config-schema.test.js
 ```
+
+`pnpm test` 是本 repo 的 Vitest full-suite 入口。需要只跑單一測試檔時，
+使用 `pnpm vitest run <path>`。

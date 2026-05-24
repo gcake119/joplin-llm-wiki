@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import { probeOllama } from "../../src/health-gui/probes/ollama-probe.js";
 

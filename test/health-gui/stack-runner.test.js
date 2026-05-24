@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { EventEmitter } from "node:events";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import { runStackScript, tail512 } from "../../src/health-gui/stack/stack-script-runner.js";
 

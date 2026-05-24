@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vitest";
 
 import { runAgentCompile } from "../src/commands/cmd-agent-compile.js";
 
