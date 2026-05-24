@@ -274,9 +274,11 @@ function emptyRemoteInspection() {
 }
 
 /**
- * On-demand writeback for wiki, brainstorming, and artifacts markdown into the
- * Joplin hierarchy. Compile flows call `runWikiWriteback` instead, so
- * brainstorming/artifacts are not synchronized automatically.
+ * On-demand workspace-to-Joplin writeback for selected wiki, brainstorming, and
+ * artifacts markdown. Compile flows call `runWikiWriteback` instead, so
+ * brainstorming/artifacts are not synchronized automatically. Joplin-to-workspace
+ * workflow pull sync lives in `workflow-sync.js` and is always an explicit
+ * operation, never a side effect of compile writeback.
  *
  * @param {import('../config/load-config.js').AppConfig} cfg
  * @param {string} wikiRootAbs

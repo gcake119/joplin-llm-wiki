@@ -98,6 +98,27 @@ export const TOOL_SCHEMAS = {
     }),
     outputSchema: orchestrationOutputSchema(),
   },
+  joplin_sync_workflow_notes: {
+    inputSchema: objectSchema({
+      dry_run: { type: "boolean" },
+      section: enumSchema(["brainstorming", "artifacts", "all"]),
+      ...COMMON_CONFIG,
+    }),
+    outputSchema: objectSchema({
+      workflow_sync_status: { type: "string" },
+      dry_run: { type: "boolean" },
+      sections: { type: "array" },
+      scanned: { type: "number" },
+      created: { type: "number" },
+      updated: { type: "number" },
+      unchanged: { type: "number" },
+      skipped: { type: "number" },
+      conflicts: { type: "number" },
+      errors: { type: "number" },
+      changed_files: { type: "array" },
+      details: { type: "array" },
+    }),
+  },
 };
 
 /**

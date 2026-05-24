@@ -166,6 +166,7 @@ Cursor 設定可參考 `.cursor/mcp.json.example`：
 | `joplin_archive_project` | 使用已確認的 project 名稱，把成品寫入 `artifacts/<project>/`。 |
 | `joplin_sync_sources` | 包裝 `sqlite-sync` 的 normal、export-only、snapshot-only 模式。 |
 | `joplin_compile_wiki` | 包裝 `wiki-compile` 或 `agent-compile`。 |
+| `joplin_sync_workflow_notes` | 從 Joplin `@llm-wiki/brainstorming` / `@llm-wiki/artifacts` 按需拉回工作目錄檔案。 |
 
 Project 歸檔必須先呼叫 `joplin_suggest_archive_project` 取得建議命名，
 再由使用者確認 project 名稱。`joplin_archive_project` 必須收到
@@ -185,6 +186,7 @@ pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --export-only
 pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --snapshot-only
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml
+pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --dry-run
 pnpm exec joplin-llm-wiki query --config ./config.yaml "你的問題"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki lint --config ./config.yaml
@@ -292,6 +294,20 @@ joplin_wiki_writeback:
 - `@llm-wiki/brainstorming/chat`
 - `@llm-wiki/brainstorming/health`
 - `@llm-wiki/artifacts/<artifacts_project_notebook_title>`
+
+如果你在 Joplin 的 `@llm-wiki/brainstorming/...` 或 `@llm-wiki/artifacts/...`
+直接編輯 workflow 筆記，可用明確的 pull sync 把 Joplin 內容同步回工作目錄：
+
+```bash
+pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --dry-run
+pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --section brainstorming
+pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --section artifacts
+```
+
+`workflow-sync` 只處理 `brainstorming/` 與 `artifacts/`，不改寫 `raw/` 或
+compiled `wiki/`。Dry-run 只列出 `created`、`updated`、`unchanged`、
+`skipped`、`conflicts`、`errors` 與 `changed_files`，不建立目錄也不寫檔。
+遇到重名、未知 workflow folder 或路徑穿越候選時會列入 summary，不會靜默覆蓋檔案。
 
 `wiki-compile --dry-run` 與 `agent-compile --dry-run` 不會對 Joplin 發送會變更資料的 HTTP。
 

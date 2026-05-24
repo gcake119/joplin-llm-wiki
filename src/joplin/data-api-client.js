@@ -335,6 +335,28 @@ export function createJoplinDataApiClient(cfg, options = {}) {
     },
 
     /**
+     * @param {string} noteId
+     * @returns {Promise<{ id: string, title?: string, parent_id?: string, body?: string }>}
+     */
+    async getNote(noteId) {
+      const data = await requestJson(
+        "write",
+        "GET",
+        `/notes/${encodeURIComponent(noteId)}`,
+        { fields: "id,title,parent_id,body" },
+      );
+      if (data && typeof data === "object" && typeof data.id === "string") {
+        return {
+          id: data.id,
+          title: typeof data.title === "string" ? data.title : undefined,
+          parent_id: typeof data.parent_id === "string" ? data.parent_id : undefined,
+          body: typeof data.body === "string" ? data.body : undefined,
+        };
+      }
+      throw writeFail("invalid note payload from Joplin Data API");
+    },
+
+    /**
      * @param {string} parentFolderId
      * @param {string} title
      * @param {string} body

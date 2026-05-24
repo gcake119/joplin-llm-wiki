@@ -112,6 +112,7 @@ test("MCP server exposes required knowledge-flow tool names", () => {
       "joplin_archive_project",
       "joplin_sync_sources",
       "joplin_compile_wiki",
+      "joplin_sync_workflow_notes",
     ],
   );
 });
@@ -191,6 +192,13 @@ test("sync and compile schemas expose orchestration output and reject invalid mo
     error: {
       code: "INPUT_INVALID",
       message: "mode must be one of: local, agent",
+    },
+  });
+  assert.deepEqual(validateToolInput("joplin_sync_workflow_notes", { section: "remote" }), {
+    ok: false,
+    error: {
+      code: "INPUT_INVALID",
+      message: "section must be one of: brainstorming, artifacts, all",
     },
   });
 });

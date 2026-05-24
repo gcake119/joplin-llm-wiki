@@ -97,6 +97,8 @@ joplin_data_api:
 # LLM Wiki 編譯完成後可選將 wiki 頁面寫回 Joplin（預設開啟）。啟用時須設定 joplin_data_api.token；否則 load-config CONFIG_INVALID。
 # compile 寫回經 Data API：預設頂層 @llm-wiki，下分 wiki/summaries、wiki/concepts、wiki/indexes。
 # brainstorming / artifacts 只在需要整理問答、健康報告或作品時按需寫回。
+# 若你直接在 Joplin @llm-wiki/brainstorming 或 @llm-wiki/artifacts 編輯，
+# 使用 `workflow-sync --dry-run` 先檢查，再按需拉回工作目錄；此流程不改 raw/ 或 wiki/。
 joplin_wiki_writeback:
   # enabled 省略時視同 true
   parent_notebook_title: "@llm-wiki"

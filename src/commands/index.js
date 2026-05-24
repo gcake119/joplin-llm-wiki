@@ -30,6 +30,10 @@ export async function runCommand(command, ctx) {
       const { runAgentCompile } = await import("./cmd-agent-compile.js");
       return runAgentCompile(ctx);
     }
+    case "workflow-sync": {
+      const { runWorkflowSync } = await import("./cmd-workflow-sync.js");
+      return runWorkflowSync(ctx);
+    }
     default:
       return 1;
   }

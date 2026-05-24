@@ -28,6 +28,7 @@ export async function main(argv) {
     "lint",
     "sqlite-sync",
     "agent-compile",
+    "workflow-sync",
   ]);
 
   if (!known.has(command)) {
@@ -148,6 +149,7 @@ Commands:
   lint           Filesystem lint (wiki gaps, links, brainstorming follow-up)
   sqlite-sync    Export Joplin SQLite to raw/; optionally compile wiki when raw changed
   agent-compile  Compile wiki via local Codex CLI agent workflow
+  workflow-sync  Pull @llm-wiki brainstorming/artifacts edits back to workspace files
 
 Global:
   --help, -h               Show help
@@ -265,6 +267,25 @@ Joplin note id, and content hash. --export-only still refreshes raw and state bu
 never compiles; --snapshot-only skips SQLite export, deletion, and compilation.
 
 Run with a valid config file; see config.yaml.example.
+`);
+    return;
+  }
+
+  if (command === "workflow-sync") {
+    console.log(`workflow-sync
+
+Usage:
+  joplin-llm-wiki workflow-sync --config <path> [options]
+
+Options:
+  --dry-run=true|false          Report planned workflow file changes without writing
+  --section brainstorming|artifacts|all
+                                Limit pull sync to one workflow section
+
+Pulls only @llm-wiki/brainstorming and @llm-wiki/artifacts notes from the local
+Joplin Data API back into workspace brainstorming/ and artifacts/ Markdown files.
+It never writes raw/ or compiled wiki/ and does not use Ollama, Chroma, or
+external services.
 `);
     return;
   }

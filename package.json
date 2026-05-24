@@ -10,7 +10,8 @@
   "scripts": {
     "postinstall": "node scripts/register-bin.mjs",
     "health-gui": "electron src/health-gui/main.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:vitest": "vitest run --passWithNoTests"
   },
   "engines": {
     "node": ">=20"
@@ -22,6 +23,7 @@
     "yaml": "^2.7.1"
   },
   "devDependencies": {
-    "electron": "33.3.1"
+    "electron": "33.3.1",
+    "vitest": "^4.1.7"
   }
 }

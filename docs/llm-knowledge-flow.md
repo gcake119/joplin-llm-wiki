@@ -74,10 +74,11 @@ artifacts/
 - `joplin_sqlite_sync.pipeline.compile_mode` controls automatic post-export compile: `local` runs `wiki-compile`, `agent` runs `agent-compile`, and `off` only maintains raw and snapshot state. If `compile_mode` is omitted, legacy `pipeline.run_wiki_compile: true` maps to `local`; `false` maps to `off`. The first sync records a baseline snapshot without compiling.
 - Periodic checking is polling, not a filesystem watcher. Keep `sqlite-sync` running with `schedule.every_seconds`, use `--every`, or run it repeatedly from launchd/cron when automatic follow-up compilation is desired.
 - Use `pnpm exec joplin-llm-wiki query --config ./config.yaml "<question>"` to answer from the user knowledge base. The default `--source-scope=knowledge` uses `wiki/` first and supplements from `raw/`; `--source-scope=wiki` and `--source-scope=raw` are explicit restrictions.
-- Query capture is enabled by default but is staged: valuable Q&A becomes a pending capture under `.joplin-llm-wiki/pending-captures/`, and only `query --confirm-capture <id>` writes a formal note to `brainstorming/chat/` or `artifacts/projects/<project>/`.
+- Query capture is enabled by default but is staged: valuable Q&A becomes a pending capture under `.joplin-llm-wiki/pending-captures/`, and only `query --confirm-capture <id>` writes a formal note to `brainstorming/chat/` or `artifacts/<project>/`.
 - Store exploratory Q&A, thinking notes, and compile/health observations in `brainstorming/chat/` or `brainstorming/health/`.
 - Store completed outputs in `artifacts/`.
 - `brainstorming/` and `artifacts/` stay out of compile writeback. Organize and write them back only when a Q&A/health/artifact workflow explicitly needs it; artifacts writeback uses `@llm-wiki/artifacts/<artifacts_project_notebook_title>`.
+- If workflow notes are edited directly in Joplin under `@llm-wiki/brainstorming` or `@llm-wiki/artifacts`, use `pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --dry-run` to inspect the pull plan, then rerun without dry-run or with `--section brainstorming|artifacts`. This pull sync writes only `brainstorming/` and `artifacts/`; it never rewrites `raw/` or compiled `wiki/`.
 
 ## Model Selection
 
@@ -92,5 +93,6 @@ artifacts/
 The upstream workflow compiles both `raw/` and `artifacts/` into `wiki/`.
 This project compiles the configured `raw/` source tree into
 `wiki/`; `brainstorming/` and `artifacts/` stay outside `raw/` to
-avoid SQLite mirror deletion or source pollution, but they are mirrored to
-Joplin through Data API writeback when enabled.
+avoid SQLite mirror deletion or source pollution. They can be mirrored to
+Joplin through explicit Data API writeback and pulled back from the workflow
+Joplin notebooks through explicit `workflow-sync`.

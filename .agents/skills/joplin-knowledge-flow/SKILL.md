@@ -1,6 +1,6 @@
 ---
 name: joplin-knowledge-flow
-description: Use the joplin-llm-wiki MCP tools for local knowledge-base query, brainstorming, pending capture confirmation, project artifact archiving, source sync, and wiki compilation. Trigger when the user asks to query notes, brainstorm from the Joplin wiki/raw corpus, confirm a capture, archive project work into artifacts/<project>, sync Joplin sources, or compile the wiki.
+description: Use the joplin-llm-wiki MCP tools for local knowledge-base query, brainstorming, pending capture confirmation, project artifact archiving, source sync, workflow-note pull sync, and wiki compilation. Trigger when the user asks to query notes, brainstorm from the Joplin wiki/raw corpus, confirm a capture, archive project work into artifacts/<project>, sync Joplin sources, sync Joplin workflow edits back to brainstorming/artifacts, or compile the wiki.
 license: MIT
 metadata:
   author: project
@@ -23,6 +23,9 @@ operations in Codex or Cursor conversations.
 - Use `joplin_suggest_archive_project` before project artifact archival.
 - Use `joplin_archive_project` only after the user confirms the project name.
 - Use `joplin_sync_sources` for existing `sqlite-sync` modes.
+- Use `joplin_sync_workflow_notes` when the user edited
+  `@llm-wiki/brainstorming` or `@llm-wiki/artifacts` in Joplin and wants those
+  workflow notes pulled back into workspace `brainstorming/` or `artifacts/`.
 - Use `joplin_compile_wiki` for existing `wiki-compile` or `agent-compile`
   flows.
 
@@ -44,6 +47,15 @@ Formal notes are written only after confirmation. Brainstorming captures go to
 `brainstorming/chat/`. Artifact captures require a project name and go to
 `artifacts/<project>/`.
 
+## Workflow Pull Sync
+
+When the user asks whether Joplin-side edits to brainstorming or artifacts can
+be made consistent with the workspace, use `joplin_sync_workflow_notes` rather
+than ad hoc file edits. Prefer `dry_run: true` first when the user asks to
+inspect or confirm the changes; run without dry-run when they explicitly want
+the workspace files updated. This pull sync is limited to `brainstorming/` and
+`artifacts/`; it does not rewrite `raw/` or compiled `wiki/`.
+
 ## Project Archive
 
 Project archive is always a two-step workflow:
@@ -61,4 +73,5 @@ The correct path is `artifacts/<project>/<timestamp>-<slug>.md`.
 
 These tools are local-first. They use repo files, local Ollama when configured,
 local `codex exec` for agent compilation, and loopback Joplin Data API for
-explicit writeback. Tool output must not expose Joplin tokens.
+explicit writeback or workflow pull sync. Tool output must not expose Joplin
+tokens.
