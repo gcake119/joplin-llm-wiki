@@ -266,4 +266,6 @@ CAPTURE_JSON:
   const note = fs.readFileSync(path.join(dir, result.capture_written), "utf8");
   assert.match(note, /capture_classification: "artifacts"/);
   assert.match(note, /capture_path: "artifacts\/tainan-city\//);
+  assert.doesNotMatch(note, /^# 保存內容$/m);
+  assert.match(note, /# 回答\n\n答案\n\n保存內容\n$/);
 });

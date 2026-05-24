@@ -51,8 +51,6 @@ knowledge_sources:
 ${sources.map((s) => `  - layer: "${yamlString(s.layer)}"\n    path: "${yamlString(s.path)}"`).join("\n")}
 ---
 
-# 保存內容
-
 ${args.content.trim()}
 `;
 }

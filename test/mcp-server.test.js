@@ -371,6 +371,8 @@ test("joplin_archive_project writes confirmed artifact with frontmatter", async 
   assert.match(note, /project: "tainan-city"/);
   assert.match(note, /capture_classification: "artifacts"/);
   assert.match(note, /capture_path: "artifacts\/tainan-city\//);
+  assert.doesNotMatch(note, /^# 保存內容$/m);
+  assert.match(note, /\n---\n\n正式歸檔內容\n$/);
   assert.match(note, /正式歸檔內容/);
 });
 

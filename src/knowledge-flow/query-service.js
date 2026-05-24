@@ -520,6 +520,9 @@ function captureDestination(workflowRoot, classification, title, opts, cfg) {
  */
 function renderConfirmedCapture(pending, rel) {
   const c = pending.capture;
+  const savedContent = c.classification === "artifacts"
+    ? c.content
+    : `# 保存內容\n\n${c.content}`;
   return `---
 title: "${yamlString(c.title)}"
 created_at: "${yamlString(pending.created_at)}"
@@ -539,9 +542,7 @@ ${pending.question}
 
 ${pending.answer}
 
-# 保存內容
-
-${c.content}
+${savedContent}
 `;
 }
 
