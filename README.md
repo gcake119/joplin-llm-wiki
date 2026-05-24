@@ -58,23 +58,19 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 
 ```mermaid
 flowchart TD
-  subgraph Joplin["Joplin Desktop"]
-    SourceNotes["一般筆記"]
-    WikiNotebook["@llm-wiki/wiki"]
-    BrainstormNotebook["@llm-wiki/brainstorming"]
-    ArtifactNotebook["@llm-wiki/artifacts/<project>"]
-  end
+  SourceNotes["Joplin Desktop：一般筆記"]
 
-  subgraph Repo["本機 repo"]
-    Raw["raw/"]
-    Summaries["wiki/summaries/*.md"]
-    Concepts["wiki/concepts/*.md"]
-    Indexes["wiki/indexes/*.md"]
-    Query["query"]
-    Pending["pending capture"]
-    Brainstorming["brainstorming/chat/ 或 brainstorming/health/"]
-    Artifacts["artifacts/<project>/"]
-  end
+  Raw["raw/"]
+  Summaries["wiki/summaries/*.md"]
+  Concepts["wiki/concepts/*.md"]
+  Indexes["wiki/indexes/*.md"]
+  Query["query"]
+  Pending["pending capture"]
+  Brainstorming["brainstorming/chat/ 或 brainstorming/health/"]
+  Artifacts["artifacts/<project>/"]
+  WikiNotebook["Joplin Desktop：@llm-wiki/wiki"]
+  BrainstormNotebook["Joplin Desktop：@llm-wiki/brainstorming"]
+  ArtifactNotebook["Joplin Desktop：@llm-wiki/artifacts/<project>"]
 
   SourceNotes -->|sqlite-sync 匯出| Raw
   Raw -->|wiki-compile 或 agent-compile| Summaries

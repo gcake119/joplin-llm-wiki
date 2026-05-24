@@ -90,23 +90,19 @@ support during reading and writing.
 
 ```mermaid
 flowchart TD
-  subgraph Joplin["Joplin Desktop"]
-    SourceNotes["Regular notes"]
-    WikiNotebook["@llm-wiki/wiki"]
-    BrainstormNotebook["@llm-wiki/brainstorming"]
-    ArtifactNotebook["@llm-wiki/artifacts/<project>"]
-  end
+  SourceNotes["Joplin Desktop: regular notes"]
 
-  subgraph Repo["Local repo"]
-    Raw["raw/"]
-    Summaries["wiki/summaries/*.md"]
-    Concepts["wiki/concepts/*.md"]
-    Indexes["wiki/indexes/*.md"]
-    Query["query"]
-    Pending["pending capture"]
-    Brainstorming["brainstorming/chat/ or brainstorming/health/"]
-    Artifacts["artifacts/<project>/"]
-  end
+  Raw["raw/"]
+  Summaries["wiki/summaries/*.md"]
+  Concepts["wiki/concepts/*.md"]
+  Indexes["wiki/indexes/*.md"]
+  Query["query"]
+  Pending["pending capture"]
+  Brainstorming["brainstorming/chat/ or brainstorming/health/"]
+  Artifacts["artifacts/<project>/"]
+  WikiNotebook["Joplin Desktop: @llm-wiki/wiki"]
+  BrainstormNotebook["Joplin Desktop: @llm-wiki/brainstorming"]
+  ArtifactNotebook["Joplin Desktop: @llm-wiki/artifacts/<project>"]
 
   SourceNotes -->|sqlite-sync export| Raw
   Raw -->|wiki-compile or agent-compile| Summaries
