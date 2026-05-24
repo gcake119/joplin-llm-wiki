@@ -56,6 +56,48 @@ pnpm exec joplin-llm-wiki-health-gui --config ./config.yaml
 | Brainstorming | `brainstorming/chat/`、`brainstorming/health/` | Query 確認後的探索紀錄、健檢與研究方向。 |
 | Artifacts | `artifacts/` | 完成的作品；Joplin 寫回時必須指定專案筆記本。 |
 
+```mermaid
+flowchart TD
+  subgraph Joplin["Joplin Desktop"]
+    SourceNotes["一般筆記"]
+    WikiNotebook["@llm-wiki/wiki"]
+    BrainstormNotebook["@llm-wiki/brainstorming"]
+    ArtifactNotebook["@llm-wiki/artifacts/<project>"]
+  end
+
+  subgraph Repo["本機 repo"]
+    Raw["raw/"]
+    Summaries["wiki/summaries/*.md"]
+    Concepts["wiki/concepts/*.md"]
+    Indexes["wiki/indexes/*.md"]
+    Query["query"]
+    Pending["pending capture"]
+    Brainstorming["brainstorming/chat/ 或 brainstorming/health/"]
+    Artifacts["artifacts/<project>/"]
+  end
+
+  SourceNotes -->|sqlite-sync 匯出| Raw
+  Raw -->|wiki-compile 或 agent-compile| Summaries
+  Summaries -->|concept stage| Concepts
+  Summaries --> Indexes
+  Concepts --> Indexes
+  Summaries -->|writeback stage| WikiNotebook
+  Concepts -->|writeback stage| WikiNotebook
+  Indexes -->|writeback stage| WikiNotebook
+
+  Summaries -->|查詢來源| Query
+  Concepts -->|查詢來源| Query
+  Indexes -->|查詢來源| Query
+  Raw -->|必要時補原始證據| Query
+  Query -->|值得保存| Pending
+  Pending -->|confirm capture| Brainstorming
+  Pending -->|confirm capture + artifact project| Artifacts
+  Brainstorming -->|按需 workflow writeback| BrainstormNotebook
+  Artifacts -->|按需 workflow writeback| ArtifactNotebook
+  BrainstormNotebook -->|workflow-sync pull| Brainstorming
+  ArtifactNotebook -->|workflow-sync pull| Artifacts
+```
+
 閉環：
 
 1. **匯入**：Joplin 筆記先進 `raw/`。這層是原始資料，通常不要手動改。
