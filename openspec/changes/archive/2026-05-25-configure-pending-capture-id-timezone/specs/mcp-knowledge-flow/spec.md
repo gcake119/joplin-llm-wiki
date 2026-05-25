@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: REQ-MCP-004 Configurable pending capture draft ID timezone
+### Requirement: REQ-MCP-006 Configurable pending capture draft ID timezone
 
 The system SHALL generate new pending capture draft identifiers with a configurable timestamp timezone.
 
