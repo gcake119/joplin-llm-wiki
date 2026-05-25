@@ -4,12 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runQuery } from "../src/commands/cmd-query.js";
+import { createPendingCaptureId } from "../src/knowledge-flow/query-service.js";
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "jllw-query-"));
 }
 
-function writeConfig(dir) {
+function writeConfig(dir, extra = "") {
   const p = path.join(dir, "config.yaml");
   fs.writeFileSync(
     p,
@@ -22,6 +23,7 @@ joplin_wiki_writeback:
 ollama:
   base_url: http://127.0.0.1:1
   chat_model: test
+${extra}
 `,
   );
   return p;
@@ -101,6 +103,103 @@ CAPTURE_JSON:
   assert.equal(fs.existsSync(path.join(dir, "brainstorming", "chat")), false);
   const pendingDir = path.join(dir, ".joplin-llm-wiki", "pending-captures");
   assert.equal(fs.readdirSync(pendingDir).length, 1);
+});
+
+test("pending capture id formatter preserves UTC default and supports Asia/Taipei", () => {
+  const now = new Date("2026-05-25T11:46:36.845Z");
+  const utc = createPendingCaptureId({
+    now,
+    timezone: "UTC",
+    title: "Joplin Desktop 架構與 Vue 跨平台實作筆記",
+    hash: "a7206886",
+  });
+  const taipei = createPendingCaptureId({
+    now,
+    timezone: "Asia/Taipei",
+    title: "Joplin Desktop 架構與 Vue 跨平台實作筆記",
+    hash: "a7206886",
+  });
+
+  assert.match(
+    utc,
+    /^2026-05-25T11-46-36-845Z-joplin-desktop-架構與-vue-跨平台實作筆記-a7206886$/,
+  );
+  assert.match(
+    taipei,
+    /^2026-05-25T19-46-36-joplin-desktop-架構與-vue-跨平台實作筆記-a7206886$/,
+  );
+  assert.doesNotMatch(taipei.split("-joplin-desktop-")[0], /Z/);
+});
+
+test("pending capture id formatter keeps slug and lowercase hex hash shape", () => {
+  const now = new Date("2026-05-25T11:46:36.845Z");
+  const utc = createPendingCaptureId({
+    now,
+    timezone: "UTC",
+    title: "查詢紀錄",
+    hash: "a7206886",
+  });
+  const taipei = createPendingCaptureId({
+    now,
+    timezone: "Asia/Taipei",
+    title: "查詢紀錄",
+    hash: "a7206886",
+  });
+
+  assert.match(utc, /-查詢紀錄-[0-9a-f]{8}$/);
+  assert.match(taipei, /-查詢紀錄-[0-9a-f]{8}$/);
+});
+
+test("query CAPTURE_DRAFT uses Asia/Taipei prefix when configured", async () => {
+  const dir = tmpdir();
+  writeKnowledge(dir);
+  const configPath = writeConfig(
+    dir,
+    `knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+`,
+  );
+
+  await withMockQuery(
+    `答案
+CAPTURE_JSON:
+\`\`\`json
+{"should_create":true,"classification":"brainstorming","title":"查詢紀錄","content":"保存內容","knowledge_sources":[{"layer":"wiki","path":"concepts/topic.md"}]}
+\`\`\`
+`,
+    async ({ logs }) => {
+      const code = await runQuery({ configPath, argv: ["問題？"], opts: new Map() });
+      assert.equal(code, 0);
+      const draft = JSON.parse(logs[2].replace(/^CAPTURE_DRAFT /, ""));
+      assert.match(draft.id, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-查詢紀錄-[0-9a-f]{8}$/);
+      assert.doesNotMatch(draft.id.split("-查詢紀錄-")[0], /Z/);
+      assert.equal(
+        fs.existsSync(path.join(dir, ".joplin-llm-wiki", "pending-captures", `${draft.id}.json`)),
+        true,
+      );
+    },
+  );
+});
+
+test("query CAPTURE_DRAFT preserves UTC prefix by default", async () => {
+  const dir = tmpdir();
+  writeKnowledge(dir);
+  const configPath = writeConfig(dir);
+
+  await withMockQuery(
+    `答案
+CAPTURE_JSON:
+\`\`\`json
+{"should_create":true,"classification":"brainstorming","title":"查詢紀錄","content":"保存內容","knowledge_sources":[{"layer":"wiki","path":"concepts/topic.md"}]}
+\`\`\`
+`,
+    async ({ logs }) => {
+      const code = await runQuery({ configPath, argv: ["問題？"], opts: new Map() });
+      assert.equal(code, 0);
+      const draft = JSON.parse(logs[2].replace(/^CAPTURE_DRAFT /, ""));
+      assert.match(draft.id, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-查詢紀錄-[0-9a-f]{8}$/);
+    },
+  );
 });
 
 test("query --source-scope=wiki excludes raw context", async () => {

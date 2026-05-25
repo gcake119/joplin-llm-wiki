@@ -360,6 +360,20 @@ pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>" --artifact-project ProjectA
 ```
 
+Pending capture ID 的時間前綴預設維持 UTC `Z` 格式，例如
+`2026-05-25T11-46-36-845Z-<slug>-<hash>`。若希望新建立的
+`capture_draft_id` 反映臺灣本地時間，可在 `config.yaml` 設定：
+
+```yaml
+knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+```
+
+設定後，新 ID 會使用 GMT+8 本地時間前綴，例如
+`2026-05-25T19-46-36-<slug>-<hash>`。既有 UTC `Z` ID 不需要 migration，
+仍可用 `joplin_show_capture` 讀取，也可用 `joplin_confirm_capture` 或
+`query --confirm-capture "<id>"` 確認。
+
 `--capture=brainstorming` 或 `--capture=artifacts` 可強制提出指定分類的 capture；分類只會是 `brainstorming` 或 `artifacts`。若加 `--writeback-workflow=true`，確認後只把該次確認的 note 按需寫回 Joplin。
 
 ## Development

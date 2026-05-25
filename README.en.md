@@ -475,6 +475,20 @@ pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>" --artifact-project ProjectA
 ```
 
+Pending capture IDs keep the legacy UTC `Z` timestamp prefix by default, for
+example `2026-05-25T11-46-36-845Z-<slug>-<hash>`. To make new
+`capture_draft_id` values use Taiwan local time, set:
+
+```yaml
+knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+```
+
+New IDs then use a GMT+8 local prefix such as
+`2026-05-25T19-46-36-<slug>-<hash>`. Existing legacy UTC IDs do not need a
+migration and remain compatible with `joplin_show_capture`,
+`joplin_confirm_capture`, and `query --confirm-capture "<id>"`.
+
 `--capture=brainstorming` or `--capture=artifacts` can force a proposed capture
 category. Categories are only `brainstorming` or `artifacts`. If
 `--writeback-workflow=true` is also provided, only the confirmed note from that

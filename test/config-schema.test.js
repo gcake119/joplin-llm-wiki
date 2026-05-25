@@ -39,7 +39,35 @@ test("load-config resolves raw/wiki and defaults", async () => {
   assert.equal(cfg.raw_glob, "**/*.md");
   assert.equal(cfg.wiki, path.join(dir, "wiki"));
   assert.equal(cfg.wiki_glob, "**/*.md");
+  assert.equal(cfg.knowledge_flow.pending_capture_id_timezone, "UTC");
   assert.equal(cfg.joplin_wiki_writeback.parent_notebook_title, "@llm-wiki");
+});
+
+test("knowledge_flow pending capture id timezone accepts Asia/Taipei", async () => {
+  const dir = tmpdir();
+  const cfg = await loadConfig(
+    minimal(
+      dir,
+      `knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+`,
+    ),
+  );
+  assert.equal(cfg.knowledge_flow.pending_capture_id_timezone, "Asia/Taipei");
+});
+
+test("knowledge_flow pending capture id timezone rejects invalid values", async () => {
+  const dir = tmpdir();
+  const p = minimal(
+    dir,
+    `knowledge_flow:
+  pending_capture_id_timezone: Mars/Taipei
+`,
+  );
+  await assert.rejects(
+    () => loadConfig(p),
+    /knowledge_flow\.pending_capture_id_timezone must be a valid IANA timezone/,
+  );
 });
 
 test("legacy notes_root/wiki_root keys are rejected", async () => {

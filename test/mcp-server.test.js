@@ -13,7 +13,7 @@ function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "jllw-mcp-"));
 }
 
-function writeConfig(dir) {
+function writeConfig(dir, extra = "") {
   const p = path.join(dir, "config.yaml");
   fs.writeFileSync(
     p,
@@ -26,6 +26,7 @@ joplin_wiki_writeback:
 ollama:
   base_url: http://127.0.0.1:1
   chat_model: test
+${extra}
 `,
   );
   return p;
@@ -233,6 +234,35 @@ CAPTURE_JSON:
   );
 });
 
+test("joplin_query handler uses Asia/Taipei capture draft prefix when configured", async () => {
+  const dir = tmpdir();
+  writeKnowledge(dir);
+  const configPath = writeConfig(
+    dir,
+    `knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+`,
+  );
+
+  await withMockQuery(
+    `答案
+CAPTURE_JSON:
+\`\`\`json
+{"should_create":true,"classification":"brainstorming","title":"查詢紀錄","content":"保存內容","knowledge_sources":[{"layer":"wiki","path":"concepts/topic.md"}]}
+\`\`\`
+`,
+    async () => {
+      const result = await callKnowledgeFlowTool("joplin_query", {
+        config_path: configPath,
+        question: "問題？",
+      });
+      assert.equal(result.ok, true);
+      assert.match(result.capture_draft_id, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-查詢紀錄-[0-9a-f]{8}$/);
+      assert.doesNotMatch(result.capture_draft_id.split("-查詢紀錄-")[0], /Z/);
+    },
+  );
+});
+
 test("joplin_show_capture handler reads pending capture without deleting it", async () => {
   const dir = tmpdir();
   writeKnowledge(dir);
@@ -266,6 +296,39 @@ CAPTURE_JSON:
       assert.equal(fs.existsSync(capturePath), true);
     },
   );
+});
+
+test("joplin_show_capture handler reads legacy UTC Z capture id", async () => {
+  const dir = tmpdir();
+  const configPath = writeConfig(dir);
+  const id = "2026-05-25T11-46-36-845Z-topic-a7206886";
+  const pendingDir = path.join(dir, ".joplin-llm-wiki", "pending-captures");
+  fs.mkdirSync(pendingDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(pendingDir, `${id}.json`),
+    JSON.stringify({
+      id,
+      created_at: "2026-05-25T11:46:36.845Z",
+      question: "問題？",
+      answer: "答案",
+      provider: "ollama",
+      source_scope: "knowledge",
+      capture: {
+        classification: "brainstorming",
+        title: "Legacy topic",
+        content: "保存內容",
+        knowledge_sources: [],
+      },
+    }),
+  );
+
+  const shown = await callKnowledgeFlowTool("joplin_show_capture", {
+    config_path: configPath,
+    capture_id: id,
+  });
+  assert.equal(shown.ok, true);
+  assert.equal(shown.capture.id, id);
+  assert.equal(fs.existsSync(path.join(pendingDir, `${id}.json`)), true);
 });
 
 test("joplin_confirm_capture handler writes artifact note and clears pending capture", async () => {
@@ -304,6 +367,41 @@ CAPTURE_JSON:
   );
 });
 
+test("joplin_confirm_capture handler confirms and clears legacy UTC Z capture id", async () => {
+  const dir = tmpdir();
+  const configPath = writeConfig(dir);
+  const id = "2026-05-25T11-46-36-845Z-topic-a7206886";
+  const pendingDir = path.join(dir, ".joplin-llm-wiki", "pending-captures");
+  const pendingPath = path.join(pendingDir, `${id}.json`);
+  fs.mkdirSync(pendingDir, { recursive: true });
+  fs.writeFileSync(
+    pendingPath,
+    JSON.stringify({
+      id,
+      created_at: "2026-05-25T11:46:36.845Z",
+      question: "問題？",
+      answer: "答案",
+      provider: "ollama",
+      source_scope: "knowledge",
+      capture: {
+        classification: "brainstorming",
+        title: "Legacy topic",
+        content: "保存內容",
+        knowledge_sources: [],
+      },
+    }),
+  );
+
+  const confirmed = await callKnowledgeFlowTool("joplin_confirm_capture", {
+    config_path: configPath,
+    capture_id: id,
+  });
+  assert.equal(confirmed.ok, true);
+  assert.match(confirmed.capture_written, /^brainstorming\/chat\//);
+  assert.equal(fs.existsSync(path.join(dir, confirmed.capture_written)), true);
+  assert.equal(fs.existsSync(pendingPath), false);
+});
+
 test("joplin_brainstorm handler creates brainstorming pending capture by intent", async () => {
   const dir = tmpdir();
   writeKnowledge(dir);
@@ -325,6 +423,27 @@ test("joplin_brainstorm handler creates brainstorming pending capture by intent"
       ),
     );
     assert.equal(pending.capture.classification, "brainstorming");
+  });
+});
+
+test("joplin_brainstorm handler uses Asia/Taipei capture draft prefix when configured", async () => {
+  const dir = tmpdir();
+  writeKnowledge(dir);
+  const configPath = writeConfig(
+    dir,
+    `knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+`,
+  );
+
+  await withMockQuery("腦力激盪結果", async () => {
+    const result = await callKnowledgeFlowTool("joplin_brainstorm", {
+      config_path: configPath,
+      topic: "派案監控命名",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.capture_draft_id, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-派案監控命名-[0-9a-f]{8}$/);
+    assert.doesNotMatch(result.capture_draft_id.split("-派案監控命名-")[0], /Z/);
   });
 });
 

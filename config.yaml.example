@@ -16,6 +16,13 @@ raw_glob: "**/*.md"
 wiki: ./wiki
 wiki_glob: "**/*.md"
 
+knowledge_flow:
+  # Pending capture ID timestamp timezone. Default UTC preserves legacy IDs such as
+  # 2026-05-25T11-46-36-845Z-topic-a7206886.
+  # Set to Asia/Taipei to use GMT+8 local prefixes such as
+  # 2026-05-25T19-46-36-topic-a7206886.
+  pending_capture_id_timezone: UTC
+
 wiki_schema:
   path: ./wiki-schema.example.yaml
   strict: true

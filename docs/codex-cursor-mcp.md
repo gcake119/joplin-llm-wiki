@@ -40,6 +40,26 @@ server 透過 stdio 與 client 溝通。
 | `joplin_sync_sources` | 包裝 `sqlite-sync` 的 normal、export-only、snapshot-only 模式。 |
 | `joplin_compile_wiki` | 包裝 `wiki-compile` 或 `agent-compile`。 |
 
+## Pending Capture ID Timezone
+
+`joplin_query` 與 `joplin_brainstorm` 建立 pending capture 時，會回傳
+`capture_draft_id` 並寫入 `.joplin-llm-wiki/pending-captures/<id>.json`。
+ID 的時間前綴預設維持舊版 UTC `Z` 格式，例如
+`2026-05-25T11-46-36-845Z-<slug>-<hash>`。
+
+若希望新建立的 MCP pending capture ID 使用臺灣本地時間，可在
+`config.yaml` 設定：
+
+```yaml
+knowledge_flow:
+  pending_capture_id_timezone: Asia/Taipei
+```
+
+設定後，新 `capture_draft_id` 會使用 GMT+8 本地時間前綴，例如
+`2026-05-25T19-46-36-<slug>-<hash>`。既有 UTC `Z` ID 不需要 migration，
+仍可用 `joplin_show_capture` 讀取，也可用 `joplin_confirm_capture`
+確認。
+
 ## Project Archive Rule
 
 Project 歸檔必須分兩步：

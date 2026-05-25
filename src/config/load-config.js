@@ -29,6 +29,7 @@ import YAML from "yaml";
  *       max_total_windows_per_invocation: number,
  *     },
  *   },
+ *   knowledge_flow: { pending_capture_id_timezone: string },
  *   write_back: { sources_enabled: boolean },
  *   ollama: { base_url: string, chat_model: string, timeout_ms: number },
  *   lint: {
@@ -198,6 +199,10 @@ export async function loadConfig(configPath) {
 
   const write_back = {
     sources_enabled: bool(nest(doc, "write_back"), "sources_enabled", false),
+  };
+
+  const knowledge_flow = {
+    pending_capture_id_timezone: readPendingCaptureIdTimezone(nest(doc, "knowledge_flow")),
   };
 
   const ollama = {
@@ -401,6 +406,7 @@ export async function loadConfig(configPath) {
     wiki_glob,
     wiki_schema,
     wiki_ingest,
+    knowledge_flow,
     write_back,
     ollama,
     lint,
@@ -409,6 +415,28 @@ export async function loadConfig(configPath) {
     joplin_wiki_writeback,
     joplin_sqlite_sync,
   };
+}
+
+/** @param {Record<string, unknown>} knowledgeNest */
+function readPendingCaptureIdTimezone(knowledgeNest) {
+  const raw = str(knowledgeNest, "pending_capture_id_timezone", "UTC").trim();
+  if (!raw) {
+    const err = new Error(
+      "knowledge_flow.pending_capture_id_timezone must be a valid IANA timezone",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: raw }).format(new Date("2026-01-01T00:00:00Z"));
+  } catch {
+    const err = new Error(
+      "knowledge_flow.pending_capture_id_timezone must be a valid IANA timezone",
+    );
+    /** @type {Error & { code?: string }} */ (err).code = "CONFIG_INVALID";
+    throw err;
+  }
+  return raw;
 }
 
 /** @param {Record<string, unknown>} syncNest */

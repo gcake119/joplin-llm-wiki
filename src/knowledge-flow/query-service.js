@@ -74,6 +74,7 @@ export async function queryKnowledge(args) {
   });
   const pending = capture
     ? writePendingCapture({
+        cfg,
         workflowRoot,
         question,
         answer,
@@ -441,6 +442,7 @@ function normalizeKnowledgeSources(raw, fallback) {
 
 /**
  * @param {{
+ *   cfg: import('../config/load-config.js').AppConfig,
  *   workflowRoot: string,
  *   question: string,
  *   answer: string,
@@ -452,9 +454,11 @@ function normalizeKnowledgeSources(raw, fallback) {
 function writePendingCapture(args) {
   const dir = pendingCaptureDir(args.workflowRoot);
   fs.mkdirSync(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const slug = slugify(args.capture.title).slice(0, 48) || "capture";
-  const id = `${stamp}-${slug}-${crypto.randomBytes(4).toString("hex")}`;
+  const id = createPendingCaptureId({
+    now: new Date(),
+    timezone: args.cfg.knowledge_flow.pending_capture_id_timezone,
+    title: args.capture.title,
+  });
   const file = path.join(dir, `${id}.json`);
   fs.writeFileSync(file, JSON.stringify({
     id,
@@ -466,6 +470,42 @@ function writePendingCapture(args) {
     capture: args.capture,
   }, null, 2));
   return { id, path: file };
+}
+
+/**
+ * @param {{
+ *   now: Date,
+ *   timezone: string,
+ *   title: string,
+ *   hash?: string,
+ * }} args
+ */
+export function createPendingCaptureId(args) {
+  const stamp = args.timezone === "UTC"
+    ? args.now.toISOString().replace(/[:.]/g, "-")
+    : formatLocalTimestamp(args.now, args.timezone);
+  const slug = slugify(args.title).slice(0, 48) || "capture";
+  const hash = args.hash ?? crypto.randomBytes(4).toString("hex");
+  return `${stamp}-${slug}-${hash}`;
+}
+
+/**
+ * @param {Date} date
+ * @param {string} timezone
+ */
+function formatLocalTimestamp(date, timezone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}T${byType.get("hour")}-${byType.get("minute")}-${byType.get("second")}`;
 }
 
 /**

@@ -75,6 +75,7 @@ artifacts/
 - Periodic checking is polling, not a filesystem watcher. Keep `sqlite-sync` running with `schedule.every_seconds`, use `--every`, or run it repeatedly from launchd/cron when automatic follow-up compilation is desired.
 - Use `pnpm exec joplin-llm-wiki query --config ./config.yaml "<question>"` to answer from the user knowledge base. The default `--source-scope=knowledge` uses `wiki/` first and supplements from `raw/`; `--source-scope=wiki` and `--source-scope=raw` are explicit restrictions.
 - Query capture is enabled by default but is staged: valuable Q&A becomes a pending capture under `.joplin-llm-wiki/pending-captures/`, and only `query --confirm-capture <id>` writes a formal note to `brainstorming/chat/` or `artifacts/<project>/`.
+- Pending capture IDs use the legacy UTC `Z` timestamp prefix by default. Set `knowledge_flow.pending_capture_id_timezone: Asia/Taipei` to make new `capture_draft_id` values use a GMT+8 local prefix such as `2026-05-25T19-46-36-<slug>-<hash>`. Existing UTC `Z` IDs remain compatible with `joplin_show_capture`, `joplin_confirm_capture`, and `query --confirm-capture <id>`.
 - Store exploratory Q&A, thinking notes, and compile/health observations in `brainstorming/chat/` or `brainstorming/health/`.
 - Store completed outputs in `artifacts/`.
 - `brainstorming/` and `artifacts/` stay out of compile writeback. Organize and write them back only when a Q&A/health/artifact workflow explicitly needs it; artifacts writeback uses `@llm-wiki/artifacts/<artifacts_project_notebook_title>`.
