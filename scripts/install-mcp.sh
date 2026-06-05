@@ -85,22 +85,29 @@ pnpm --dir "$INSTALL_DIR" install
 echo "Registering local bin shims"
 node "$INSTALL_DIR/scripts/register-bin.mjs"
 
+GLOBAL_SKILLS=(
+  "joplin-knowledge-flow"
+  "knowledge-capture-policy"
+)
+
 install_global_skill() {
-  local source_skill="$INSTALL_DIR/.agents/skills/joplin-knowledge-flow/SKILL.md"
-  if [ ! -f "$source_skill" ]; then
-    echo "Global skill source not found: $source_skill" >&2
-    return 1
-  fi
+  for skill in "${GLOBAL_SKILLS[@]}"; do
+    local source_skill="$INSTALL_DIR/.agents/skills/$skill/SKILL.md"
+    if [ ! -f "$source_skill" ]; then
+      echo "Global skill source not found: $source_skill" >&2
+      return 1
+    fi
 
-  local codex_skill="$HOME/.agents/skills/joplin-knowledge-flow"
-  local cursor_skill="$HOME/.cursor/skills/joplin-knowledge-flow"
+    local codex_skill="$HOME/.agents/skills/$skill"
+    local cursor_skill="$HOME/.cursor/skills/$skill"
 
-  mkdir -p "$codex_skill" "$cursor_skill"
-  cp "$source_skill" "$codex_skill/SKILL.md"
-  cp "$source_skill" "$cursor_skill/SKILL.md"
+    mkdir -p "$codex_skill" "$cursor_skill"
+    cp "$source_skill" "$codex_skill/SKILL.md"
+    cp "$source_skill" "$cursor_skill/SKILL.md"
 
-  echo "Installed global Codex skill: $codex_skill/SKILL.md"
-  echo "Installed global Cursor skill: $cursor_skill/SKILL.md"
+    echo "Installed global Codex skill: $codex_skill/SKILL.md"
+    echo "Installed global Cursor skill: $cursor_skill/SKILL.md"
+  done
 }
 
 install_global_skill
@@ -187,6 +194,8 @@ Installed joplin-llm-wiki MCP server at:
 Installed global skill:
   $HOME/.agents/skills/joplin-knowledge-flow/SKILL.md
   $HOME/.cursor/skills/joplin-knowledge-flow/SKILL.md
+  $HOME/.agents/skills/knowledge-capture-policy/SKILL.md
+  $HOME/.cursor/skills/knowledge-capture-policy/SKILL.md
 
 MCP server command:
   pnpm --dir "$INSTALL_DIR" exec joplin-llm-wiki-mcp
