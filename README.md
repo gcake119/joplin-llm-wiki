@@ -131,15 +131,18 @@ guardrails；真正讀寫檔案、同步 Joplin、編譯 wiki 或歸檔 project 
 
 ### Skills 搭配知識沉澱
 
-安裝 MCP server 時，installer 會同時安裝兩個全域 skills：
+在本次追蹤實作中，installer 會同時安裝兩個全域 skills：
 
 - `joplin-knowledge-flow`：知識流操作入口，負責把 LLM 導向 MCP tools。
-- `knowledge-capture-policy`：判斷常用 skills 的工作成果是否值得建立 pending capture。
+- `knowledge-capture-policy`：通用政策（Reusable policy），判斷「常見 skill 成果」是否值得建立 pending capture。
+
+目前只在已整合鏈結上啟用該政策：`joplin-knowledge-flow` 已接上 `knowledge-capture-policy`。  
+`spectra-archive`、`spectra-debug`、`how`、`superpowers:brainstorming` 等其他 common-skill hooks 僅記錄於 `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md`，並標註為「需明確使用者授權」的外部/ignored patch notes，尚未自動啟用。
 
 第一版採用「草稿型 + 規則型」：
 
-- 強訊號工作，例如 Spectra archive 完成、debug root cause 驗證完成、架構 mental model 收斂，可由 skill 自動呼叫 `joplin_brainstorm` 建立 pending capture。
-- 中訊號工作只提示是否沉澱。
+- 強訊號工作：當 `knowledge-capture-policy` 判定為 strong signal 時，該 skill 可直接呼叫 `joplin_brainstorm` 產生 pending capture 草稿（例如 Spectra archive 完成、debug root cause 驗證完成、架構 mental model 收斂）。
+- 中訊號工作：可提示「可能值得沉澱」但不直接草擬。
 - 低訊號工作不提示。
 - 任何正式寫入都必須由使用者確認，才會透過 `joplin_confirm_capture` 寫入
   `brainstorming/chat/` 或 `artifacts/<project>/`；或先呼叫
