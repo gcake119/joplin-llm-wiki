@@ -38,23 +38,14 @@ test("joplin-knowledge-flow skill points other skills to the capture policy", ()
   assert.match(text, /Do not silently replace this workflow with ad hoc file writes/);
 });
 
-test("spectra archive skill creates only a pending capture after archive success", () => {
-  const text = readRepoFile(".agents/skills/spectra-archive/SKILL.md");
+test("external hook notes describe untracked skill integration points", () => {
+  const text = readRepoFile("docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md");
 
-  assert.match(text, /Knowledge Capture Hook/);
-  assert.match(text, /After displaying the archive completion summary/);
+  assert.match(text, /These hooks require explicit user approval/);
+  assert.match(text, /spectra-archive/);
+  assert.match(text, /spectra-debug/);
+  assert.match(text, /how/);
+  assert.match(text, /superpowers:brainstorming/);
   assert.match(text, /joplin_brainstorm/);
-  assert.match(text, /capture_draft_id/);
-  assert.match(text, /Do not call joplin_confirm_capture automatically/);
-});
-
-test("spectra debug skill captures verified root cause after the fix phase", () => {
-  const text = readRepoFile(".agents/skills/spectra-debug/SKILL.md");
-
-  assert.match(text, /Knowledge Capture Hook/);
-  assert.match(text, /After the fix is verified/);
-  assert.match(text, /root cause/i);
-  assert.match(text, /joplin_brainstorm/);
-  assert.match(text, /capture_draft_id/);
-  assert.match(text, /Do not call joplin_confirm_capture automatically/);
+  assert.match(text, /Do not call `joplin_confirm_capture` automatically/);
 });

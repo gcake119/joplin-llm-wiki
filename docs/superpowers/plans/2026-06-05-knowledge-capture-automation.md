@@ -19,21 +19,19 @@
 - Modify: `.agents/skills/joplin-knowledge-flow/SKILL.md`
   - Links the existing knowledge-flow entry skill to the capture policy.
   - Keeps MCP tools as the only write path.
-- Modify: `.agents/skills/spectra-archive/SKILL.md`
-  - Adds a post-archive capture hook after the archive summary.
-- Modify: `.agents/skills/spectra-debug/SKILL.md`
-  - Adds a post-fix root-cause capture hook after verification.
 - Modify: `scripts/install-mcp.sh`
   - Installs both `joplin-knowledge-flow` and `knowledge-capture-policy` into Codex and Cursor global skill directories.
 - Modify: `README.md`
   - Documents the capture policy and first-version hook behavior.
 - Create: `test/skill-knowledge-capture-policy.test.js`
-  - Statically verifies policy content and hooked repo skills.
+  - Statically verifies policy content, the tracked Joplin hook, and tracked external hook notes.
 - Create: `test/install-mcp-skills.test.js`
   - Statically verifies installer copies all required global skills.
-- Requires explicit user approval before editing outside this repo:
-  - `/Users/caiyijun/.agents/skills/how/SKILL.md`
-  - `/Users/caiyijun/.codex/plugins/cache/openai-curated/superpowers/e2d08a2e/skills/brainstorming/SKILL.md`
+- Create: `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md`
+  - Documents hook patches for ignored or external skills that require explicit user approval before editing:
+    `.agents/skills/spectra-archive/SKILL.md`, `.agents/skills/spectra-debug/SKILL.md`,
+    `/Users/caiyijun/.agents/skills/how/SKILL.md`, and
+    `/Users/caiyijun/.codex/plugins/cache/openai-curated/superpowers/e2d08a2e/skills/brainstorming/SKILL.md`.
 
 ---
 
@@ -88,25 +86,16 @@ test("joplin-knowledge-flow skill points other skills to the capture policy", ()
   assert.match(text, /Do not silently replace this workflow with ad hoc file writes/);
 });
 
-test("spectra archive skill creates only a pending capture after archive success", () => {
-  const text = readRepoFile(".agents/skills/spectra-archive/SKILL.md");
+test("external hook notes describe untracked skill integration points", () => {
+  const text = readRepoFile("docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md");
 
-  assert.match(text, /Knowledge Capture Hook/);
-  assert.match(text, /After displaying the archive completion summary/);
+  assert.match(text, /These hooks require explicit user approval/);
+  assert.match(text, /spectra-archive/);
+  assert.match(text, /spectra-debug/);
+  assert.match(text, /how/);
+  assert.match(text, /superpowers:brainstorming/);
   assert.match(text, /joplin_brainstorm/);
-  assert.match(text, /capture_draft_id/);
-  assert.match(text, /Do not call joplin_confirm_capture automatically/);
-});
-
-test("spectra debug skill captures verified root cause after the fix phase", () => {
-  const text = readRepoFile(".agents/skills/spectra-debug/SKILL.md");
-
-  assert.match(text, /Knowledge Capture Hook/);
-  assert.match(text, /After the fix is verified/);
-  assert.match(text, /root cause/i);
-  assert.match(text, /joplin_brainstorm/);
-  assert.match(text, /capture_draft_id/);
-  assert.match(text, /Do not call joplin_confirm_capture automatically/);
+  assert.match(text, /Do not call `joplin_confirm_capture` automatically/);
 });
 ```
 
@@ -118,7 +107,7 @@ Run:
 pnpm vitest run test/skill-knowledge-capture-policy.test.js
 ```
 
-Expected: FAIL because `.agents/skills/knowledge-capture-policy/SKILL.md` does not exist yet, or because the hook sections are not present.
+Expected: FAIL because `.agents/skills/knowledge-capture-policy/SKILL.md` and `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md` do not exist yet, or because the tracked Joplin hook section is not present.
 
 ---
 
@@ -250,7 +239,7 @@ Run:
 pnpm vitest run test/skill-knowledge-capture-policy.test.js
 ```
 
-Expected: FAIL only on `joplin-knowledge-flow`, `spectra-archive`, and `spectra-debug` hook assertions.
+Expected: FAIL only on `joplin-knowledge-flow` and external hook notes assertions.
 
 ---
 
@@ -287,20 +276,37 @@ Run:
 pnpm vitest run test/skill-knowledge-capture-policy.test.js
 ```
 
-Expected: FAIL only on `spectra-archive` and `spectra-debug` hook assertions.
+Expected: FAIL only on external hook notes assertions.
 
 ---
 
-### Task 4: Add Repo-Local Spectra Capture Hooks
+### Task 4: Prepare External Skill Hook Notes
 
 **Files:**
-- Modify: `.agents/skills/spectra-archive/SKILL.md`
-- Modify: `.agents/skills/spectra-debug/SKILL.md`
+- Create: `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md`
 - Test: `test/skill-knowledge-capture-policy.test.js`
 
-- [ ] **Step 1: Add the archive hook**
+- [ ] **Step 1: Create explicit external hook instructions**
 
-Insert this section in `.agents/skills/spectra-archive/SKILL.md` after the `Output On Success With Warnings` block and before `**Guardrails**`:
+Create `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md` with this full content:
+
+````md
+# Knowledge Capture External Skill Hook Notes
+
+These hooks require explicit user approval before editing ignored generated
+skill files or files outside `/Users/caiyijun/joplin-llm-wiki`.
+
+## `spectra-archive` hook
+
+Target file:
+
+`.agents/skills/spectra-archive/SKILL.md`
+
+This file is ignored by this repo and should not be force-added without an
+explicit repository policy change.
+
+Suggested section after the archive success output blocks and before
+`**Guardrails**`:
 
 ```md
 **Knowledge Capture Hook**
@@ -330,9 +336,16 @@ If MCP tools are not available, say that the archive completed but automatic
 knowledge capture was skipped because the MCP server is not loaded.
 ```
 
-- [ ] **Step 2: Add the debugging hook**
+## `spectra-debug` hook
 
-Insert this section in `.agents/skills/spectra-debug/SKILL.md` after the `Phase 4: Fix` section and before `## Rationalization Table`:
+Target file:
+
+`.agents/skills/spectra-debug/SKILL.md`
+
+This file is ignored by this repo and should not be force-added without an
+explicit repository policy change.
+
+Suggested section after `Phase 4: Fix` and before `## Rationalization Table`:
 
 ```md
 ## Knowledge Capture Hook
@@ -362,7 +375,51 @@ If MCP tools are not available, say that the fix was verified but automatic
 knowledge capture was skipped because the MCP server is not loaded.
 ```
 
-- [ ] **Step 3: Run the policy test and verify it passes**
+## `how` skill hook
+
+Target file:
+
+`/Users/caiyijun/.agents/skills/how/SKILL.md`
+
+Suggested section after `### Step 4 — Present`:
+
+```md
+### Step 5 — Knowledge Capture
+
+After presenting an architecture explanation, apply the
+`knowledge-capture-policy` rules. If the explanation forms a reusable mental
+model with clear entry points, data flow, boundaries, and gotchas, create a
+pending capture draft with `joplin_brainstorm`.
+
+Show the `capture_draft_id` and ask the user before calling
+`joplin_confirm_capture`. Do not call `joplin_confirm_capture` automatically.
+If MCP tools are not available, say that automatic knowledge capture was skipped
+because the MCP server is not loaded.
+```
+
+## `superpowers:brainstorming` hook
+
+Target file:
+
+`/Users/caiyijun/.codex/plugins/cache/openai-curated/superpowers/e2d08a2e/skills/brainstorming/SKILL.md`
+
+Suggested section after `Spec Self-Review`:
+
+```md
+**Knowledge Capture:**
+After the user approves the written spec, apply the `knowledge-capture-policy`
+rules. If the brainstorming produced durable decisions, rejected alternatives,
+or reusable workflow rules, create a pending capture draft with
+`joplin_brainstorm`.
+
+Show the `capture_draft_id` and ask the user before calling
+`joplin_confirm_capture`. Do not call `joplin_confirm_capture` automatically.
+If MCP tools are not available, say that automatic knowledge capture was skipped
+because the MCP server is not loaded.
+```
+````
+
+- [ ] **Step 2: Run the policy test and verify it passes**
 
 Run:
 
@@ -372,12 +429,12 @@ pnpm vitest run test/skill-knowledge-capture-policy.test.js
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit the policy and repo-local hooks**
+- [ ] **Step 3: Commit the policy, tracked Joplin hook, external notes, and tests**
 
 Run:
 
 ```bash
-git add .agents/skills/knowledge-capture-policy/SKILL.md .agents/skills/joplin-knowledge-flow/SKILL.md .agents/skills/spectra-archive/SKILL.md .agents/skills/spectra-debug/SKILL.md test/skill-knowledge-capture-policy.test.js
+git add .agents/skills/knowledge-capture-policy/SKILL.md .agents/skills/joplin-knowledge-flow/SKILL.md docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md test/skill-knowledge-capture-policy.test.js
 git commit -m "加入知識沉澱草稿政策"
 ```
 
@@ -546,82 +603,10 @@ Expected: Commit succeeds with only `README.md`.
 
 ---
 
-### Task 7: Prepare External Skill Hook Patch Notes
+### Task 7: Run Full Verification
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md`
-
-- [ ] **Step 1: Create explicit external hook instructions**
-
-Create `docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md` with this full content:
-
-````md
-# Knowledge Capture External Skill Hook Notes
-
-These hooks require explicit user approval before editing files outside
-`/Users/caiyijun/joplin-llm-wiki`.
-
-## `how` skill hook
-
-Target file:
-
-`/Users/caiyijun/.agents/skills/how/SKILL.md`
-
-Suggested section after `### Step 4 — Present`:
-
-```md
-### Step 5 — Knowledge Capture
-
-After presenting an architecture explanation, apply the
-`knowledge-capture-policy` rules. If the explanation forms a reusable mental
-model with clear entry points, data flow, boundaries, and gotchas, create a
-pending capture draft with `joplin_brainstorm`.
-
-Show the `capture_draft_id` and ask the user before calling
-`joplin_confirm_capture`. Do not call `joplin_confirm_capture` automatically.
-If MCP tools are not available, say that automatic knowledge capture was skipped
-because the MCP server is not loaded.
-```
-
-## `superpowers:brainstorming` hook
-
-Target file:
-
-`/Users/caiyijun/.codex/plugins/cache/openai-curated/superpowers/e2d08a2e/skills/brainstorming/SKILL.md`
-
-Suggested section after `Spec Self-Review`:
-
-```md
-**Knowledge Capture:**
-After the user approves the written spec, apply the `knowledge-capture-policy`
-rules. If the brainstorming produced durable decisions, rejected alternatives,
-or reusable workflow rules, create a pending capture draft with
-`joplin_brainstorm`.
-
-Show the `capture_draft_id` and ask the user before calling
-`joplin_confirm_capture`. Do not call `joplin_confirm_capture` automatically.
-If MCP tools are not available, say that automatic knowledge capture was skipped
-because the MCP server is not loaded.
-```
-````
-
-- [ ] **Step 2: Commit external hook notes**
-
-Run:
-
-```bash
-git add docs/superpowers/plans/2026-06-05-knowledge-capture-external-hooks.md
-git commit -m "記錄外部 skill 沉澱接點"
-```
-
-Expected: Commit succeeds with only the external hook notes.
-
----
-
-### Task 8: Run Full Verification
-
-**Files:**
-- Verify all files changed by Tasks 1 through 7.
+- Verify all files changed by Tasks 1 through 6.
 
 - [ ] **Step 1: Run focused tests**
 
@@ -657,6 +642,6 @@ Expected: no unstaged or untracked files after all task commits.
 
 ## Self-Review
 
-- Spec coverage: The plan covers policy creation, Joplin guardrails, repo-local Spectra hooks, installer support, documentation, external hook notes, and verification. The two external skill hooks are not edited in this repo plan because they live outside the writable repo and require explicit user approval.
+- Spec coverage: The plan covers policy creation, Joplin guardrails, installer support, documentation, external hook notes, and verification. Ignored Spectra skill hooks and external `how`/Superpowers hooks are documented as explicit-approval patch notes instead of committed repo-local edits.
 - Completeness scan: The plan contains no incomplete markers and every file addition includes concrete content.
 - Type and name consistency: Tool names use existing MCP names: `joplin_brainstorm`, `joplin_query`, `joplin_show_capture`, and `joplin_confirm_capture`. The new skill name is consistently `knowledge-capture-policy`.
