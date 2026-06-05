@@ -33,19 +33,13 @@ operations in Codex or Cursor conversations.
 
 When another skill has produced reusable knowledge, apply the
 `knowledge-capture-policy` rules before deciding whether to call these MCP
-tools. Strong signal work may create a pending capture draft with
-`joplin_brainstorm` or `joplin_query`. Medium signal work should ask the user
-whether they want a pending capture. Low signal work should not interrupt the
-conversation.
+tools. Strong signal reusable work should normally create a pending capture draft
+with `joplin_brainstorm`. Use `joplin_query` only when the user asks an explicit
+knowledge-base question that should preserve query sources. Medium signal work
+should ask the user whether they want a pending capture. Low signal work should
+not interrupt the conversation.
 
-If MCP tools are not available, report that the MCP server is not loaded and
-ask the user to reload or restart Codex or Cursor after checking the MCP
-configuration. Do not silently replace this workflow with ad hoc file writes.
-
-If these MCP tools are not available in the current session, tell the user the
-MCP server is not loaded and ask them to reload/restart Codex or Cursor after
-checking the MCP configuration. Do not silently replace this workflow with ad
-hoc file writes.
+If MCP tools are not available in the current session, tell the user the MCP server is not loaded and ask them to reload/restart Codex or Cursor after checking the MCP configuration. Do not silently replace this workflow with ad hoc file writes.
 
 ## Query And Capture
 
