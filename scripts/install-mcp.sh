@@ -110,6 +110,13 @@ install_global_skill() {
   done
 }
 
+print_global_skill_paths() {
+  for skill in "${GLOBAL_SKILLS[@]}"; do
+    echo "  $HOME/.agents/skills/$skill/SKILL.md"
+    echo "  $HOME/.cursor/skills/$skill/SKILL.md"
+  done
+}
+
 install_global_skill
 
 MCP_JSON="$(node -e '
@@ -192,10 +199,7 @@ Installed joplin-llm-wiki MCP server at:
   $INSTALL_DIR
 
 Installed global skill:
-  $HOME/.agents/skills/joplin-knowledge-flow/SKILL.md
-  $HOME/.cursor/skills/joplin-knowledge-flow/SKILL.md
-  $HOME/.agents/skills/knowledge-capture-policy/SKILL.md
-  $HOME/.cursor/skills/knowledge-capture-policy/SKILL.md
+$(print_global_skill_paths)
 
 MCP server command:
   pnpm --dir "$INSTALL_DIR" exec joplin-llm-wiki-mcp

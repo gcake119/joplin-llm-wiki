@@ -11,10 +11,19 @@ test("install-mcp installs all repo-provided global skills", () => {
   assert.match(installer, /joplin-knowledge-flow/);
   assert.match(installer, /knowledge-capture-policy/);
   assert.match(installer, /for skill in "\$\{GLOBAL_SKILLS\[@\]\}"/);
+  assert.match(installer, /print_global_skill_paths/);
   assert.match(installer, /\$HOME\/\.agents\/skills\/\$skill/);
   assert.match(installer, /\$HOME\/\.cursor\/skills\/\$skill/);
+  assert.match(installer, /\$\(print_global_skill_paths\)/);
 });
 
 test("install-mcp output lists the capture policy skill", () => {
-  assert.match(installer, /knowledge-capture-policy\/SKILL\.md/);
+  assert.match(
+    installer,
+    /Installed global skill:\n\$\(\s*print_global_skill_paths\s*\)/,
+  );
+  assert.match(
+    installer,
+    /print_global_skill_paths\(\)\s*{\s*for skill in "\$\{GLOBAL_SKILLS\[@\]\}"/,
+  );
 });
