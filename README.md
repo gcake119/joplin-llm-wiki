@@ -129,6 +129,29 @@ guardrails；真正讀寫檔案、同步 Joplin、編譯 wiki 或歸檔 project 
 | 同步 Joplin sources | `joplin_sync_sources` |
 | 編譯 wiki | `joplin_compile_wiki` |
 
+### Skills 搭配知識沉澱
+
+安裝 MCP server 時，installer 會同時安裝兩個全域 skills：
+
+- `joplin-knowledge-flow`：知識流操作入口，負責把 LLM 導向 MCP tools。
+- `knowledge-capture-policy`：判斷常用 skills 的工作成果是否值得建立 pending capture。
+
+第一版採用「草稿型 + 規則型」：
+
+- 強訊號工作，例如 Spectra archive 完成、debug root cause 驗證完成、架構 mental model 收斂，可由 skill 自動呼叫 `joplin_brainstorm` 建立 pending capture。
+- 中訊號工作只提示是否沉澱。
+- 低訊號工作不提示。
+- 任何正式寫入都必須由使用者確認，才會透過 `joplin_confirm_capture` 寫入
+  `brainstorming/chat/` 或 `artifacts/<project>/`；或先呼叫
+  `joplin_suggest_archive_project`，再由使用者確認後由
+  `joplin_archive_project` 寫入。
+
+在 `knowledge-capture-policy` 的自動判斷流程中，這個流程不會自動寫入
+`brainstorming/chat/`、`artifacts/<project>/`、`raw/` 或 `wiki/`；不影響 MCP
+其他 tool 的正常行為（例如 `joplin_sync_sources`、`joplin_compile_wiki`）。若
+MCP server 沒有載入，skill 應提示重啟或重新載入 Codex/Cursor，而不是改用
+手寫檔案。
+
 ### 快速安裝
 
 這是快速安裝 MCP server 的指令。它會自動把 repo clone 到本機、安裝
