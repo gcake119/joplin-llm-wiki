@@ -36,3 +36,6 @@ config.yaml
 .agents/skills/spectra-propose/SKILL.md
 AGENTS.md
 .pnpm-store/v11/index.db
+.codebase-memory/.gitattributes
+.codebase-memory/artifact.json
+.codebase-memory/graph.db.zst
