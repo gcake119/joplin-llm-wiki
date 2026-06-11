@@ -343,9 +343,27 @@ export async function runWikiCompileFlow(args) {
   attachCorpusTelemetry(compileSummary, cfg, notesBundle);
   attachSweepTelemetry(compileSummary, sweepContext);
   if (cfg.joplin_wiki_writeback.enabled) {
+    const { existingRelPaths, missingRelPaths } = partitionExistingWikiRelPaths(
+      wikiRoot,
+      paths,
+    );
+    compileSummary.writeback_relpaths = existingRelPaths;
+    compileSummary.writeback_missing_count = missingRelPaths.length;
+    if (missingRelPaths.length > 0) {
+      compileSummary.writeback_missing_relpaths = missingRelPaths;
+      console.error(
+        JSON.stringify({
+          warning: "WRITEBACK_REL_MISSING",
+          message:
+            "planner paths included wiki files that were not present on disk after compile; skipping them during writeback",
+          missing_count: missingRelPaths.length,
+          missing_relpaths: missingRelPaths,
+        }),
+      );
+    }
     Object.assign(
       compileSummary,
-      await runWikiWriteback(cfg, wikiRoot, paths, { dryRun: false }),
+      await runWikiWriteback(cfg, wikiRoot, existingRelPaths, { dryRun: false }),
     );
   }
 
@@ -733,6 +751,26 @@ function prioritizeTopicsBeforeTruncate(paths, schema, maxPages) {
 /** @param {string[]} paths */
 function filterAllowedWikiKnowledgePaths(paths) {
   return paths.filter(isAllowedWikiKnowledgePath);
+}
+
+/**
+ * Keep writeback limited to files that are actually present after compile.
+ *
+ * @param {string} wikiRoot
+ * @param {string[]} relPaths
+ */
+function partitionExistingWikiRelPaths(wikiRoot, relPaths) {
+  /** @type {string[]} */
+  const existingRelPaths = [];
+  /** @type {string[]} */
+  const missingRelPaths = [];
+  for (const rel of relPaths) {
+    const norm = rel.replace(/\\/g, "/");
+    const abs = path.join(wikiRoot, norm);
+    if (fs.existsSync(abs)) existingRelPaths.push(norm);
+    else missingRelPaths.push(norm);
+  }
+  return { existingRelPaths, missingRelPaths };
 }
 
 /** @param {string} p */

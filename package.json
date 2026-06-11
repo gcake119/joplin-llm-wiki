@@ -8,8 +8,12 @@
     "joplin-llm-wiki-mcp": "bin/joplin-llm-wiki-mcp.js"
   },
   "scripts": {
+    "brain": "pnpm run brain:update",
     "postinstall": "node scripts/register-bin.mjs",
     "health-gui": "electron src/health-gui/main.js",
+    "brain:sync": "joplin-llm-wiki sqlite-sync --config ./config.yaml",
+    "brain:compile": "joplin-llm-wiki agent-compile --config ./config.yaml",
+    "brain:update": "pnpm run brain:sync && pnpm run brain:compile",
     "test": "vitest run",
     "test:vitest": "vitest run"
   },

@@ -119,6 +119,25 @@ title: 憂鬱症陪伴摘要
   assert.equal(fs.readFileSync(summaryAbs, "utf8"), summaryBefore);
 });
 
+test("parseWikiMarkdown normalizes legacy raw-prefixed source_refs", () => {
+  const parsed = parseWikiMarkdown(`---
+source_refs:
+  - raw/counseling/depression.md
+  - ./raw/counseling/help.md
+compiled_at: "2026-05-23T00:00:00.000Z"
+compiler_revision: test
+domain: counseling
+title: 憂鬱症陪伴摘要
+---
+# 憂鬱症陪伴摘要
+`);
+
+  assert.deepEqual(parsed.data.source_refs, [
+    "counseling/depression.md",
+    "counseling/help.md",
+  ]);
+});
+
 test("concept resume dry-run keeps LLM semantic merges on one canonical concept path", async () => {
   const dir = tmpdir();
   const raw = path.join(dir, "raw");

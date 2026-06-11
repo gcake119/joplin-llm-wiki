@@ -254,6 +254,129 @@ test("writeback resume publishes only completed concepts and All-Concepts", asyn
   assert.equal(noteCreates.includes("Unchanged"), false);
 });
 
+test("wiki compile skips missing planner outputs during writeback instead of aborting", async () => {
+  const dir = tmpdir();
+  const raw = path.join(dir, "raw");
+  const wiki = path.join(dir, "wiki");
+  fs.mkdirSync(raw, { recursive: true });
+  fs.writeFileSync(path.join(raw, "source-a.md"), "# Source A\n", "utf8");
+  const schema = writeSchema(dir);
+  const configPath = writeCompileConfig(dir, raw, wiki, schema);
+  fs.writeFileSync(
+    configPath,
+    fs
+      .readFileSync(configPath, "utf8")
+      .replace("min_topic_pages_per_run: 1", "min_topic_pages_per_run: 0"),
+    "utf8",
+  );
+
+  const oldFetch = globalThis.fetch;
+  const oldWriteFileSync = fs.writeFileSync;
+  /** @type {string[]} */
+  const noteCreates = [];
+  globalThis.fetch = async (url, init) => {
+    const u = new URL(String(url));
+    if (u.pathname === "/api/chat") {
+      const body = JSON.parse(String(init?.body));
+      if (body.format === "json") {
+        return jsonResponse({
+          message: {
+            content: JSON.stringify({
+              paths: ["summaries/kept.md", "summaries/missing.md"],
+            }),
+          },
+        });
+      }
+      return jsonResponse({
+        message: {
+          content: "# Generated\n\nThis is a generated wiki page.\n",
+        },
+      });
+    }
+    if (u.pathname === "/ping") {
+      return textResponse("JoplinClipperServer");
+    }
+    if (u.pathname === "/folders") {
+      return jsonResponse({
+        items: [
+          {
+            id: "root",
+            parent_id: "",
+            title: "@llm-wiki",
+            children: [
+              {
+                id: "wiki",
+                parent_id: "root",
+                title: "wiki",
+                children: [
+                  { id: "summaries", parent_id: "wiki", title: "summaries" },
+                  { id: "concepts", parent_id: "wiki", title: "concepts" },
+                  { id: "indexes", parent_id: "wiki", title: "indexes" },
+                ],
+              },
+            ],
+          },
+        ],
+        has_more: false,
+      });
+    }
+    if (/\/folders\/.+\/notes$/.test(u.pathname)) {
+      return jsonResponse({ items: [], has_more: false });
+    }
+    if (u.pathname === "/notes" && init?.method === "POST") {
+      noteCreates.push(JSON.parse(String(init.body)).title);
+      return jsonResponse({ id: `created-${noteCreates.length}` });
+    }
+    return jsonResponse({ items: [], has_more: false });
+  };
+  fs.writeFileSync = (file, data, options) => {
+    const abs = typeof file === "string" ? file : String(file);
+    if (abs.endsWith(path.join("summaries", "missing.md"))) return;
+    return oldWriteFileSync(file, data, options);
+  };
+
+  const lines = [];
+  const errs = [];
+  const oldLog = console.log;
+  const oldErr = console.error;
+  console.log = (s) => lines.push(String(s));
+  console.error = (s) => errs.push(String(s));
+  try {
+    await runWikiCompileFlow({
+      ctx: {
+        configPath,
+        argv: [],
+        opts: new Map(),
+      },
+    });
+  } finally {
+    console.log = oldLog;
+    console.error = oldErr;
+    globalThis.fetch = oldFetch;
+    fs.writeFileSync = oldWriteFileSync;
+  }
+
+  const payload = JSON.parse(lines.at(-1));
+  assert.equal(payload.wiki_compile, "ok");
+  assert.equal(payload.pages_written, 2);
+  assert.deepEqual(payload.writeback_relpaths, ["summaries/kept.md"]);
+  assert.equal(payload.writeback_missing_count, 1);
+  assert.deepEqual(payload.writeback_missing_relpaths, [
+    "summaries/missing.md",
+  ]);
+  assert.equal(payload.writeback_written, 1);
+  assert.deepEqual(noteCreates, ["kept"]);
+
+  const warning = errs.map((line) => JSON.parse(line)).find((item) => item.warning === "WRITEBACK_REL_MISSING");
+  assert.deepEqual(warning, {
+    warning: "WRITEBACK_REL_MISSING",
+    message:
+      "planner paths included wiki files that were not present on disk after compile; skipping them during writeback",
+    missing_count: 1,
+    missing_relpaths: ["summaries/missing.md"],
+  });
+});
+
 test("wiki writeback preflight accepts a valid local Data API token without mutating", async () => {
   /** @type {string[]} */
   const urls = [];

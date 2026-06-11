@@ -132,7 +132,7 @@ test("agent-compile spawns codex exec with workspace-write sandbox", async () =>
     ]);
     assert.match(calls[0].args[7], /請執行 joplin-llm-wiki agent-based compile workflow/);
     assert.match(calls[0].args[7], /不要執行 pnpm exec joplin-llm-wiki agent-compile/);
-    assert.match(calls[0].args[7], /source_refs 必須是 raw\/ 下存在的相對路徑/);
+    assert.match(calls[0].args[7], /source_refs 必須是相對於 raw\/ 根目錄的存在路徑/);
     assert.strictEqual(JSON.parse(line).agent_compile, "ok");
   } finally {
     console.log = origLog;
@@ -437,6 +437,50 @@ test("agent-compile fails when codex final message reports no writes", async () 
       ),
     (e) => /** @type {{ code?: string }} */ (e).code === "AGENT_COMPILE_FAILED",
   );
+});
+
+test("agent-compile does not treat negated AGENT_COMPILE_FAILED mention as failure", async () => {
+  let line = "";
+  const origLog = console.log;
+  console.log = (x) => {
+    line = String(x);
+  };
+  try {
+    const code = await runAgentCompile(
+      { configPath: "cfg.yaml", argv: [], opts: new Map() },
+      {
+        spawn: (_cmd, args) => {
+          const c = makeChild();
+          const outPath = args[args.indexOf("--output-last-message") + 1];
+          queueMicrotask(() => {
+            fs.writeFileSync(
+              outPath,
+              "已完成寫入。\n沒有未完成來源，所以不需要標記 AGENT_COMPILE_FAILED。\n寫入檔案清單：wiki/concepts/topic.md",
+              "utf8",
+            );
+            c.emit("close", 0);
+          });
+          return c;
+        },
+        loadConfig: async () =>
+          /** @type {any} */ ({
+            raw: "/raw",
+            raw_glob: "**/*.md",
+            wiki: "/wiki",
+            joplin_wiki_writeback: { enabled: false },
+          }),
+        discoverMarkdown: async (root) => {
+          if (root === "/raw") return ["/raw/nb/a.md"];
+          if (root === "/wiki") return [];
+          return [];
+        },
+      },
+    );
+    assert.strictEqual(code, 0);
+    assert.strictEqual(JSON.parse(line).agent_compile, "ok");
+  } finally {
+    console.log = origLog;
+  }
 });
 
 test("agent-compile maps codex spawn failure to CODEX_CLI_UNAVAILABLE", async () => {

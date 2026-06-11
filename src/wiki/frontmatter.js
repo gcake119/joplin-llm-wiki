@@ -27,6 +27,7 @@ export function parseWikiMarkdown(markdown) {
     fmThrow("invalid yaml frontmatter");
   }
   if (typeof data !== "object" || data === null) fmThrow("frontmatter must map");
+  normalizeSourceRefsInPlace(/** @type {Record<string, unknown>} */ (data));
   return { data: /** @type {Record<string, unknown>} */ (data), body };
 }
 
@@ -46,6 +47,7 @@ export function validateCompiledFrontmatter(data) {
   const refs = data.source_refs;
   if (!Array.isArray(refs) || refs.some((x) => typeof x !== "string"))
     fmThrow("source_refs must be string[]");
+  normalizeSourceRefsInPlace(data);
   if (typeof data.compiled_at !== "string" || data.compiled_at.trim() === "")
     fmThrow("compiled_at required ISO8601 string");
   if (
@@ -99,8 +101,28 @@ export function parseWikiMarkdownLenient(markdown) {
     const data = YAML.parse(fmRaw) ?? {};
     if (typeof data !== "object" || data === null)
       return { data: {}, body: markdown };
+    normalizeSourceRefsInPlace(/** @type {Record<string, unknown>} */ (data));
     return { data: /** @type {Record<string, unknown>} */ (data), body };
   } catch {
     return { data: {}, body: markdown };
   }
+}
+
+/**
+ * Keep legacy `raw/...` refs readable while converging runtime behavior on
+ * raw-relative paths such as `topic/note.md`.
+ *
+ * @param {Record<string, unknown>} data
+ */
+function normalizeSourceRefsInPlace(data) {
+  if (!Array.isArray(data.source_refs)) return;
+  data.source_refs = data.source_refs.map((ref) => normalizeOneSourceRef(String(ref)));
+}
+
+/**
+ * @param {string} ref
+ */
+function normalizeOneSourceRef(ref) {
+  const slash = ref.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  return slash.replace(/^raw\/+/, "");
 }

@@ -228,7 +228,7 @@ ${summaryLines}
 - 不得在 summaries、concepts、indexes 底下建立子資料夾。
 - concepts 由 LLM 依照語意判斷主題相關性，不要用標題字串相符當作合併依據。
 - 每個 concept Markdown 必須使用繁體中文，且 frontmatter 包含 source_refs、summary_refs、compiled_at、compiler_revision、domain、title。
-- source_refs 必須是 raw/ 下存在的相對路徑。
+- source_refs 必須是相對於 raw/ 根目錄的存在路徑，例如 "topic/note.md"；不要加 raw/ 前綴。
 - concept 的 YAML title 必須和第一個 H1 完全一致。
 - 完成後回報寫入檔案清單與任何跳過原因。
 - 如果無法完成或沒有寫入任何 wiki/concepts/*.md，最後回覆必須包含 AGENT_COMPILE_FAILED。`;
@@ -270,7 +270,7 @@ ${sourceLines}
 - 不得在 summaries、concepts、indexes 底下建立子資料夾。
 - 每個 wiki Markdown 檔必須使用繁體中文。
 - 每個 wiki Markdown 檔必須包含 YAML frontmatter：source_refs、compiled_at、compiler_revision、domain、title。
-- source_refs 必須是 raw/ 下存在的相對路徑。
+- source_refs 必須是相對於 raw/ 根目錄的存在路徑，例如 "topic/note.md"；不要加 raw/ 前綴。
 - 段落標題需依主題與來源證據選擇；不要套用固定模板。可選用核心結論、關鍵證據、背景、方法、步驟、決策紀錄、實踐經驗、我的實踐、外部觀點、疑點、待追蹤、術語、張力與缺口等標題，但沒有價值或沒有證據的段落必須省略。
 
 目標：
@@ -427,8 +427,16 @@ function runCodexExec(spawnImpl, repoRoot, prompt) {
  * @param {string} finalMessage
  */
 function agentReportedFailure(finalMessage) {
+  const explicitFailureMarker =
+    /(^|[\r\n])\s*AGENT_COMPILE_FAILED\s*$/m.test(finalMessage) ||
+    /包含\s+AGENT_COMPILE_FAILED/.test(finalMessage) ||
+    /標記\s+AGENT_COMPILE_FAILED/.test(finalMessage);
+  const negatedFailureMarker =
+    /不需要標記\s+AGENT_COMPILE_FAILED/.test(finalMessage) ||
+    /不必標記\s+AGENT_COMPILE_FAILED/.test(finalMessage) ||
+    /無需標記\s+AGENT_COMPILE_FAILED/.test(finalMessage);
   return (
-    /AGENT_COMPILE_FAILED/.test(finalMessage) ||
+    (explicitFailureMarker && !negatedFailureMarker) ||
     /CODEX_CLI_UNAVAILABLE/.test(finalMessage) ||
     /結果未完成/.test(finalMessage) ||
     /寫入檔案清單[：:]\s*無/.test(finalMessage) ||
