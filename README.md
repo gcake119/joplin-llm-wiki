@@ -232,6 +232,20 @@ Cursor 設定可參考 `.cursor/mcp.json.example`：
 | `joplin_compile_wiki` | 包裝 `wiki-compile` 或 `agent-compile`。 |
 | `joplin_sync_workflow_notes` | 從 Joplin `@llm-wiki/brainstorming` / `@llm-wiki/artifacts` 按需拉回工作目錄檔案。 |
 
+### Existing Note Updates And Data API
+
+MCP tools remain the default path for query、capture、archive、source sync、workflow pull sync 與 wiki compile。若使用者明確要求補充或修改 Joplin 裡既有筆記，而且目前暴露的 MCP tools 沒有既有 note update tool，可以使用本機 Joplin Data API 作為受控寫入路徑。
+
+規則：
+
+- 先用 MCP 或唯讀 SQLite 查明目標 notebook / note id / title；SQLite 只能當 discovery evidence，不可直接更新 `database.sqlite`。
+- 必須先確認使用者指定或同意要修改的既有筆記。
+- 寫入前確認 Joplin Desktop 的 Web Clipper service 已啟用，`joplin_data_api.base_url` 必須是 loopback，例如 `http://127.0.0.1:41184`。
+- 在 Codex sandbox 裡若 `curl http://127.0.0.1:41184/ping` 失敗，但使用者或截圖確認 Web Clipper service 已啟動，應以 sandbox escalation 重試同一個 loopback call；不要改用 SQLite 直寫。
+- Data API token 只從 config 讀取，不要印到輸出、筆記或 tool result 摘要。
+- 對既有 note append 補充時使用穩定 marker，避免重複寫入；更新後以只讀查詢確認 marker 或內容存在。
+- 若 Data API 不可用或 token 失效，停止並請使用者啟用 Web Clipper / 更新 token；不要 fallback 成 ad hoc 檔案寫入。
+
 Project 歸檔必須先呼叫 `joplin_suggest_archive_project` 取得建議命名，
 再由使用者確認 project 名稱。`joplin_archive_project` 必須收到
 `confirmed_project: true` 才會寫入正式 artifact；未確認時會回傳
@@ -375,7 +389,7 @@ compiled `wiki/`。Dry-run 只列出 `created`、`updated`、`unchanged`、
 
 `wiki-compile --dry-run` 與 `agent-compile --dry-run` 不會對 Joplin 發送會變更資料的 HTTP。
 
-若 `sqlite-sync` 的 automatic compile 在 writeback preflight 顯示 `writeback_preflight_status: "failed"`，先確認 Joplin Desktop 的 Web Clipper 服務已啟用、`joplin_data_api.base_url` 是 loopback、`joplin_data_api.token` 是目前 Clipper token。修正後重新跑同一個 `sqlite-sync` 即可；因 state 未提交，raw 變更會被重試。
+若 `sqlite-sync` 的 automatic compile 在 writeback preflight 顯示 `writeback_preflight_status: "failed"`，先確認 Joplin Desktop 的 Web Clipper 服務已啟用、`joplin_data_api.base_url` 是 loopback、`joplin_data_api.token` 是目前 Clipper token。若在 Codex sandbox 內 ping loopback 失敗，但 Joplin 顯示 Web Clipper 已在該 port 啟動，應用 sandbox escalation 重試 Data API 連線；不要直接寫 SQLite。修正後重新跑同一個 `sqlite-sync` 即可；因 state 未提交，raw 變更會被重試。
 
 ## Query Capture
 

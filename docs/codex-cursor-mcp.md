@@ -78,10 +78,25 @@ artifacts/<project>/<timestamp>-<slug>.md
 
 不要把新的 project 歸檔寫到 `artifacts/projects/<project>/`。
 
+## Existing Note Updates And Data API
+
+MCP tools 是互動式知識流的預設寫入面。當使用者明確要求補充或修改 Joplin 裡既有筆記，而目前 MCP tools 沒有既有 note update tool 時，可以使用本機 Joplin Data API 作為受控例外。
+
+流程：
+
+1. 先用 MCP query 或唯讀 SQLite 查明目標 notebook / note id / title。SQLite 只能讀取，不可直接修改 Joplin `database.sqlite`。
+2. 向使用者確認要更新的既有 note，或使用使用者已明確指定的 note。
+3. 確認 Joplin Desktop Web Clipper service 已啟用，並使用 `config.yaml` 的 `joplin_data_api.base_url` 與 token。
+4. 如果 sandbox 內連不到 `127.0.0.1:41184`，但使用者或 Joplin UI 顯示 service 已啟動，使用 sandbox escalation 重試同一個 loopback request。
+5. 寫入時不要輸出 token；append 類更新要放穩定 marker，避免重複寫入。
+6. 寫入後用只讀查詢確認 marker 或內容存在。
+7. 如果 Data API 不可用、token 失效或目標 note 不明，停止並請使用者修正；不要 fallback 到 SQLite 直寫或 ad hoc workflow 檔案。
+
 ## Local-First Boundary
 
 - `raw/` 只作為唯讀 source evidence。
 - Query 不使用 RAG、embedding、Chroma 或 vector index。
 - `provider=ollama` 只連到設定的本機 Ollama base URL。
 - Workflow writeback 只使用 config 驗證過的 loopback Joplin Data API。
+- Existing Joplin note updates use the loopback Joplin Data API only as a confirmed, controlled exception when exposed MCP tools do not cover the operation.
 - MCP tool output 不應包含 Joplin token。

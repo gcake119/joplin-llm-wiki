@@ -76,9 +76,32 @@ Project archive is always a two-step workflow:
 Never archive new project artifacts under `artifacts/projects/<project>/`.
 The correct path is `artifacts/<project>/<timestamp>-<slug>.md`.
 
+
+## Existing Note Update Boundary
+
+Use MCP tools for all supported knowledge-flow writes. When the user explicitly
+asks to supplement or modify existing notes inside Joplin, and the available MCP
+tools do not expose an existing-note update operation, a loopback Joplin Data API
+write is allowed only as a controlled exception.
+
+Rules:
+
+- Confirm or derive the target notebook/note id/title before writing.
+- Use SQLite only for read-only discovery; never update Joplin by writing
+  database.sqlite directly.
+- Require Joplin Desktop Web Clipper service to be enabled and use the
+  configured loopback Data API URL/token.
+- If sandboxed commands cannot reach 127.0.0.1:41184 but the user confirms the
+  service is running, retry the same loopback request with sandbox escalation.
+- Never print Joplin tokens in tool output or summaries.
+- Use stable markers for append-style updates so reruns are idempotent.
+- If Data API is unavailable or the target note is unclear, stop and ask the
+  user to fix the connection or clarify the target; do not fallback to ad hoc
+  file writes.
+
 ## Local-First Boundary
 
 These tools are local-first. They use repo files, local Ollama when configured,
 local `codex exec` for agent compilation, and loopback Joplin Data API for
-explicit writeback or workflow pull sync. Tool output must not expose Joplin
-tokens.
+explicit writeback, workflow pull sync, or confirmed existing-note updates that
+are not covered by exposed MCP tools. Tool output must not expose Joplin tokens.
