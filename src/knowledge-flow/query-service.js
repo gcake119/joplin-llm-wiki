@@ -7,6 +7,10 @@ import { loadConfig } from "../config/load-config.js";
 import { discoverMarkdown, relativeUnder } from "../fs/note-discovery.js";
 import { OllamaClient } from "../ollama/client.js";
 import { runKnowledgeFlowWriteback } from "../joplin/wiki-writeback.js";
+import {
+  createdAtBodyPrefix,
+  uniqueWorkflowNotePath,
+} from "./workflow-note-format.js";
 
 /**
  * @param {{
@@ -541,17 +545,26 @@ function pendingCaptureDir(workflowRoot) {
  * @param {import('../config/load-config.js').AppConfig} cfg
  */
 function captureDestination(workflowRoot, classification, title, opts, cfg) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const slug = slugify(title).slice(0, 64) || "capture";
   if (classification === "brainstorming") {
-    const rel = `brainstorming/chat/${stamp}-${slug}.md`;
-    return { rel, abs: path.join(workflowRoot, rel), artifactsProjectNotebookTitle: "" };
+    const picked = uniqueWorkflowNotePath({
+      workflowRoot,
+      dirRel: "brainstorming/chat",
+      slug,
+      fallbackSlug: "capture",
+    });
+    return { ...picked, artifactsProjectNotebookTitle: "" };
   }
   const project = opts.get("artifact-project") || cfg.joplin_wiki_writeback.artifacts_project_notebook_title;
   if (!project || !project.trim()) return null;
   const projectSlug = slugify(project).slice(0, 64) || "project";
-  const rel = `artifacts/${projectSlug}/${stamp}-${slug}.md`;
-  return { rel, abs: path.join(workflowRoot, rel), artifactsProjectNotebookTitle: project.trim() };
+  const picked = uniqueWorkflowNotePath({
+    workflowRoot,
+    dirRel: `artifacts/${projectSlug}`,
+    slug,
+    fallbackSlug: "capture",
+  });
+  return { ...picked, artifactsProjectNotebookTitle: project.trim() };
 }
 
 /**
@@ -574,6 +587,7 @@ knowledge_sources:
 ${c.knowledge_sources.map((s) => `  - layer: "${yamlString(s.layer)}"\n    path: "${yamlString(s.path)}"`).join("\n")}
 ---
 
+${createdAtBodyPrefix(pending.created_at)}
 # 問題
 
 ${pending.question}

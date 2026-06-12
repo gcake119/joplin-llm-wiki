@@ -360,8 +360,10 @@ CAPTURE_JSON:
         artifact_project: "tainan-city",
       });
       assert.equal(confirmed.ok, true);
-      assert.match(confirmed.capture_written, /^artifacts\/tainan-city\//);
+      assert.equal(confirmed.capture_written, "artifacts/tainan-city/作品草稿.md");
       assert.equal(fs.existsSync(path.join(dir, confirmed.capture_written)), true);
+      const note = fs.readFileSync(path.join(dir, confirmed.capture_written), "utf8");
+      assert.match(note, /\n---\n\n建立時間：\d{4}-\d{2}-\d{2} \d{2}:\d{2}\n\n# 問題/);
       assert.equal(fs.existsSync(capturePath), false);
     },
   );
@@ -397,8 +399,10 @@ test("joplin_confirm_capture handler confirms and clears legacy UTC Z capture id
     capture_id: id,
   });
   assert.equal(confirmed.ok, true);
-  assert.match(confirmed.capture_written, /^brainstorming\/chat\//);
+  assert.equal(confirmed.capture_written, "brainstorming/chat/legacy-topic.md");
   assert.equal(fs.existsSync(path.join(dir, confirmed.capture_written)), true);
+  const note = fs.readFileSync(path.join(dir, confirmed.capture_written), "utf8");
+  assert.match(note, /\n---\n\n建立時間：2026-05-25 19:46\n\n# 問題/);
   assert.equal(fs.existsSync(pendingPath), false);
 });
 
@@ -492,14 +496,14 @@ test("joplin_archive_project writes confirmed artifact with frontmatter", async 
     confirmed_project: true,
   });
   assert.equal(result.ok, true);
-  assert.match(result.archive_written, /^artifacts\/tainan-city\//);
+  assert.equal(result.archive_written, "artifacts/tainan-city/dispatch-plan.md");
   const note = fs.readFileSync(path.join(dir, result.archive_written), "utf8");
   assert.match(note, /title: "Dispatch Plan"/);
   assert.match(note, /project: "tainan-city"/);
   assert.match(note, /capture_classification: "artifacts"/);
   assert.match(note, /capture_path: "artifacts\/tainan-city\//);
   assert.doesNotMatch(note, /^# 保存內容$/m);
-  assert.match(note, /\n---\n\n正式歸檔內容\n$/);
+  assert.match(note, /\n---\n\n建立時間：\d{4}-\d{2}-\d{2} \d{2}:\d{2}\n\n正式歸檔內容\n$/);
   assert.match(note, /正式歸檔內容/);
 });
 
