@@ -80,6 +80,7 @@ artifacts/
 - Store completed outputs in `artifacts/`.
 - `brainstorming/` and `artifacts/` stay out of compile writeback. Organize and write them back only when a Q&A/health/artifact workflow explicitly needs it; artifacts writeback uses `@llm-wiki/artifacts/<artifacts_project_notebook_title>`.
 - If workflow notes are edited directly in Joplin under `@llm-wiki/brainstorming` or `@llm-wiki/artifacts`, use `pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --dry-run` to inspect the pull plan, then rerun without dry-run or with `--section brainstorming|artifacts`. This pull sync writes only `brainstorming/` and `artifacts/`; it never rewrites `raw/` or compiled `wiki/`.
+- If workflow notes are edited in workspace under `brainstorming/` or `artifacts/`, use `pnpm exec joplin-llm-wiki workflow-writeback --config ./config.yaml --dry-run` to inspect the push plan, then rerun only with explicit `--dry-run=false` when you want to update Joplin Desktop. This writeback uses the Joplin Data API only, updates existing notes only, reports missing targets as `would_create`, and marks duplicate notes or both-side changes as conflicts instead of merging.
 
 ## Model Selection
 
@@ -95,5 +96,6 @@ The upstream workflow compiles both `raw/` and `artifacts/` into `wiki/`.
 This project compiles the configured `raw/` source tree into
 `wiki/`; `brainstorming/` and `artifacts/` stay outside `raw/` to
 avoid SQLite mirror deletion or source pollution. They can be mirrored to
-Joplin through explicit Data API writeback and pulled back from the workflow
-Joplin notebooks through explicit `workflow-sync`.
+Joplin through explicit Data API writeback, pulled back from the workflow
+Joplin notebooks through explicit `workflow-sync`, and pushed from workspace
+back to existing Joplin workflow notes through explicit `workflow-writeback`.

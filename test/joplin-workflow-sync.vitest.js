@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runWorkflowPullSync } from "../src/joplin/workflow-sync.js";
-import { runWorkflowSync } from "../src/commands/cmd-workflow-sync.js";
+import { runWorkflowPullSync, runWorkflowPushSync } from "../src/joplin/workflow-sync.js";
+import { runWorkflowSync, runWorkflowWriteback } from "../src/commands/cmd-workflow-sync.js";
 
 function cfg() {
   return {
@@ -31,7 +31,9 @@ function tmpdir() {
 }
 
 function fakeClient({ folders, notesByFolder }) {
+  const updatedNotes = [];
   return {
+    updatedNotes,
     pingCount: 0,
     async pingWithRetries() {
       this.pingCount++;
@@ -51,6 +53,13 @@ function fakeClient({ folders, notesByFolder }) {
         if (note) return note;
       }
       throw new Error(`missing note ${noteId}`);
+    },
+    async updateNoteBody(noteId, body) {
+      updatedNotes.push({ noteId, body });
+      for (const notes of Object.values(notesByFolder)) {
+        const note = notes.find((n) => n.id === noteId);
+        if (note) note.body = body;
+      }
     },
   };
 }
@@ -384,6 +393,286 @@ describe("workflow-sync CLI command wrapper", () => {
         workflow_sync_status: "ok",
         dry_run: true,
         changed_files: ["brainstorming/chat/example.md"],
+      });
+    } finally {
+      console.log = oldLog;
+    }
+  });
+});
+
+describe("workflow writeback workspace-to-Joplin mapping", () => {
+  test("maps artifacts/<project>/<title>.md to @llm-wiki/artifacts/<project>/<title>", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "artifacts", "開發框架"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "artifacts", "開發框架", "AI UI 設計流程：從第零步視覺概念到上線前檢查.md"),
+      "workspace body",
+    );
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "artifacts", parent_id: "root", title: "artifacts" },
+        { id: "project", parent_id: "artifacts", title: "開發框架" },
+      ],
+      notesByFolder: {
+        project: [
+          {
+            id: "n1",
+            title: "AI UI 設計流程：從第零步視覺概念到上線前檢查",
+            body: "joplin body",
+          },
+        ],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: true,
+      section: "artifacts",
+    });
+
+    expect(summary.updated).toBe(1);
+    expect(summary.changed_files).toEqual([
+      "artifacts/開發框架/AI UI 設計流程：從第零步視覺概念到上線前檢查.md",
+    ]);
+    expect(summary.details[0]).toMatchObject({
+      status: "would_update",
+      joplin_notebook_path: "開發框架",
+      note_id: "n1",
+    });
+  });
+
+  test("maps brainstorming/chat/*.md to @llm-wiki/brainstorming/chat", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "brainstorming", "chat"), { recursive: true });
+    fs.writeFileSync(path.join(root, "brainstorming", "chat", "sync-note.md"), "workspace body");
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "brain", parent_id: "root", title: "brainstorming" },
+        { id: "chat", parent_id: "brain", title: "chat" },
+      ],
+      notesByFolder: {
+        chat: [{ id: "n1", title: "sync-note", body: "joplin body" }],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: true,
+      section: "brainstorming",
+    });
+
+    expect(summary.details[0]).toMatchObject({
+      target_relpath: "brainstorming/chat/sync-note.md",
+      status: "would_update",
+      joplin_notebook_path: "chat",
+    });
+  });
+});
+
+describe("workflow writeback safety", () => {
+  test("dry-run reports updates without writing Joplin note body", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "brainstorming", "chat"), { recursive: true });
+    fs.writeFileSync(path.join(root, "brainstorming", "chat", "sync-note.md"), "workspace body");
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "brain", parent_id: "root", title: "brainstorming" },
+        { id: "chat", parent_id: "brain", title: "chat" },
+      ],
+      notesByFolder: {
+        chat: [{ id: "n1", title: "sync-note", body: "joplin body" }],
+      },
+    });
+
+    await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: true,
+      section: "brainstorming",
+    });
+
+    expect(client.updatedNotes).toEqual([]);
+  });
+
+  test("normal run updates the existing mapped Joplin note", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "artifacts", "ProjectA"), { recursive: true });
+    fs.writeFileSync(path.join(root, "artifacts", "ProjectA", "sync-plan.md"), "workspace body");
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "artifacts", parent_id: "root", title: "artifacts" },
+        { id: "project", parent_id: "artifacts", title: "ProjectA" },
+      ],
+      notesByFolder: {
+        project: [{ id: "n1", title: "sync-plan", body: "joplin body" }],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: false,
+      section: "artifacts",
+    });
+
+    expect(summary.updated).toBe(1);
+    expect(client.updatedNotes).toEqual([{ noteId: "n1", body: "workspace body" }]);
+  });
+
+  test("duplicate matching notes are conflicts and are not updated", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "artifacts", "ProjectA"), { recursive: true });
+    fs.writeFileSync(path.join(root, "artifacts", "ProjectA", "sync-plan.md"), "workspace body");
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "artifacts", parent_id: "root", title: "artifacts" },
+        { id: "project", parent_id: "artifacts", title: "ProjectA" },
+      ],
+      notesByFolder: {
+        project: [
+          { id: "n1", title: "sync-plan", body: "first body" },
+          { id: "n2", title: "sync-plan", body: "second body" },
+        ],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: false,
+      section: "artifacts",
+    });
+
+    expect(summary.conflicts).toBe(2);
+    expect(client.updatedNotes).toEqual([]);
+  });
+
+  test("missing note is reported as would_create and is not updated", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "brainstorming", "chat"), { recursive: true });
+    fs.writeFileSync(path.join(root, "brainstorming", "chat", "missing.md"), "workspace body");
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "brain", parent_id: "root", title: "brainstorming" },
+        { id: "chat", parent_id: "brain", title: "chat" },
+      ],
+      notesByFolder: {
+        chat: [],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: false,
+      section: "brainstorming",
+    });
+
+    expect(summary.missing).toBe(1);
+    expect(summary.would_create).toBe(1);
+    expect(summary.updated).toBe(0);
+    expect(client.updatedNotes).toEqual([]);
+  });
+
+  test("workspace and Joplin changes since baseline are reported as conflict", async () => {
+    const root = tmpdir();
+    fs.mkdirSync(path.join(root, "brainstorming", "chat"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".joplin-llm-wiki"), { recursive: true });
+    fs.writeFileSync(path.join(root, "brainstorming", "chat", "sync-note.md"), "workspace changed");
+    fs.writeFileSync(
+      path.join(root, ".joplin-llm-wiki", "workflow-sync-state.json"),
+      JSON.stringify(
+        {
+          schema_version: 1,
+          updated_at_ms: 1,
+          workflow_root: root,
+          files: {
+            "brainstorming/chat/sync-note.md": {
+              note_id: "n1",
+              workspace_sha256:
+                "7f83b1657ff1fc53b92dc18148a1d65dfa135d0b781853702322aecd2eaa6096",
+              note_sha256:
+                "7f83b1657ff1fc53b92dc18148a1d65dfa135d0b781853702322aecd2eaa6096",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    const client = fakeClient({
+      folders: [
+        { id: "root", parent_id: "", title: "@llm-wiki" },
+        { id: "brain", parent_id: "root", title: "brainstorming" },
+        { id: "chat", parent_id: "brain", title: "chat" },
+      ],
+      notesByFolder: {
+        chat: [{ id: "n1", title: "sync-note", body: "joplin changed" }],
+      },
+    });
+
+    const summary = await runWorkflowPushSync(cfg(), {
+      client,
+      workflowRoot: root,
+      dryRun: false,
+      section: "brainstorming",
+    });
+
+    expect(summary.conflicts).toBe(1);
+    expect(summary.details[0]).toMatchObject({
+      status: "conflict",
+      reason: "both_sides_changed",
+    });
+    expect(client.updatedNotes).toEqual([]);
+  });
+});
+
+describe("workflow-writeback CLI command wrapper", () => {
+  test("defaults to dry-run and prints workflow writeback JSON", async () => {
+    const lines = [];
+    const oldLog = console.log;
+    console.log = (line) => lines.push(String(line));
+    try {
+      const status = await runWorkflowWriteback(
+        {
+          configPath: "config.yaml",
+          argv: [],
+          opts: new Map([["section", "artifacts"]]),
+        },
+        {
+          loadConfig: async () => cfg(),
+          runWorkflowPushSync: async (_cfg, options) => ({
+            workflow_sync_status: "ok",
+            workflow_sync_direction: "workspace_to_joplin",
+            dry_run: options.dryRun,
+            sections: [options.section],
+            scanned: 1,
+            created: 0,
+            updated: 1,
+            unchanged: 0,
+            skipped: 0,
+            conflicts: 0,
+            missing: 0,
+            would_create: 0,
+            errors: 0,
+            changed_files: ["artifacts/ProjectA/example.md"],
+            details: [],
+          }),
+        },
+      );
+
+      expect(status).toBe(0);
+      expect(JSON.parse(lines.at(-1))).toMatchObject({
+        workflow_sync_direction: "workspace_to_joplin",
+        dry_run: true,
       });
     } finally {
       console.log = oldLog;

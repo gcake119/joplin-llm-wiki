@@ -29,6 +29,7 @@ export async function main(argv) {
     "sqlite-sync",
     "agent-compile",
     "workflow-sync",
+    "workflow-writeback",
   ]);
 
   if (!known.has(command)) {
@@ -150,6 +151,8 @@ Commands:
   sqlite-sync    Export Joplin SQLite to raw/; optionally compile wiki when raw changed
   agent-compile  Compile wiki via local Codex CLI agent workflow
   workflow-sync  Pull @llm-wiki brainstorming/artifacts edits back to workspace files
+  workflow-writeback
+                 Push workspace brainstorming/artifacts edits back to existing Joplin notes
 
 Global:
   --help, -h               Show help
@@ -286,6 +289,26 @@ Pulls only @llm-wiki/brainstorming and @llm-wiki/artifacts notes from the local
 Joplin Data API back into workspace brainstorming/ and artifacts/ Markdown files.
 It never writes raw/ or compiled wiki/ and does not use Ollama, Chroma, or
 external services.
+`);
+    return;
+  }
+
+  if (command === "workflow-writeback") {
+    console.log(`workflow-writeback
+
+Usage:
+  joplin-llm-wiki workflow-writeback --config <path> [options]
+
+Options:
+  --dry-run=true|false          Report planned Joplin note changes without writing (default: true)
+  --section brainstorming|artifacts|all
+                                Limit push sync to one workflow section
+
+Pushes only workspace brainstorming/ and artifacts/ Markdown files back to
+existing notes under @llm-wiki/brainstorming and @llm-wiki/artifacts through the
+local Joplin Data API. It never writes raw/, compiled wiki/, or SQLite. Missing
+notes are reported as would_create; this first version updates existing notes
+only.
 `);
     return;
   }

@@ -58,4 +58,41 @@ describe("REQ-MCP-WORKFLOW-SYNC MCP workflow pull sync tool", () => {
       changed_files: ["brainstorming/chat/example.md"],
     });
   });
+
+  test("joplin_writeback_workflow_notes returns structured dry-run summary", async () => {
+    const result = await callKnowledgeFlowTool(
+      "joplin_writeback_workflow_notes",
+      {
+        config_path: "config.yaml",
+        section: "artifacts",
+      },
+      {
+        loadConfig: async () => ({ loaded: true }),
+        runWorkflowPushSync: async (_cfg, options) => ({
+          workflow_sync_status: "ok",
+          workflow_sync_direction: "workspace_to_joplin",
+          dry_run: options.dryRun,
+          sections: [options.section],
+          scanned: 1,
+          created: 0,
+          updated: 1,
+          unchanged: 0,
+          skipped: 0,
+          conflicts: 0,
+          missing: 0,
+          would_create: 0,
+          errors: 0,
+          changed_files: ["artifacts/ProjectA/example.md"],
+          details: [],
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      workflow_sync_direction: "workspace_to_joplin",
+      dry_run: true,
+      changed_files: ["artifacts/ProjectA/example.md"],
+    });
+  });
 });

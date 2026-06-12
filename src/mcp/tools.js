@@ -2,7 +2,7 @@ import path from "node:path";
 import { TOOL_SCHEMAS, validateToolInput } from "./schema.js";
 import { loadConfig } from "../config/load-config.js";
 import { runKnowledgeFlowWriteback } from "../joplin/wiki-writeback.js";
-import { runWorkflowPullSync } from "../joplin/workflow-sync.js";
+import { runWorkflowPullSync, runWorkflowPushSync } from "../joplin/workflow-sync.js";
 import {
   confirmPendingCapture,
   queryKnowledge,
@@ -21,6 +21,7 @@ const TOOL_NAMES = [
   "joplin_sync_sources",
   "joplin_compile_wiki",
   "joplin_sync_workflow_notes",
+  "joplin_writeback_workflow_notes",
 ];
 
 export function listKnowledgeFlowTools() {
@@ -37,7 +38,7 @@ export { validateToolInput };
 /**
  * @param {string} name
  * @param {Record<string, unknown>} input
- * @param {{ spawnImpl?: import("node:child_process").spawn, cwd?: string, loadConfig?: typeof loadConfig, runWorkflowPullSync?: typeof runWorkflowPullSync }} [deps]
+ * @param {{ spawnImpl?: import("node:child_process").spawn, cwd?: string, loadConfig?: typeof loadConfig, runWorkflowPullSync?: typeof runWorkflowPullSync, runWorkflowPushSync?: typeof runWorkflowPushSync }} [deps]
  */
 export async function callKnowledgeFlowTool(name, input, deps = {}) {
   const validation = validateToolInput(name, input);
@@ -62,6 +63,8 @@ export async function callKnowledgeFlowTool(name, input, deps = {}) {
       return safeCall(() => callCompileWiki(validation.value, deps));
     case "joplin_sync_workflow_notes":
       return safeCall(() => callSyncWorkflowNotes(validation.value, deps));
+    case "joplin_writeback_workflow_notes":
+      return safeCall(() => callWritebackWorkflowNotes(validation.value, deps));
     default:
       return toolNotImplemented(name);
   }
@@ -363,6 +366,26 @@ async function callSyncWorkflowNotes(input, deps) {
   };
 }
 
+/**
+ * @param {Record<string, unknown>} input
+ * @param {{ loadConfig?: typeof loadConfig, runWorkflowPushSync?: typeof runWorkflowPushSync }} deps
+ */
+async function callWritebackWorkflowNotes(input, deps) {
+  const configPath = readConfigPath(input);
+  const load = deps.loadConfig ?? loadConfig;
+  const sync = deps.runWorkflowPushSync ?? runWorkflowPushSync;
+  const cfg = await load(configPath);
+  const summary = await sync(cfg, {
+    dryRun: input.dry_run !== false,
+    section: typeof input.section === "string" ? input.section : "all",
+    workflowRoot: pathDirname(configPath),
+  });
+  return {
+    ok: true,
+    ...summary,
+  };
+}
+
 /** @param {string} filePath */
 function pathDirname(filePath) {
   return path.dirname(path.resolve(filePath));
@@ -389,6 +412,8 @@ function toolDescription(name) {
       return "Run local or Codex-agent wiki compilation.";
     case "joplin_sync_workflow_notes":
       return "Pull @llm-wiki brainstorming/artifacts workflow edits from local Joplin back to workspace files.";
+    case "joplin_writeback_workflow_notes":
+      return "Push workspace brainstorming/artifacts workflow edits back to existing local Joplin notes.";
     default:
       return "joplin-llm-wiki knowledge-flow tool.";
   }

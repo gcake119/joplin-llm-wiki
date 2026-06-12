@@ -1,5 +1,5 @@
 import { loadConfig } from "../config/load-config.js";
-import { runWorkflowPullSync } from "../joplin/workflow-sync.js";
+import { runWorkflowPullSync, runWorkflowPushSync } from "../joplin/workflow-sync.js";
 
 /**
  * @param {{
@@ -19,6 +19,30 @@ export async function runWorkflowSync(ctx, deps = {}) {
   const cfg = await load(ctx.configPath);
   const summary = await sync(cfg, {
     dryRun: readBool(ctx.opts, "dry-run", false),
+    section: ctx.opts.get("section") ?? "all",
+  });
+  console.log(JSON.stringify(summary, null, 2));
+  return 0;
+}
+
+/**
+ * @param {{
+ *   configPath: string,
+ *   argv: string[],
+ *   opts: Map<string, string>,
+ * }} ctx
+ * @param {{
+ *   loadConfig?: typeof loadConfig,
+ *   runWorkflowPushSync?: typeof runWorkflowPushSync,
+ * }} [deps]
+ * @returns {Promise<number>}
+ */
+export async function runWorkflowWriteback(ctx, deps = {}) {
+  const load = deps.loadConfig ?? loadConfig;
+  const sync = deps.runWorkflowPushSync ?? runWorkflowPushSync;
+  const cfg = await load(ctx.configPath);
+  const summary = await sync(cfg, {
+    dryRun: readBool(ctx.opts, "dry-run", true),
     section: ctx.opts.get("section") ?? "all",
   });
   console.log(JSON.stringify(summary, null, 2));

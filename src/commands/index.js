@@ -34,6 +34,10 @@ export async function runCommand(command, ctx) {
       const { runWorkflowSync } = await import("./cmd-workflow-sync.js");
       return runWorkflowSync(ctx);
     }
+    case "workflow-writeback": {
+      const { runWorkflowWriteback } = await import("./cmd-workflow-sync.js");
+      return runWorkflowWriteback(ctx);
+    }
     default:
       return 1;
   }

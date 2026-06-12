@@ -92,6 +92,8 @@ flowchart TD
   Artifacts -->|按需 workflow writeback| ArtifactNotebook
   BrainstormNotebook -->|workflow-sync pull| Brainstorming
   ArtifactNotebook -->|workflow-sync pull| Artifacts
+  Brainstorming -->|workflow-writeback push| BrainstormNotebook
+  Artifacts -->|workflow-writeback push| ArtifactNotebook
 ```
 
 閉環：
@@ -231,6 +233,7 @@ Cursor 設定可參考 `.cursor/mcp.json.example`：
 | `joplin_sync_sources` | 包裝 `sqlite-sync` 的 normal、export-only、snapshot-only 模式。 |
 | `joplin_compile_wiki` | 包裝 `wiki-compile` 或 `agent-compile`。 |
 | `joplin_sync_workflow_notes` | 從 Joplin `@llm-wiki/brainstorming` / `@llm-wiki/artifacts` 按需拉回工作目錄檔案。 |
+| `joplin_writeback_workflow_notes` | 從 workspace `brainstorming/` / `artifacts/` 按需寫回 Joplin 既有 workflow notes。 |
 
 ### Existing Note Updates And Data API
 
@@ -265,6 +268,7 @@ pnpm exec joplin-llm-wiki sqlite-sync --config ./config.yaml --snapshot-only
 pnpm exec joplin-llm-wiki wiki-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki agent-compile --config ./config.yaml
 pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --dry-run
+pnpm exec joplin-llm-wiki workflow-writeback --config ./config.yaml --dry-run
 pnpm exec joplin-llm-wiki query --config ./config.yaml "你的問題"
 pnpm exec joplin-llm-wiki query --config ./config.yaml --confirm-capture "<id>"
 pnpm exec joplin-llm-wiki lint --config ./config.yaml
@@ -386,6 +390,31 @@ pnpm exec joplin-llm-wiki workflow-sync --config ./config.yaml --section artifac
 compiled `wiki/`。Dry-run 只列出 `created`、`updated`、`unchanged`、
 `skipped`、`conflicts`、`errors` 與 `changed_files`，不建立目錄也不寫檔。
 遇到重名、未知 workflow folder 或路徑穿越候選時會列入 summary，不會靜默覆蓋檔案。
+
+如果 agent 或你在 workspace 直接修改了 `brainstorming/` 或 `artifacts/`
+Markdown，可用反方向的 workflow writeback 把內容寫回 Joplin Desktop 對應的既有 note：
+
+```bash
+pnpm exec joplin-llm-wiki workflow-writeback --config ./config.yaml --dry-run
+pnpm exec joplin-llm-wiki workflow-writeback --config ./config.yaml --dry-run=false --section brainstorming
+pnpm exec joplin-llm-wiki workflow-writeback --config ./config.yaml --dry-run=false --section artifacts
+```
+
+`workflow-writeback` 只處理 `brainstorming/` 與 `artifacts/`，不處理 `raw/`
+或 compiled `wiki/`，且只透過 Joplin Desktop Data API 更新既有 note，不直接寫
+SQLite。預設一定是 dry-run；只有明確傳入 `--dry-run=false` 才會寫入 Joplin。
+workspace path 會依 notebook tree 對應回 Joplin，例如
+`artifacts/開發框架/AI UI 設計流程：從第零步視覺概念到上線前檢查.md`
+會對應到
+`@llm-wiki/artifacts/開發框架/AI UI 設計流程：從第零步視覺概念到上線前檢查`，
+`brainstorming/chat/*.md` 會對應到 `@llm-wiki/brainstorming/chat`。
+
+第一版不自動新增 Joplin notes；找不到對應 note 或 notebook 時會列為
+`would_create` / `missing`，不會誤寫。若同一路徑在 Joplin 對到多個同名 note，
+會列為 `conflict` 並跳過。同步後會維護
+`.joplin-llm-wiki/workflow-sync-state.json` 作為 baseline；若之後 workspace
+與 Joplin note 都相對 baseline 變更，會列為 `both_sides_changed` conflict，
+不自動 merge。
 
 `wiki-compile --dry-run` 與 `agent-compile --dry-run` 不會對 Joplin 發送會變更資料的 HTTP。
 
